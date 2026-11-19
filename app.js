@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '15';
+  var APP_VERSION = '16';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -343,7 +343,7 @@
     var self = this;
     USAGE.flush();
     api('logout', {}).catch(function () {});
-    LS.del('session'); LS.del('boot');
+    LS.del('session'); LS.del('boot'); LS.del('seen'); LS.del('usage'); LS.del('usagePending'); LS.del('orderPlain');
     try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
     this.photoKey = null;
     self.setState({ needLogin: true, accountOpen: false, data: null, loading: true, photos: [] });
@@ -466,6 +466,7 @@
     this.setState({ marks: marks });
   };
   App.prototype.seeAll = function () {
+    if (this.reloading) return;   /* 新しい版への読み直しでは「見た」にしない */
     if (this.state.data) LS.set('seen', sigsOf(this.state.data));
     this.ownKeys = {};
     this.setState({ marks: {} });
@@ -1487,9 +1488,8 @@
         go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-sec="flow"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 80); } });
       chips.push({ k: 'あなたの番', v: turn ? turn + '件' : 'なし', sub: '', style: chip(turn > 0),
         go: function () { self.setState({ nav: twoTab }); window.scrollTo(0, 0); } });
-      var nMarks = Object.keys(marks).length;
-      if (nMarks) chips.push({ k: '新着', v: nMarks + '件', sub: '', style: chip(true),
-        go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-new]'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } });
+      var newChip = function (n) { return { k: '新着', v: n + '件', sub: '', style: chip(true),
+        go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-new]'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } }; };
       if (ui.tripFrom && ui.tripTo) {
         var dTo = Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5);
         if (tripNow) chips.push({ k: '旅行', v: (Math.round((parseYmd(todayStr) - parseYmd(ui.tripFrom)) / 864e5) + 1) + '日目', sub: '', style: chip(false), go: function () {} });
@@ -1498,7 +1498,7 @@
       var streak = D.streak || 0;
       if (streak >= 2) chips.splice(1, 0, { k: '全部できた日', v: '連続' + streak + '日', sub: '', style: chip(false), go: function () {} });
       var W = D.weather, wx = null;
-      if (W && W.max != null) {
+      if (W && W.max != null && W.min != null) {
         var c = W.code, kind = c === 0 ? ['晴れ', 'sun'] : c <= 2 ? ['晴れときどき曇り', 'part'] : c === 3 ? ['曇り', 'cloud'] : c <= 48 ? ['霧', 'cloud'] : c <= 67 || (c >= 80 && c <= 82) ? ['雨', 'rain'] : c <= 77 || c === 85 || c === 86 ? ['雪', 'snow'] : ['雷雨', 'rain'];
         wx = { label: (W.place && tripNow ? W.place + '　' : '') + kind[0], temp: W.max + '° / ' + W.min + '°', pop: W.pop != null ? '雨 ' + W.pop + '%' : '',
           sun: kind[1] === 'sun', part: kind[1] === 'part', cloud: kind[1] === 'cloud', rain: kind[1] === 'rain', snow: kind[1] === 'snow' };
@@ -1513,7 +1513,7 @@
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
       return {
-        big: isHomeTab, small: !isHomeTab,
+        big: isHomeTab, small: !isHomeTab, newChip: newChip,
         smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
         smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
         wx: wx, hasWx: !!wx,
@@ -1728,6 +1728,13 @@
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
+    /* 見出しの「新着」は、いま画面に出ているものだけ数える（今日でない担当や、しぼって隠れた分は数えない） */
+    var visSec = {}; sections.forEach(function (x) { if (!x.wrapStyle) visSec[x.key] = true; });
+    var cnt = function (list) { return (list || []).filter(function (x) { return x.isNew; }).length; };
+    var nNew = (visSec.flow ? cnt(R.flow) : 0) + (visSec.decide ? cnt(R.decisions) : 0) + (visSec.deadline ? cnt(R.deadlines) : 0) + (visSec.topics ? cnt(R.topics) : 0)
+      + (visSec.diary ? cnt(R.diary) : 0) + (visSec.weekend ? cnt(R.outings) : 0) + (visSec.shop ? (R.shop || []).reduce(function (a, g) { return a + cnt(g.items); }, 0) : 0);
+    R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== '新着'; });
+    if (nNew) R.hdr.chips.splice(R.hdr.chips.length > 2 ? 3 : R.hdr.chips.length, 0, R.hdr.newChip(nNew));
     return R;
   };
 
@@ -1744,24 +1751,30 @@
       var here = secTab[sec] === curTab;
       var open = !!(st.expanded && st.expanded[sec]);
       if (!isHome || count <= n) return;
+      if ((k === 'flow' && st.flowEdit) || (k === 'shop' && st.shopEdit) || (k === 'topics' && st.topicEdit)) return;   /* 直している最中はしぼらない */
       if (here && open) {
         m.show = true; m.label = '少なく表示';
         m.go = function () { var e = Object.assign({}, self.state.expanded); delete e[sec]; self.setState({ expanded: e }); };
         return;
       }
+      /* 新着を先に残し、残りを順に足す（並びは元のまま） */
+      var keep = function (all, first, nn) {
+        var pick = all.filter(function (r) { return r.isNew; }).slice(0, nn);
+        first.forEach(function (r) { if (pick.length < nn && pick.indexOf(r) < 0) pick.push(r); });
+        all.forEach(function (r) { if (pick.length < nn && pick.indexOf(r) < 0) pick.push(r); });
+        return all.filter(function (r) { return pick.indexOf(r) >= 0; });
+      };
       if (k === 'flow') {
-        /* まだのものを優先して選び、並びは時刻のまま */
-        var pick = flowAll.filter(function (r) { return !r.done; }).slice(0, n);
-        if (pick.length < n) pick = pick.concat(flowAll.filter(function (r) { return r.done; }).slice(0, n - pick.length));
-        R.flow = flowAll.filter(function (r) { return pick.indexOf(r) >= 0; });
+        /* 新着、まだのもの、の順に選び、並びは時刻のまま */
+        R.flow = keep(flowAll, flowAll.filter(function (r) { return !r.done; }), n);
       } else if (k === 'shop') {
         /* まだ買っていないものを優先して、全部で n 品まで */
-        var left = n;
-        var rest = list.map(function (g) { return g.items.filter(function (it) { return !it.checked; }); });
-        var taken = rest.map(function (items) { var t = items.slice(0, Math.max(0, left)); left -= t.length; return t; });
-        R.shop = list.map(function (g, i) { return Object.assign({}, g, { items: taken[i], empty: false }); }).filter(function (g) { return g.items.length; });
+        var flat = [];
+        list.forEach(function (g, gi) { g.items.forEach(function (it) { flat.push({ gi: gi, it: it, isNew: it.isNew }); }); });
+        var chosen = keep(flat, flat.filter(function (x) { return !x.it.checked; }), n);
+        R.shop = list.map(function (g, gi) { return Object.assign({}, g, { items: chosen.filter(function (x) { return x.gi === gi; }).map(function (x) { return x.it; }), empty: false }); }).filter(function (g) { return g.items.length; });
       } else {
-        R[k] = list.slice(0, n);
+        R[k] = keep(list, [], n);
       }
       m.show = true;
       m.label = 'すべて見る（全' + count + '件）';
@@ -1847,8 +1860,11 @@
       var hadCtrl = !!navigator.serviceWorker.controller, reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
         if (!hadCtrl || reloaded) return;
-        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
-        if (!busy) { reloaded = true; location.reload(); }   /* 入力中なら読み直さない（次に開いた時に新しい版になる） */
+        var go = function () { reloaded = true; comp.reloading = true; location.reload(); };
+        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.accountOpen || s.flowEdit || s.shopEdit || s.topicEdit || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
+        /* 使っている最中（入力中・編集中・ホーム以外のタブ）は読み直さず、次にアプリに戻った時に読み直す */
+        if (busy || (s.nav && s.nav !== '今日')) { document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && !reloaded) go(); }); return; }
+        go();
       });
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }

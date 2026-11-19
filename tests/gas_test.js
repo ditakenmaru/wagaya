@@ -168,10 +168,10 @@ env.refreshApp();
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.data.ui.eveningFrom === 19 * 60 + 30 && b2.data.ui.morningFrom === null, '時刻: 時刻の型は19:30として読み、空の朝はnull');
 // 天気：設定の「地名 緯度,経度」から
-setRow('天気の場所')[1] = '福岡 33.59,130.40';
+setRow('天気の場所')[1] = '東京 35.68,139.76';
 env.refreshApp();
 b2 = post(env, { action: 'boot', session: S, today });
-ok(b2.data.weather && b2.data.weather.place === '福岡' && b2.data.weather.max === 18 && b2.data.weather.pop === 70, '天気: 地名と最高気温と降水確率');
+ok(b2.data.weather && b2.data.weather.place === '東京' && b2.data.weather.max === 18 && b2.data.weather.pop === 70, '天気: 地名と最高気温と降水確率');
 // 続けた日数：昨日の担当を全部済にすると1日
 {
   const y = (d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - 1); return t.toISOString().slice(0, 10); })(today);
@@ -229,12 +229,12 @@ ok(b3.shop.groups.find(g => g.label === 'WEB').items.some(x => x[1] === '卵M'),
 r2 = post(env, { action: 'deleteShop', session: S, id: 'sx' });
 ok(r2.ok, 'deleteShop');
 // 話題
-r2 = post(env, { action: 'saveTopic', session: S, topic: { id: 't1', title: 'フーコックのしおり', url: 'https://claude.ai/artifact/x', note: '旅' } });
+r2 = post(env, { action: 'saveTopic', session: S, topic: { id: 't1', title: '旅のしおり', url: 'https://claude.ai/artifact/x', note: '旅' } });
 ok(r2.ok, 'saveTopic');
 r2 = post(env, { action: 'saveTopic', session: S, topic: { id: 't2', title: '危ない', url: 'javascript:alert(1)' } });
 ok(!r2.ok, 'saveTopic: https 以外は断る');
 b3 = post(env, { action: 'boot', session: S, today }).data;
-ok(b3.topics.length === 1 && b3.topics[0].title === 'フーコックのしおり', 'boot: 話題');
+ok(b3.topics.length === 1 && b3.topics[0].title === '旅のしおり', 'boot: 話題');
 // 要望
 r2 = post(env, { action: 'addFeedback', session: S, feedback: { text: '買い物を並べ替えたい', screen: 'v5' } });
 const fb = env.ss.getSheetByName('要望').data;
@@ -371,5 +371,15 @@ ok(b3.api === 9, 'boot に api の版');
 r = post(env, { action: 'logout', session: S });
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.code === 'no_session', 'logout');
+// 旅行の期間：年のない書き方・年をまたぐ・ハイフン区切り
+{
+  const tr = (v, t) => JSON.stringify(env.tripRange(v, t));
+  ok(tr('12/28～1/3', '2027-01-02') === '["2026-12-28","2027-01-03"]', '旅行: 年をまたぐ（年明けに見る）');
+  ok(tr('12/28～1/3', '2026-12-20') === '["2026-12-28","2027-01-03"]', '旅行: 年をまたぐ（年末に見る）');
+  ok(tr('1/5～1/8', '2026-11-20') === '["2027-01-05","2027-01-08"]', '旅行: 年のない先の期間は来年');
+  ok(tr('2027-08-10 - 2027-08-15', '2026-11-20') === '["2027-08-10","2027-08-15"]', '旅行: ハイフン区切り');
+  ok(tr('2027-08-10〜8/15', '2026-11-20') === '["2027-08-10","2027-08-15"]', '旅行: 後ろだけ年なし');
+}
 console.log(fails ? fails + ' NG' : 'ALL OK');
 process.exit(fails ? 1 : 0);
+

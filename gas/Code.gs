@@ -68,8 +68,8 @@ var SETTING_ROWS = [
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
   ['朝の並びにする時刻', '5:00', 'この時刻から「朝の並びを終える時刻」までは「朝の順番」で並べる。空なら朝の並びは使わない'],
   ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」'],
-  ['天気の場所', '', '例：福岡 33.59,130.40（地名と緯度,経度）。上の見出しに今日の天気を出す。空なら出さない'],
-  ['旅行先の天気の場所', '', '例：フーコック 10.22,103.96。旅行の期間はこちらの天気を出す']
+  ['天気の場所', '', '例：東京 35.68,139.76（地名と緯度,経度）。上の見出しに今日の天気を出す。空なら出さない'],
+  ['旅行先の天気の場所', '', '例：ハワイ 21.31,-157.86。旅行の期間はこちらの天気を出す']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
@@ -190,7 +190,7 @@ function settings() {
     var k = String(r['項目'] || '').trim(); if (!k) return;
     var v = r['値'];
     /* 「18:00」と打つとシートが時刻の型にする。文字の「18:00」にそろえる（1900年より前の日付は時刻だけの値） */
-    if (v && typeof v.getFullYear === 'function' && v.getFullYear() < 1901) v = Utilities.formatDate(v, TZ, 'H:mm');
+    if (v && typeof v.getFullYear === 'function') v = Utilities.formatDate(v, TZ, v.getFullYear() < 1901 ? 'H:mm' : 'yyyy-MM-dd');
     s[k] = String(v == null ? '' : v).trim();
   });
   try { cache.put(key, JSON.stringify(s), 21600); } catch (e) {}
@@ -364,7 +364,7 @@ function buildBoot(today) {
       like1: truthy(r['人1']), like2: truthy(r['人2']), state: text(r['状態']) || '候補', go: normDate(r['行く日']) };
   }).filter(function (x) { return x.state !== '行った' && x.state !== 'やめた' && (!x.date || x.date >= today) && !(x.go && x.go < today); });
 
-  var trip = tripRange(s['旅行の期間']);
+  var trip = tripRange(s['旅行の期間'], today);
   var ps = people();
   return {
     topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
@@ -388,9 +388,12 @@ function buildBoot(today) {
 /* 担当を全部終えた日が何日続いているか（今日は全部終わっていれば数える。担当がない日・休みは飛ばす） */
 function streakOf(dutyRows, doneBy, skipBy, firstDay, t) {
   var dayOf = function (k) { var x = new Date(t.getTime()); x.setDate(x.getDate() - k); return x; };
+  /* 新しく足した担当で、昔の日が「できていない」にならないよう、担当ごとに初めて済になった日から数える */
+  var first = {};
+  Object.keys(doneBy).forEach(function (d) { Object.keys(doneBy[d]).forEach(function (id) { if (!first[id] || d < first[id]) first[id] = d; }); });
   var allDone = function (x) {
     var d = ymd(x), dow = x.getDay(), dn = doneBy[d] || {}, sk = skipBy[d] || {};
-    var list = dutyRows.filter(function (r) { return (r.date ? r.date === d : dayMatch(r.rule, dow)) && !sk[r.id]; });
+    var list = dutyRows.filter(function (r) { return (r.date ? r.date === d : dayMatch(r.rule, dow)) && !sk[r.id] && first[r.id] && first[r.id] <= d; });
     if (!list.length) return null;
     return list.every(function (r) { return dn[r.id]; });
   };
@@ -414,18 +417,20 @@ function weatherFor(spec, today) {
   var place = String(spec).replace(m[0], '').trim();
   var key = 'wx_' + m[1] + '_' + m[2] + '_' + today, cache = CacheService.getScriptCache();
   var hit = cache.get(key);
-  if (hit) return JSON.parse(hit);
+  if (hit) return hit === 'none' ? null : JSON.parse(hit);
+  var fail = function () { try { cache.put(key, 'none', 600); } catch (e) {} return null; };   /* 取れない時は10分おく（毎回待たない） */
   try {
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + m[1] + '&longitude=' + m[2] +
       '&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1';
     var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    if (r.getResponseCode() !== 200) return null;
+    if (r.getResponseCode() !== 200) return fail();
     var j = JSON.parse(r.getContentText()), dl = j.daily || {}, cu = j.current || {};
+    if (!dl.temperature_2m_max || !dl.temperature_2m_min) return fail();
     var w = { place: place, code: dl.weather_code ? dl.weather_code[0] : cu.weather_code, now: Math.round(cu.temperature_2m),
       max: Math.round(dl.temperature_2m_max[0]), min: Math.round(dl.temperature_2m_min[0]), pop: dl.precipitation_probability_max ? dl.precipitation_probability_max[0] : null };
     cache.put(key, JSON.stringify(w), 3600);
     return w;
-  } catch (e) { return null; }
+  } catch (e) { return fail(); }
 }
 
 /* 画面シート：見出し・表示・順番。行が無いキーは初期値 */
@@ -834,10 +839,10 @@ function logUsage(counts, date, me, batch) {
   var keys = Object.keys(counts || {}).filter(function (k) { return /^[a-z]+:[A-Za-z0-9_\-]{1,40}$/.test(k) && Number(counts[k]) > 0; }).slice(0, 80);
   if (!keys.length) return { ok: true };
   var cache = CacheService.getScriptCache(), bk = batch ? 'u_' + String(batch).replace(/[^\w]/g, '').slice(0, 40) : '';
-  if (bk && cache.get(bk)) return { ok: true, dup: true };   // 同じ送信が2回届いても1回だけ数える
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    if (bk && cache.get(bk)) return { ok: true, dup: true };   // 同じ送信が2回届いても1回だけ数える（鍵の中で確かめる）
     _tables = {};
     var t = ensureCols('使われ方', SHEETS['使われ方']), at = {};
     t.rows.forEach(function (r) { if (normDate(r['日付']) === d && whoOf(r['誰']) === me.who) at[text(r['項目'])] = r; });
@@ -915,11 +920,28 @@ function backupNow() {
 }
 
 /* 旅行の期間：「2027-08-10〜2027-08-15」「8/10～8/15」「8/10から8/15」などを読む。年が無ければ今年（終わりが前なら翌年） */
-function tripRange(v) {
-  var parts = String(v || '').split(/\s*(?:〜|～|~|から|まで)\s*/).filter(String);
+/* 旅行の期間：「2027-08-10〜2027-08-15」「8/10～8/15」「12/28〜1/3」「2027-08-10 - 2027-08-15」。
+   年がない時は今日から見て決める（終わりが今日より前にならない年。年をまたぐ期間もそろえる） */
+function tripRange(v, today) {
+  var str = String(v || '').trim();
+  var full = str.match(/^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*[-–—]\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})$/);
+  var parts = full ? [full[1], full[2]] : str.split(/\s*(?:〜|～|~|から|まで)\s*/).filter(String);
   if (parts.length < 2) return ['', ''];
   var a = normDate(parts[0]), b = normDate(parts[1]);
-  if (a && b && b < a && !/^\d{4}/.test(parts[1].trim())) b = String(Number(b.slice(0, 4)) + 1) + b.slice(4);
+  if (!a || !b) return ['', ''];
+  var ya = /^\d{4}/.test(parts[0].trim()), yb = /^\d{4}/.test(parts[1].trim());
+  var setY = function (d, y) { return String(y) + d.slice(4); };
+  today = today || ymd(new Date());
+  if (!ya && !yb) {
+    var y = Number(today.slice(0, 4));
+    a = setY(a, y); b = setY(b, y);
+    if (b < a) { if (b >= today) a = setY(a, y - 1); else b = setY(b, y + 1); }
+    else if (b < today) { a = setY(a, y + 1); b = setY(b, y + 1); }
+  } else if (ya && !yb) {
+    b = setY(b, Number(a.slice(0, 4))); if (b < a) b = setY(b, Number(a.slice(0, 4)) + 1);
+  } else if (!ya && yb) {
+    a = setY(a, Number(b.slice(0, 4))); if (a > b) a = setY(a, Number(b.slice(0, 4)) - 1);
+  }
   return [a, b];
 }
 
