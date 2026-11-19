@@ -205,11 +205,11 @@ function plansFor(weekStart, weekEnd, calendarId) {
       .map(function (r) { return { date: normDate(r[0]), time: normTime(r[1]), what: String(r[2] || ''), who: whoOf(r[3]) }; });
   }
   var end = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate() + 1);
-  var url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calendarId) + '/events?singleEvents=true&orderBy=startTime&maxResults=100' +
-    '&timeMin=' + encodeURIComponent(weekStart.toISOString()) + '&timeMax=' + encodeURIComponent(end.toISOString());
-  var res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
-  var items = JSON.parse(res.getContentText()).items || [], outList = [];
+  var items;
+  try {
+    items = Calendar.Events.list(calendarId, { timeMin: weekStart.toISOString(), timeMax: end.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 }).items || [];
+  } catch (err) { console.error(err); return []; }
+  var outList = [];
   items.forEach(function (ev) {
     if (ev.status === 'cancelled') return;
     var title = String(ev.summary || '（予定）'), who = '家族';
@@ -232,12 +232,13 @@ function photos() {
   var folderId = settings()['写真フォルダID'];
   if (!folderId) return [];
   var q = "'" + folderId.replace(/'/g, '') + "' in parents and mimeType contains 'image/' and trashed = false";
-  var url = 'https://www.googleapis.com/drive/v3/files?pageSize=8&orderBy=createdTime desc&fields=files(id,thumbnailLink)&q=' + encodeURIComponent(q);
   var auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
-  var res = UrlFetchApp.fetch(url, { headers: auth, muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) { console.error(res.getContentText()); return []; }
+  var files;
+  try {
+    files = Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || [];
+  } catch (err) { console.error(err); return []; }
   var cache = CacheService.getScriptCache();
-  return (JSON.parse(res.getContentText()).files || []).map(function (f) {
+  return files.map(function (f) {
     var key = 'p_' + f.id, src = cache.get(key);
     if (!src && f.thumbnailLink) {
       var img = UrlFetchApp.fetch(f.thumbnailLink.replace(/=s\d+$/, '=s900'), { headers: auth, muteHttpExceptions: true });
