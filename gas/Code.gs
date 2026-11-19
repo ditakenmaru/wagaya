@@ -370,7 +370,7 @@ function buildBoot(today) {
     topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
-    menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
+    menu: menu, shop: shop, plans: plansFor(weekStart, new Date(Math.max(weekEnd.getTime(), t.getTime() + 6 * 864e5)), s['カレンダーID']),   /* 今週と、今日から7日（今週末の日曜まで入る） */ goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
     ui: {

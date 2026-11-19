@@ -6,13 +6,15 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '17';
+  var APP_VERSION = '18';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
+  /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
+  var LSP = DEMO ? 'demo.' : '';
   var LS = {
-    get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
-    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
-    del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+    get: function (k) { try { return JSON.parse(localStorage.getItem(LSP + k)); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(LSP + k, JSON.stringify(v)); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem(LSP + k); } catch (e) {} }
   };
 
   /* ---------------- 使われ方（回数だけ。書いた文章は残さない） ---------------- */
@@ -207,6 +209,14 @@
   function pad(n) { return ('0' + n).slice(-2); }
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parseYmd(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  /* くり返しの言い方：「火金」→「毎週 火・金」、1日だけなら「毎週 木曜」 */
+  function ruleWords(r) {
+    r = String(r || '毎日');
+    if (r === '毎日' || r === '平日' || r === '土日' || r === '週末') return r;
+    var ds = r.split('').filter(function (c) { return DOWS.indexOf(c) >= 0; });
+    if (!ds.length) return r;
+    return '毎週 ' + (ds.length === 1 ? ds[0] + '曜' : ds.join('・'));
+  }
   function hm(m) { return m == null ? 'いつでも' : Math.floor(m / 60) + ':' + pad(m % 60); }
   function whenLabel(ms) {
     var d = new Date(ms), now = new Date();
@@ -343,7 +353,7 @@
     var self = this;
     USAGE.flush();
     api('logout', {}).catch(function () {});
-    LS.del('session'); LS.del('boot'); LS.del('seen'); LS.del('usage'); LS.del('usagePending'); LS.del('orderPlain');
+    LS.del('session'); LS.del('boot'); LS.del('seen'); LS.del('seenPending'); LS.del('usage'); LS.del('usagePending'); LS.del('orderPlain');
     try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
     this.photoKey = null;
     self.setState({ needLogin: true, accountOpen: false, data: null, loading: true, photos: [] });
@@ -452,6 +462,7 @@
     return m;
   }
   App.prototype.trackMarks = function (data) {
+    this.commitSeen(false);
     var cur = sigsOf(data), seen = LS.get('seen'), own = this.ownKeys || {};
     if (!seen) { LS.set('seen', cur); return; }
     var marks = Object.assign({}, this.state.marks || {});
@@ -465,11 +476,22 @@
     LS.set('seen', seen);
     this.setState({ marks: marks });
   };
+  /* アプリを閉じた時は「見た」の候補として取っておき、15分以上たってから開いた時に確定する
+     （子どもを抱っこしてちょっと閉じただけで新着が消えないように） */
   App.prototype.seeAll = function () {
     if (this.reloading) return;   /* 新しい版への読み直しでは「見た」にしない */
-    if (this.state.data) LS.set('seen', sigsOf(this.state.data));
-    this.ownKeys = {};
-    this.setState({ marks: {} });
+    if (this.state.data) LS.set('seenPending', { at: Date.now(), sigs: sigsOf(this.state.data) });
+  };
+  App.prototype.commitSeen = function (force) {
+    var p = LS.get('seenPending');
+    if (!p || (!force && Date.now() - p.at < 15 * 60 * 1000)) return false;
+    var seen = LS.get('seen') || {};
+    Object.keys(p.sigs).forEach(function (k) { seen[k] = p.sigs[k]; });
+    LS.set('seen', seen); LS.del('seenPending');
+    var marks = Object.assign({}, this.state.marks || {});
+    Object.keys(marks).forEach(function (k) { if (p.sigs[k] !== undefined && seen[k] === p.sigs[k]) delete marks[k]; });
+    this.setState({ marks: marks });
+    return true;
   };
 
   /* 書き込み：先に画面を変え、失敗したら戻す */
@@ -691,7 +713,7 @@
     });
     this.setState({ editor: null });
     this.send('saveDuty', { duty: d }, revert);
-    var when = d.date ? (d.date === (this.state.data || {}).today ? '今日' : parseYmd(d.date).getMonth() + 1 + '/' + parseYmd(d.date).getDate()) + 'だけ' : (rule === '毎日' || rule === '平日' || rule === '土日' ? rule : '毎週' + rule.split('').join('・'));
+    var when = d.date ? (d.date === (this.state.data || {}).today ? '今日' : parseYmd(d.date).getMonth() + 1 + '/' + parseYmd(d.date).getDate()) + 'だけ' : ruleWords(rule);
     this.showToast('「' + task + '」を' + when + 'で' + (e.isNew ? '足しました' : '直しました'), null);
   };
   App.prototype.deleteDuty = function () {
@@ -958,9 +980,9 @@
     });
     this.send('planOuting', { id: x.id, date: date || '' }, this.snapshot());
     if (date) {
-      var dd = parseYmd(date), n0 = new Date(), weekEnd = new Date(n0.getFullYear(), n0.getMonth(), n0.getDate() + (6 - n0.getDay()));
+      var dd = parseYmd(date), n0 = new Date(), weekEnd = new Date(n0.getFullYear(), n0.getMonth(), n0.getDate() + 6);
       var other = this.names()[0] === this.meWho() ? x.like2 : x.like1, otherName = this.names()[0] === this.meWho() ? this.names()[1] : this.names()[0];
-      this.showToast((dd.getMonth() + 1) + '/' + dd.getDate() + '（' + DOWS[dd.getDay()] + '）に「' + x.name + '」へ。' + (dd > weekEnd ? '来週の予定に入れました' : '予定にも入れました') + (other ? '' : '（' + otherName + 'はまだ「行きたい」を押していません）'), null);
+      this.showToast((dd.getMonth() + 1) + '/' + dd.getDate() + '（' + DOWS[dd.getDay()] + '）に「' + x.name + '」へ。' + (dd > weekEnd ? '先の予定に入れました' : '予定にも入れました') + (other ? '' : '（' + otherName + 'はまだ「行きたい」を押していません）'), null);
     } else this.showToast('「' + x.name + '」に行くのをやめました。予定からも外しました', null);
   };
 
@@ -979,7 +1001,7 @@
       items.forEach(function (x) { g.items.push([x.id, x.name, x.qty]); });
     });
     this.send('addShopMany', { items: items }, this.snapshot());
-    this.showToast(dm.dish + 'の材料を' + items.length + 'つ買い物リストに足しました', null);
+    this.showToast(dm.dish + 'の材料を' + items.length + '品、買い物リストに足しました', null);
   };
 
   /* 写真のスライド */
@@ -1045,7 +1067,7 @@
       return {
         label: t[1], pressed: on ? 'true' : 'false',
         pick: function () { LS.set('who', t[0]); USAGE.add('tab:' + (t[0] === 'all' ? 'all' : (names.indexOf(t[0]) === 0 ? 'p1' : 'p2'))); self.setState({ who: t[0] }); },
-        style: 'min-height: 40px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #FFFFFF; color: #17201B; box-shadow: 0 1px 2px rgba(23,32,27,0.12)' : 'background: transparent; color: rgba(255,255,255,0.86)')
+        style: 'min-height: 44px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #FFFFFF; color: #17201B; box-shadow: 0 1px 2px rgba(23,32,27,0.12)' : 'background: transparent; color: rgba(255,255,255,0.86)')
       };
     });
 
@@ -1065,7 +1087,8 @@
     } else {
       var left0 = mine.filter(function (d) { return !done[d.id]; });
       if (!mine.length) hero = { kicker: '今日の担当', time: '—', countdown: '', task: '今日の担当はありません', who: '—', color: this.person('家族').ink };
-      else if (left0.length) hero = { kicker: 'まだ終わっていない担当（' + left0.length + 'つ）', time: hm(left0[0].t), countdown: '時間は過ぎています', task: left0[0].task, who: left0[0].who, color: this.person(left0[0].who).ink };
+      else if (left0.length) { var lastL = left0.filter(function (d) { return d.t != null; }).pop() || left0[left0.length - 1];   /* いちばん最近の、終わっていない担当 */
+        hero = { kicker: 'まだ終わっていない担当（' + left0.length + '件）', time: hm(lastL.t), countdown: '時間は過ぎています', task: lastL.task, who: lastL.who, color: this.person(lastL.who).ink }; }
       else hero = { kicker: '今日の担当', time: 'おしまい', countdown: 'おつかれさま', task: '今日の担当は全部終わりました', who: whoSel === 'all' ? 'みんな' : whoSel, color: this.person('家族').ink };
     }
     hero.bandStyle = 'margin: 4px 16px 0; padding: 22px 20px 16px; border-radius: 24px; background: ' + hero.color + '; color: #FFFFFF; display: flex; flex-direction: column; gap: 6px; transition: background .5s; animation: heroIn .6s cubic-bezier(.2,.8,.2,1) both';
@@ -1116,7 +1139,7 @@
     /* 担当の編集：くり返しも「その日だけ」も全部並べる */
     function ruleLabel(x) {
       if (x.date) { var dd = parseYmd(x.date); return (x.date === D.today ? '今日' : (dd.getMonth() + 1) + '/' + dd.getDate()) + 'だけ'; }
-      return x.rule || '毎日';
+      return ruleWords(x.rule || '毎日');
     }
     var flowEditRows = (D.dutiesAll || []).filter(function (d) { return whoSel === 'all' || d.who === whoSel || d.who === '家族'; })
       .slice().sort(function (a, b) { return tOrd(a) - tOrd(b); }).map(function (d) {
@@ -1138,7 +1161,7 @@
       return {
         dow: isToday ? '今日' : d, date: dt.getDate(), pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ day: i, dayAnim: self.state.dayAnim + 1 }); },
-        style: 'flex-shrink: 0; width: 52px; min-height: 72px; border-radius: 16px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
+        style: 'flex: 1 1 0; min-width: 44px; min-height: 72px; border-radius: 14px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
         dotStyle: 'width: 6px; height: 6px; border-radius: 50%; background: ' + (menuByDow[i].hotcook ? '#C99A1E' : 'transparent')
       };
     });
@@ -1203,7 +1226,8 @@
       return n < 0 ? md + '（' + (-n) + '日過ぎ）' : n === 0 ? md + '（今日）' : n === 1 ? md + '（明日）' : md + '（あと' + n + '日）';
     };
     var todayStr0 = ymd(now);
-    var decisions = (D.decisions || []).slice().sort(function (a, b) { return (a.state === '決まった') - (b.state === '決まった') || ((a.due || '9') < (b.due || '9') ? -1 : 1); }).map(function (x) {
+    var myTurnOf = function (x) { return x.state !== '決まった' && !(me1 ? x.a1 : x.a2) ? 0 : 1; };
+    var decisions = (D.decisions || []).slice().sort(function (a, b) { return (a.state === '決まった') - (b.state === '決まった') || myTurnOf(a) - myTurnOf(b) || ((a.due || '9') < (b.due || '9') ? -1 : 1); }).map(function (x) {
       var decided = x.state === '決まった';
       var mine = me1 ? x.a1 : x.a2;
       var both = x.a1 && x.a1 === x.a2 && x.a1 !== '話したい';
@@ -1227,7 +1251,7 @@
     });
 
     /* 期限があるもの */
-    var deadlines = (D.deadlines || []).slice().sort(function (a, b) { return (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0); }).map(function (x) {
+    var deadlines = (D.deadlines || []).filter(function (x) { return whoSel === 'all' || !x.who || x.who === whoSel || x.who === '家族'; }).sort(function (a, b) { return (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0); }).map(function (x) {
       var n = x.due ? Math.round((parseYmd(x.due) - parseYmd(todayStr0)) / 864e5) : 99;
       var col = x.done ? '#55605A' : (n < 0 ? '#A3355D' : n <= 2 ? '#8A5A12' : '#39433D');
       return { isNew: !!marks['deadline:' + x.id], what: x.what, due: x.due ? dueLabel(x.due) : '期限なし', who: x.who, done: !!x.done, url: x.url, hasUrl: !!x.url, note: x.note,
@@ -1241,7 +1265,7 @@
     var sat = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((6 - now.getDay() + 7) % 7));
     var sun = now.getDay() === 0 ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(sat.getFullYear(), sat.getMonth(), sat.getDate() + 1);
     var wkDays = (now.getDay() === 0 ? [sun] : [sat, sun]).map(function (d) { return { ymd: ymd(d), label: (d.getMonth() + 1) + '/' + d.getDate() + '（' + DOWS[d.getDay()] + '）' }; });
-    var outings = (D.outings || []).slice().sort(function (a, b) { return (b.state === '決めた') - (a.state === '決めた') || ((b.like1 + b.like2) - (a.like1 + a.like2)); }).map(function (x) {
+    var outings = (D.outings || []).slice().map(function (x) {   /* 押しても並びが動かないよう、シートの順のまま */
       var mineLike = me1 ? x.like1 : x.like2, likes = [];
       if (x.like1) likes.push({ label: names[0], style: self.badge(names[0]) });
       if (x.like2) likes.push({ label: names[1], style: self.badge(names[1]) });
@@ -1289,7 +1313,7 @@
           else { on2[i] = !on2[i]; if (!on2.some(Boolean)) return; }
           self.editSet('rule', daysRule(on2));
         } }; });
-        ed.ruleText = (function (r) { return r === '毎日' || r === '平日' || r === '土日' ? r : '毎週 ' + r.split('').join('・'); })(E.rule || '毎日');
+        ed.ruleText = ruleWords(E.rule || '毎日');
         ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('rule', r[0]); } }; });
         ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
       } else if (E.kind === 'shop') {
@@ -1345,7 +1369,7 @@
       return {
         label: g.label, count: cnt, pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ goal: g.id, newsOpen: {}, goalAnim: (self.state.goalAnim || 0) + 1 }); },
-        style: 'flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
+        style: 'flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
         countStyle: 'min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; ' + (on ? 'background: rgba(255,255,255,.2)' : 'background: #EEF1EC; color: #55605A')
       };
     });
@@ -1362,21 +1386,24 @@
     });
 
     /* 今週の予定 */
-    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: Math.round((parseYmd(p.date) - start) / 864e5) }); }).filter(function (p) { return p.d >= 0 && p.d < 7 && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
-    var planIdx = st.planDay === null ? todayIdx : st.planDay;
+    /* 予定は今日から7日（今週末の土日がいつも入るように） */
+    var pStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: Math.round((parseYmd(p.date) - pStart) / 864e5) }); }).filter(function (p) { return p.d >= 0 && p.d < 7 && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
+    var planIdx = st.planDay === null ? 0 : st.planDay;
     var plans = plansRaw.filter(function (p) { return p.d === planIdx; }).sort(function (a, b) { return (a.time || '') < (b.time || '') ? -1 : 1; }).map(function (p) {
       return { time: p.time || '終日', what: p.what, who: p.who, badgeStyle: self.badge(p.who) };
     });
-    var planWeek = dows.map(function (d, i) {
-      var dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    var planWeek = [0, 1, 2, 3, 4, 5, 6].map(function (i) {
+      var dt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + i);
+      var d = dows[dt.getDay()];
       var on = i === planIdx;
-      var isToday = i === todayIdx;
+      var isToday = i === 0;
       var dayPlans = plansRaw.filter(function (p) { return p.d === i; });
       return {
         dow: isToday ? '今日' : d, date: dt.getDate(), pressed: on ? 'true' : 'false',
         aria: (isToday ? '今日' : d + '曜') + ' ' + dt.getDate() + '日、予定' + dayPlans.length + '件',
         pick: function () { self.setState({ planDay: i, planAnim: (self.state.planAnim || 0) + 1 }); },
-        style: 'flex-shrink: 0; width: 52px; min-height: 72px; border-radius: 16px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
+        style: 'flex: 1 1 0; min-width: 44px; min-height: 72px; border-radius: 14px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
         dots: dayPlans.slice(0, 4).map(function (p) { return { style: 'width: 6px; height: 6px; border-radius: 50%; background: ' + (on ? '#FFFFFF' : self.person(p.who).ink) }; })
       };
     });
@@ -1513,7 +1540,7 @@
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
       return {
-        big: isHomeTab, small: !isHomeTab, newChip: newChip,
+        big: isHomeTab, small: !isHomeTab, newChip: newChip, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
         smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
         smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
         wx: wx, hasWx: !!wx,
@@ -1573,7 +1600,7 @@
         var p = tot ? Math.round(dn / tot * 100) : 0;
         var circ = 2 * Math.PI * 44;
         var ring = self.person(whoSel === 'all' ? '家族' : whoSel).ink;
-        var msg = tot === 0 ? '今日の担当はありません' : (dn === 0 ? '今日もはじめよう' : (dn === tot ? '今日もおつかれさま' : (tot - dn === 1 ? 'あと1つ' : (p >= 50 ? 'いい調子。あと' + (tot - dn) + 'つ' : 'あと' + (tot - dn) + 'つ'))));
+        var msg = tot === 0 ? '今日の担当はありません' : (dn === 0 ? '今日もはじめよう' : (dn === tot ? '今日もおつかれさま' : (tot - dn === 1 ? 'あと1つ' : (p >= 50 ? 'いい調子。あと' + (tot - dn) + '件' : 'あと' + (tot - dn) + '件'))));
         var people = names.filter(function (nm) { return whoSel === 'all' || nm === whoSel; }).map(function (nm) {
           var list = duties.filter(function (d) { return d.who === nm; });
           var c = list.filter(function (d) { return done[d.id]; }).length;
@@ -1585,7 +1612,7 @@
         });
         return {
           pct: p, count: dn + ' / ' + tot, message: msg,
-          aria: '今日の担当 ' + tot + 'つのうち ' + dn + 'つ完了（' + p + '%）',
+          aria: '今日の担当 ' + tot + '件のうち ' + dn + '件完了（' + p + '%）',
           ringStyle: 'stroke: ' + ring + '; stroke-width: 11; stroke-linecap: round; stroke-dasharray: ' + circ.toFixed(2) + '; stroke-dashoffset: ' + (circ * (1 - p / 100)).toFixed(2) + '; transition: stroke-dashoffset .7s cubic-bezier(.2,.8,.2,1), stroke .4s',
           people: people
         };
@@ -1675,7 +1702,7 @@
         var c = self.person(p);
         return {
           label: p + 'へ', pressed: on ? 'true' : 'false', pick: function () { self.setState({ draftTo: p }); },
-          style: 'min-height: 40px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; border: 1.5px solid ' + c.ink + '; ' + (on ? 'background: ' + c.ink + '; color: #FFFFFF' : 'background: transparent; color: ' + c.ink)
+          style: 'min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; border: 1.5px solid ' + c.ink + '; ' + (on ? 'background: ' + c.ink + '; color: #FFFFFF' : 'background: transparent; color: ' + c.ink)
         };
       }),
       draft: st.draft,
@@ -1704,7 +1731,7 @@
       })(),
       toastMsg: st.toast ? st.toast.msg : '',
       undo: function () { if (self.state.toast && self.state.toast.undo) self.state.toast.undo(); },
-      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: #17201B; color: #FFFFFF; box-shadow: 0 8px 24px rgba(23,32,27,0.25); z-index: 60; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
+      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: #17201B; color: #FFFFFF; box-shadow: 0 8px 24px rgba(23,32,27,0.25); z-index: 30; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
       openSheet: function () { self.setState({ sheet: true }); },
       closeSheet: function () { self.setState({ sheet: false }); },
       backdropStyle: backdrop(st.sheet),
@@ -1716,7 +1743,7 @@
       login: function () { self.login(); },
       syncLabel: syncLabel,
       accountAria: 'アカウントと更新（' + syncLabel + '）',
-      syncStyle: 'min-height: 32px; padding: 0 12px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: #F5E2E9; color: #7A2645' : 'background: #DDE3DA; color: #39433D'),
+      syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: #F5E2E9; color: #7A2645' : 'background: #DDE3DA; color: #39433D'),
       openAccount: function () { self.setState({ accountOpen: true }); },
       closeAccount: function () { self.setState({ accountOpen: false }); },
       meLabel: D.me ? D.me.who + 'でログイン中' : 'ログイン中',
@@ -1734,7 +1761,7 @@
     var nNew = (visSec.flow ? cnt(R.flow) : 0) + (visSec.decide ? cnt(R.decisions) : 0) + (visSec.deadline ? cnt(R.deadlines) : 0) + (visSec.topics ? cnt(R.topics) : 0)
       + (visSec.diary ? cnt(R.diary) : 0) + (visSec.weekend ? cnt(R.outings) : 0) + (visSec.shop ? (R.shop || []).reduce(function (a, g) { return a + cnt(g.items); }, 0) : 0);
     R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== '新着'; });
-    if (nNew) R.hdr.chips.splice(R.hdr.chips.length > 2 ? 3 : R.hdr.chips.length, 0, R.hdr.newChip(nNew));
+    if (nNew) R.hdr.chips.unshift(R.hdr.newChip(nNew));   /* 新着はいちばん左（見切れないように） */
     return R;
   };
 
@@ -1746,7 +1773,7 @@
     Object.keys(HOME_LIMIT).forEach(function (k) {
       var sec = HOME_LIMIT[k][0], n = HOME_LIMIT[k][1], list = R[k] || [];
       var count = k === 'shop' ? list.reduce(function (a, g) { return a + g.items.length; }, 0) : list.length;
-      var m = { show: false, label: '', go: function () {} };
+      var m = { show: false, label: '', go: function () {}, style: 'align-self: stretch; margin: 10px ' + ({ topics: 1, diary: 1, outings: 1, news: 1 }[k] ? '20px' : '0') + ' 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer' };
       more[k] = m;
       var here = secTab[sec] === curTab;
       var open = !!(st.expanded && st.expanded[sec]);

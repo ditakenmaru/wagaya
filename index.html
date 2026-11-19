@@ -89,11 +89,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <span style="font-size: 13px; font-weight: 700; opacity: .85; line-height: 1.5">{{hdr.smallSum}}</span>
       </div>
     </div>
+<sc-if value="{{hdr.showWho}}" hint-placeholder-val="{{ true }}">
     <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 12px; padding: 3px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
     </div>
+    </sc-if>
   </header>
   </sc-if>
   <sc-if value="{{hdr.big}}" hint-placeholder-val="{{ true }}">
@@ -142,7 +144,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <div style="display: flex; flex-direction: column">
   <sc-if value="{{orderBanner.show}}" hint-placeholder-val="{{ false }}"><div role="status" style="{{orderBanner.style}}">
     <span style="flex: 1">{{orderBanner.text}}</span>
-    <button type="button" onClick="{{orderBanner.toggle}}" style="flex-shrink: 0; min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid currentColor; background: #FFFFFF; color: inherit; font-size: 12px; font-weight: 700; cursor: pointer">{{orderBanner.btn}}</button>
+    <button type="button" onClick="{{orderBanner.toggle}}" style="flex-shrink: 0; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1.5px solid currentColor; background: #FFFFFF; color: inherit; font-size: 12px; font-weight: 700; cursor: pointer">{{orderBanner.btn}}</button>
   </div></sc-if>
   <sc-if value="{{notesHere}}" hint-placeholder-val="{{ false }}">
     <button type="button" onClick="{{openNotes}}" aria-label="{{notesNavLabel}}" style="{{notesCardStyle}}">
@@ -271,7 +273,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
             <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#8A928C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 10-10-3-3L5 16z"></path></svg>
           </button>
         </sc-for>
-        <sc-if value="{{flowEditEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A">担当はまだありません。「＋ 足す」から入れてください。</p></sc-if>
+        <sc-if value="{{flowEditEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A">担当はまだありません。「＋ 担当」から入れてください。</p></sc-if>
       </div>
     </sc-if>
     <sc-if value="{{flowNormal}}" hint-placeholder-val="{{ true }}">
@@ -280,7 +282,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <div style="{{r.wrapStyle}}">
           <div style="display: flex; align-items: center; gap: 4px">
             <button type="button" aria-pressed="{{r.done}}" onClick="{{r.toggle}}" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 0 14px; border: none; background: transparent; color: inherit; cursor: pointer; text-align: left">
-              <span style="width: 44px; flex-shrink: 0; font-size: 15px; font-weight: 900">{{r.time}}</span>
+              <span style="min-width: 44px; flex-shrink: 0; white-space: nowrap; font-size: 15px; font-weight: 900">{{r.time}}</span>
               <span style="{{r.markStyle}}">
                 <sc-if value="{{r.done}}" hint-placeholder-val="{{ false }}">
                   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="animation: pop .28s ease-out"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -294,7 +296,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
             </button>
             <button type="button" aria-label="{{r.noteLabel}}" onClick="{{r.openNote}}" style="{{r.noteBtnStyle}}">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>
-              <span aria-hidden="true" style="font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap">ひとこと</span>
+              <span aria-hidden="true" style="font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap">申し送り</span>
               <sc-if value="{{r.hasNotes}}" hint-placeholder-val="{{ false }}">
                 <span style="position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 10px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .35s ease-out">{{r.noteCount}}</span>
               </sc-if>
@@ -311,7 +313,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </sc-if>
     </sc-if>
     <sc-if value="{{more.flow.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.flow.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.flow.label}}</button>
+      <button type="button" onClick="{{more.flow.go}}" style="{{more.flow.style}}">{{more.flow.label}}</button>
     </sc-if>
   </section>
   </div></sc-if>
@@ -345,7 +347,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </sc-for>
     <sc-if value="{{decisionsEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A; line-height: 1.6">いま相談していることはありません。「＋ 相談」から、選択肢をつけて聞けます。</p></sc-if>
     <sc-if value="{{more.decisions.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.decisions.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.decisions.label}}</button>
+      <button type="button" onClick="{{more.decisions.go}}" style="{{more.decisions.style}}">{{more.decisions.label}}</button>
     </sc-if>
   </section>
   </div></sc-if>
@@ -368,7 +370,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-if value="{{deadlinesEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 12px 0; font-size: 14px; color: #55605A; line-height: 1.6">期限があるものはありません。書類・支払い・予約などを「＋ 期限」で足すと、近い順に並びます。</p></sc-if>
     </div>
     <sc-if value="{{more.deadlines.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.deadlines.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.deadlines.label}}</button>
+      <button type="button" onClick="{{more.deadlines.go}}" style="{{more.deadlines.style}}">{{more.deadlines.label}}</button>
     </sc-if>
   </section>
   </div></sc-if>
@@ -401,7 +403,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-if>
     </div>
     <sc-if value="{{more.topics.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.topics.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.topics.label}}</button>
+      <button type="button" onClick="{{more.topics.go}}" style="{{more.topics.style}}">{{more.topics.label}}</button>
     </sc-if>
   </section>
   </div></sc-if>
@@ -427,7 +429,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-if>
     </div>
     <sc-if value="{{more.diary.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.diary.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.diary.label}}</button>
+      <button type="button" onClick="{{more.diary.go}}" style="{{more.diary.style}}">{{more.diary.label}}</button>
     </sc-if>
   </section>
   </sc-if>
@@ -531,7 +533,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </div>
     </sc-for>
     <sc-if value="{{more.shop.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.shop.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.shop.label}}</button>
+      <button type="button" onClick="{{more.shop.go}}" style="{{more.shop.style}}">{{more.shop.label}}</button>
     </sc-if>
   </section>
   </sc-if>
@@ -551,7 +553,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <button type="button" onClick="{{ou.edit}}" style="min-height: 44px; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button><sc-if value="{{ou.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <span style="font-size: 12px; color: #55605A">{{ou.meta}}</span>
           <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{ou.note}}</span>
-          <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 700">くわしく</a></sc-if>
+          <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 700">くわしく</a></sc-if>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
             <button type="button" onClick="{{ou.like}}" style="{{ou.likeStyle}}">♡ {{ou.likeLabel}}</button>
             <sc-for list="{{ou.likes}}" as="lk" hint-placeholder-count="1"><span style="{{lk.style}}">{{lk.label}}</span></sc-for>
@@ -568,7 +570,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-if value="{{outingsEmpty}}" hint-placeholder-val="{{ false }}"><div style="flex-shrink: 0; width: 280px; box-sizing: border-box; padding: 16px; border-radius: 18px; border: 2px dashed #C9D1C5; font-size: 13px; line-height: 1.7; color: #55605A">週末に行きたいところの候補を置く場所です。「＋ 候補」から足して、2人で「行きたい」を押し、行く日を決めます。</div></sc-if>
     </div>
     <sc-if value="{{more.outings.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.outings.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.outings.label}}</button>
+      <button type="button" onClick="{{more.outings.go}}" style="{{more.outings.style}}">{{more.outings.label}}</button>
     </sc-if>
   </section>
   </div></sc-if>
@@ -649,7 +651,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
               <a href="{{nw.url}}" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 700">元の記事を開く</a>
             </span>
           </sc-if>
-          <button type="button" aria-expanded="{{nw.expanded}}" onClick="{{nw.toggle}}" style="margin-top: auto; align-self: flex-start; min-height: 40px; padding: 0 14px; border: none; border-radius: 10px; background: #EEF1EC; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{nw.more}}</button>
+          <button type="button" aria-expanded="{{nw.expanded}}" onClick="{{nw.toggle}}" style="margin-top: auto; align-self: flex-start; min-height: 44px; padding: 0 14px; border: none; border-radius: 10px; background: #EEF1EC; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{nw.more}}</button>
         </article>
       </sc-for>
       <sc-if value="{{newsEmpty}}" hint-placeholder-val="{{ false }}">
@@ -657,7 +659,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-if>
     </div>
     <sc-if value="{{more.news.show}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{more.news.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.news.label}}</button>
+      <button type="button" onClick="{{more.news.go}}" style="{{more.news.style}}">{{more.news.label}}</button>
     </sc-if>
   </section>
   </sc-if>
@@ -696,7 +698,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <section role="dialog" aria-modal="true" aria-labelledby="notes-title" style="{{notesSheetStyle}}">
     <button type="button" aria-label="閉じる" onClick="{{closeNotes}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
-    <div style="display: flex; align-items: baseline; justify-content: space-between">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding-right: 52px">
       <h2 id="notes-title" style="margin: 0; font-size: 20px; font-weight: 900">申し送り</h2>
       <span style="font-size: 13px; color: #55605A">{{notesSummary}}</span>
     </div>
@@ -713,7 +715,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         </sc-if>
         <p style="margin: 0; font-size: 15px; line-height: 1.65">{{n.text}}</p>
         <sc-if value="{{n.unread}}" hint-placeholder-val="{{ true }}">
-          <button type="button" onClick="{{n.ack}}" style="align-self: flex-start; min-height: 40px; padding: 0 14px; border: none; border-radius: 12px; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">確認しました</button>
+          <button type="button" onClick="{{n.ack}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border: none; border-radius: 12px; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">確認しました</button>
         </sc-if>
         <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
           <span style="font-size: 12px; font-weight: 700; color: #2C6B52">確認済み</span>
@@ -736,7 +738,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <div role="status" aria-live="polite" style="{{toastStyle}}">
     <span style="flex: 1; font-size: 14px; font-weight: 500">{{toastMsg}}</span>
     <sc-if value="{{toastHasUndo}}" hint-placeholder-val="{{ true }}">
-      <button type="button" onClick="{{undo}}" style="min-height: 40px; padding: 0 12px; border: none; border-radius: 10px; background: rgba(255,255,255,0.14); color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">元に戻す</button>
+      <button type="button" onClick="{{undo}}" style="min-height: 44px; padding: 0 12px; border: none; border-radius: 10px; background: rgba(255,255,255,0.14); color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">元に戻す</button>
     </sc-if>
   </div>
 
@@ -908,7 +910,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="config.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
