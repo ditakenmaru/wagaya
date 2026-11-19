@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '18';
+  var APP_VERSION = '19';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1453,6 +1453,7 @@
     var secAll = secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x, k) { return { key: x[0], title: x[1], all: true, person: true, order: 50 + k, evening: 50 + k, travel: true }; }));
     /* 夜（設定の時刻から）は「夜の順番」、旅行中は話題を一番上に */
     var ordOf = function (c) {
+      if (c.key === 'photos') return -2;   /* 写真は見出しなので、いつも一番上 */
       if (travel && c.key === 'topics') return -1;
       if (morning && c.morning != null) return c.morning;
       if (evening && c.evening != null) return c.evening;
@@ -1509,7 +1510,9 @@
       var greet = (tod === 'morning' ? 'おはよう、' : tod === 'day' ? 'こんにちは、' : 'おつかれさま、') + meWho;
       var tot = mine.length, dn = mine.filter(function (d) { return done[d.id]; }).length;
       var turn = myUnread.length + myTurnDecide;
-      var chip = function (on) { return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 92px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; color: ' + (on ? '#17201B' : '#FFFFFF') + '; background: ' + (on ? '#FFFFFF' : 'rgba(255,255,255,0.14)'); };
+      var onPhoto = curTab === tabNames[0] && sections.some(function (x) { return x.key === 'photos' && !x.wrapStyle; });
+      var chip = function (on) { if (onPhoto) return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 86px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(23,32,27,0.06); color: ' + (on ? '#FFFFFF' : '#17201B') + '; background: ' + (on ? '#17201B' : '#FFFFFF');
+        return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 92px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; color: ' + (on ? '#17201B' : '#FFFFFF') + '; background: ' + (on ? '#FFFFFF' : 'rgba(255,255,255,0.14)'); };
       var chips = [];
       chips.push({ k: '今日の担当', v: tot ? dn + ' / ' + tot : 'なし', sub: tot && dn === tot ? 'ぜんぶ終わり' : '', style: chip(false),
         go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-sec="flow"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 80); } });
@@ -1539,8 +1542,9 @@
         : tid === 'plan' ? [plansRaw.length ? '今週の予定 ' + plansRaw.length + '件' : '今週の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
+      var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && !x.wrapStyle; });
       return {
-        big: isHomeTab, small: !isHomeTab, newChip: newChip, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
+        big: isHomeTab && !photoHero, small: !isHomeTab, inPhoto: photoHero, newChip: newChip, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
         smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
         smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
         wx: wx, hasWx: !!wx,
@@ -1649,7 +1653,7 @@
       toggleHide: function () { self.setState({ hideBought: !self.state.hideBought }); },
       plans: plans,
       noPhotos: o.length === 0,
-      figStyle: 'margin: 0 16px 12px; position: relative; height: ' + (o.length ? 448 : (D.photosReady ? 220 : 160)) + 'px; border-radius: 24px; overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
+      figStyle: 'margin: 10px 12px 0; position: relative; height: ' + (o.length ? 310 : 280) + 'px; border-radius: 28px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
       photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : 'ここに子どもたちの写真が流れます。',
       slides: o.map(function (m, i) {
         var on = i === cur;
@@ -1672,7 +1676,7 @@
         if (y < 0) return '';
         return (ui.kidsLabel ? ui.kidsLabel + ' ' : '') + y + '歳' + m + 'か月' + (dd ? dd + '日' : '');
       })(),
-      capStyle: 'position: absolute; left: 20px; bottom: 18px; display: flex; flex-direction: column; gap: 2px; color: #FFFFFF; pointer-events: none; animation: ' + (st.slideIdx % 2 ? 'capIn' : 'capIn2') + ' .8s cubic-bezier(.2,.8,.2,1) .2s both',
+      capStyle: 'position: absolute; left: 20px; right: 20px; bottom: 18px; display: flex; flex-direction: column; gap: 2px; color: #FFFFFF; pointer-events: none; animation: ' + (st.slideIdx % 2 ? 'capIn' : 'capIn2') + ' .8s cubic-bezier(.2,.8,.2,1) .2s both',
       nextSlide: function () { if (o.length) self.setState({ slideIdx: self.state.slideIdx + 1, slideAt: Date.now() }); },
       togglePause: function () { self.setState({ paused: !self.state.paused, slideAt: Date.now() }); },
       paused: st.paused, playing: !st.paused,
@@ -1755,6 +1759,9 @@
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
+    /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
+    R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
+    R.notesTop = R.notesHere && !R.hdr.inPhoto; R.notesInHero = R.notesHere && !!R.hdr.inPhoto;   /* 申し送りの入口も写真の下へ */
     /* 見出しの「新着」は、いま画面に出ているものだけ数える（今日でない担当や、しぼって隠れた分は数えない） */
     var visSec = {}; sections.forEach(function (x) { if (!x.wrapStyle) visSec[x.key] = true; });
     var cnt = function (list) { return (list || []).filter(function (x) { return x.isNew; }).length; };
