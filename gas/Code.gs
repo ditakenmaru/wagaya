@@ -47,7 +47,7 @@ function doPost(e) {
     switch (action) {
       case 'boot': return out({ ok: true, data: boot(req, me) });
       case 'photos': return out({ ok: true, photos: photoList() });
-      case 'photo': return out(photo(String(req.id || '')));
+      case 'photosBatch': return out(photosBatch(req.ids));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
@@ -242,32 +242,59 @@ function photoList() {
   } catch (err) { console.error(err); return []; }
 }
 
-/* 写真1枚（写真フォルダの中のものだけ返す）。縮小した画像をしばらく覚えておく */
-function photo(id) {
+/* 写真をまとめて返す（写真フォルダの中のものだけ）。覚えている分はすぐ返し、足りない分は並行して取る */
+function photosBatch(ids) {
   var folderId = settings()['写真フォルダID'];
-  if (!folderId || !id) return { ok: false, code: 'not_found' };
+  if (!folderId) return { ok: true, photos: {} };
+  var want = {};
+  (ids || []).forEach(function (id) { want[String(id)] = 1; });
+  var q = "'" + folderId.replace(/'/g, '') + "' in parents and mimeType contains 'image/' and trashed = false";
+  var files;
+  try { files = Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || []; }
+  catch (err) { console.error(err); return { ok: true, photos: {} }; }
+  var out = {}, need = [];
+  files.forEach(function (f) {
+    if (!want[f.id]) return;
+    var src = photoCacheGet(f.id);
+    if (src) out[f.id] = src; else if (f.thumbnailLink) need.push(f);
+  });
+  if (need.length) {
+    var token = ScriptApp.getOAuthToken();
+    var res = UrlFetchApp.fetchAll(need.map(function (f) {
+      return { url: f.thumbnailLink.replace(/=s\d+$/, '=s800'), headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true };
+    }));
+    res.forEach(function (r, i) {
+      if (r.getResponseCode() !== 200) return;
+      var src = 'data:' + (r.getHeaders()['Content-Type'] || 'image/jpeg') + ';base64,' + Utilities.base64Encode(r.getContent());
+      out[need[i].id] = src;
+      photoCachePut(need[i].id, src);
+    });
+  }
+  return { ok: true, photos: out };
+}
+
+/* 1時間ごとに写真を先に用意しておく（setupで予約される） */
+function warmPhotos() {
+  photosBatch(photoList().map(function (p) { return p.id; }));
+}
+
+function photoCacheGet(id) {
   var cache = CacheService.getScriptCache(), key = 'p_' + id;
   var n = Number(cache.get(key + '_n') || 0);
-  if (n) {
-    var keys = [];
-    for (var i = 0; i < n; i++) keys.push(key + '_' + i);
-    var got = cache.getAll(keys), parts = [];
-    for (var k = 0; k < n; k++) { if (!got[keys[k]]) { parts = null; break; } parts.push(got[keys[k]]); }
-    if (parts) return { ok: true, src: parts.join('') };
-  }
-  var f;
-  try { f = Drive.Files.get(id, { fields: 'id,parents,thumbnailLink' }); } catch (err) { return { ok: false, code: 'not_found' }; }
-  if (!f.parents || f.parents.indexOf(folderId) < 0 || !f.thumbnailLink) return { ok: false, code: 'not_found' };
-  var img = UrlFetchApp.fetch(f.thumbnailLink.replace(/=s\d+$/, '=s800'), { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-  if (img.getResponseCode() !== 200) return { ok: false, code: 'not_found' };
-  var src = 'data:' + (img.getHeaders()['Content-Type'] || 'image/jpeg') + ';base64,' + Utilities.base64Encode(img.getContent());
-  var put = {}, size = 90000, count = Math.ceil(src.length / size);
-  if (count <= 20) {
-    for (var j = 0; j < count; j++) put[key + '_' + j] = src.slice(j * size, (j + 1) * size);
-    put[key + '_n'] = String(count);
-    try { cache.putAll(put, 21600); } catch (e) {}
-  }
-  return { ok: true, src: src };
+  if (!n) return null;
+  var keys = [];
+  for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+  var got = cache.getAll(keys), parts = [];
+  for (var k = 0; k < n; k++) { if (!got[keys[k]]) return null; parts.push(got[keys[k]]); }
+  return parts.join('');
+}
+
+function photoCachePut(id, src) {
+  var key = 'p_' + id, size = 90000, count = Math.ceil(src.length / size), put = {};
+  if (count > 20) return;
+  for (var j = 0; j < count; j++) put[key + '_' + j] = src.slice(j * size, (j + 1) * size);
+  put[key + '_n'] = String(count);
+  try { CacheService.getScriptCache().putAll(put, 21600); } catch (e) {}
 }
 
 /* ================= 書き込み ================= */
@@ -427,6 +454,8 @@ function setup() {
   seed('予定', [
     [dd(6), '10:00', '公園へおでかけ（見本）', '家族']
   ]);
+  var hasWarm = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'warmPhotos'; });
+  if (!hasWarm) ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
   var first = ss.getSheets()[0];
   if (first.getName() === 'シート1' && first.getLastRow() === 0) ss.deleteSheet(first);
   SpreadsheetApp.getUi().alert('準備ができました。「設定」シートにクライアントIDと2人のメールアドレスを書いてください。');

@@ -274,30 +274,31 @@
     var slots = list.map(function () { return null; });
     var publish = function () { self.setState({ photos: slots.filter(Boolean) }); };
     var cacheP = (window.caches && window.isSecureContext) ? caches.open('wagaya-photos').catch(function () { return null; }) : Promise.resolve(null);
+    var url = function (p) { return location.origin + '/__photo/' + p.id + '?v=' + encodeURIComponent(p.v || ''); };
+    var show = function (i, blob) { slots[i] = { src: URL.createObjectURL(blob), pos: 'center 30%' }; publish(); };
     cacheP.then(function (cache) {
-      var queue = list.map(function (p, i) { return { p: p, i: i }; });
-      var url = function (p) { return location.origin + '/__photo/' + p.id + '?v=' + encodeURIComponent(p.v || ''); };
-      var one = function (job) {
-        var u = url(job.p);
-        return (cache ? cache.match(u) : Promise.resolve(null)).then(function (hit) {
-          if (hit) return hit.blob();
-          if (self.state.needLogin) return null;
-          return api('photo', { id: job.p.id }).then(function (res) {
-            return fetch(res.src).then(function (r) { return r.blob(); }).then(function (blob) {
-              if (cache) cache.put(u, new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } })).catch(function () {});
-              return blob;
+      /* 1) 端末に保存してある写真はすぐ出す */
+      return Promise.all(list.map(function (p, i) {
+        return (cache ? cache.match(url(p)) : Promise.resolve(null)).then(function (hit) { return hit ? hit.blob().then(function (b) { show(i, b); return true; }) : false; }).catch(function () { return false; });
+      })).then(function (have) {
+        /* 2) 足りない写真だけ、1回の通信でまとめて取る */
+        var missing = list.filter(function (_, i) { return !have[i]; });
+        if (!missing.length || self.state.needLogin) return;
+        return api('photosBatch', { ids: missing.map(function (p) { return p.id; }) }).then(function (res) {
+          return Promise.all(list.map(function (p, i) {
+            var src = res.photos && res.photos[p.id];
+            if (have[i] || !src) return null;
+            return fetch(src).then(function (r) { return r.blob(); }).then(function (blob) {
+              show(i, blob);
+              if (cache) return cache.put(url(p), new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } })).catch(function () {});
             });
-          });
-        }).then(function (blob) {
-          if (blob) { slots[job.i] = { src: URL.createObjectURL(blob), pos: 'center 30%' }; publish(); }
+          }));
         }).catch(function () {});
-      };
-      var worker = function () { var job = queue.shift(); return job ? one(job).then(worker) : Promise.resolve(); };
-      return Promise.all([worker(), worker(), worker()]).then(function () {
+      }).then(function () {
         if (!cache) return;
         var keep = {}; list.forEach(function (p) { keep[url(p)] = 1; });
-        cache.keys().then(function (reqs) { reqs.forEach(function (r) { if (!keep[r.url]) cache.delete(r); }); }).catch(function () {});
-      });
+        return cache.keys().then(function (reqs) { reqs.forEach(function (r) { if (!keep[r.url]) cache.delete(r); }); });
+      }).catch(function () {});
     });
   };
 
@@ -861,7 +862,7 @@
         var a = p.action;
         if (a === 'boot') return res({ ok: true, data: JSON.parse(JSON.stringify(db)) });
         if (a === 'photos') return res({ ok: true, photos: [] });
-        if (a === 'photo') return res({ ok: false });
+        if (a === 'photosBatch') return res({ ok: true, photos: {} });
         if (a === 'setDone') { if (p.done) db.done[p.taskId] = true; else delete db.done[p.taskId]; }
         if (a === 'setShop') { if (p.checked) db.checked[p.itemId] = true; else delete db.checked[p.itemId]; }
         if (a === 'addNote') db.notes.unshift(p.note);
