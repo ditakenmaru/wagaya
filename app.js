@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '11';
+  var APP_VERSION = '12';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -1346,14 +1346,44 @@
     var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['decide', 'ふたりで決めること'], ['deadline', '期限があるもの'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['weekend', '今週末'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
     var todayStr = ymd(now);
     var travel = !!(ui.tripFrom && ui.tripTo && todayStr >= ui.tripFrom && todayStr <= ui.tripTo);
-    var evening = nowMin >= (ui.eveningFrom || 1080);
+    /* 時刻で並びを変える：朝（朝の並びにする時刻〜終える時刻）・日中（ふだんの順番）・夜（夜の並びにする時刻〜）。
+       時刻の欄が空ならその並びは使わない（古いGASは eveningFrom だけ送ってくる） */
+    var tm = function (v, dflt) { return v === undefined ? dflt : (v === null || v === '' ? null : Number(v)); };
+    var mFrom = tm(ui.morningFrom, null), mTo = tm(ui.morningTo, null), eFrom = tm(ui.eveningFrom, 1080);
+    var morning = mFrom != null && mTo != null && nowMin >= mFrom && nowMin < mTo;
+    var evening = !morning && eFrom != null && nowMin >= eFrom;
+    /* 「いつもの並びにする」を押したら、その並び（朝・夜・旅行）が終わるまでふだんの並び */
+    var modeKey = travel ? 'travel:' + ui.tripFrom + '~' + ui.tripTo : morning ? 'morning:' + todayStr : evening ? 'evening:' + todayStr : '';
+    var plain = !!modeKey && LS.get('orderPlain') === modeKey;
+    var modeName = travel ? '旅行中' : morning ? '朝' : evening ? '夜' : '';
+    if (plain) { travel = false; morning = false; evening = false; }
+    var hhmmOf = function (m) { return Math.floor(m / 60) + ':' + pad(m % 60); };
+    var orderBanner = !modeKey ? { show: false } : {
+      show: true,
+      text: plain ? 'いつもの並びで出しています（' + modeName + 'の並びを止めています）'
+        : travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）'
+        : morning ? '朝の並びです（' + hhmmOf(mTo) + 'まで）'
+        : '夜の並びです（' + hhmmOf(eFrom) + 'から）',
+      btn: plain ? modeName + 'の並びに戻す' : 'いつもの並びにする',
+      toggle: function () {
+        if (plain) LS.del('orderPlain'); else LS.set('orderPlain', modeKey);
+        USAGE.add('act:order_' + (plain ? 'auto' : 'plain'));
+        self.setState({ orderTick: Date.now() });
+      },
+      style: 'display: flex; align-items: center; gap: 10px; margin: 0 16px 12px; padding: 8px 8px 8px 14px; border-radius: 14px; font-size: 13px; font-weight: 700; line-height: 1.5; ' + (travel ? 'background: #E3E7F6; color: #22337A' : 'background: #E6ECE4; color: #2C3A31')
+    };
     var secCfg = ui.sections && ui.sections.length ? ui.sections : SEC_DEF.map(function (x, k) { return { key: x[0], title: x[1], all: true, person: x[0] !== 'photos', order: k }; });
     var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
     var title = {}, sections = [];
     SEC_DEF.forEach(function (x) { title[x[0]] = (secByKey[x[0]] && secByKey[x[0]].title) || x[1]; });
     var secAll = secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x, k) { return { key: x[0], title: x[1], all: true, person: true, order: 50 + k, evening: 50 + k, travel: true }; }));
     /* 夜（設定の時刻から）は「夜の順番」、旅行中は話題を一番上に */
-    var ordOf = function (c) { if (travel && c.key === 'topics') return -1; return evening && c.evening != null ? c.evening : (c.order != null ? c.order : 99); };
+    var ordOf = function (c) {
+      if (travel && c.key === 'topics') return -1;
+      if (morning && c.morning != null) return c.morning;
+      if (evening && c.evening != null) return c.evening;
+      return c.order != null ? c.order : 99;
+    };
     /* 下のタブ：セクションごとに「画面」の「下のタブ」。旅行中は話題を最初のタブへ */
     var tabOf = function (c) { if (travel && c.key === 'topics') return TAB_ORDER[0]; return c.tab || DEF_TAB[c.key] || TAB_ORDER[0]; };
     var shown = [], tabHas = {};
@@ -1396,7 +1426,7 @@
     var notesHere = curTab === twoTab || (isHome && myUnread.length > 0);
 
     var R = {
-      sections: sections, title: title, planNote: '', travelOn: travel,
+      sections: sections, title: title, planNote: '', travelOn: travel, orderBanner: orderBanner,
       navTabs: navTabs, navStyle: 'position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25',
       notesHere: notesHere,
       notesCardText: myUnread.length ? 'あなた宛てが ' + myUnread.length + '件あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),

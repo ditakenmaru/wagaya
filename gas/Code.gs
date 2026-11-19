@@ -24,7 +24,7 @@ var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
   '設定': ['項目', '値', '説明'],
-  '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明', '下のタブ'],
+  '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明', '下のタブ', '朝の順番'],
   '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人'],
@@ -65,24 +65,26 @@ var SETTING_ROWS = [
   ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
   ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）'],
   ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
-  ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする']
+  ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
+  ['朝の並びにする時刻', '5:00', 'この時刻から「朝の並びを終える時刻」までは「朝の順番」で並べる。空なら朝の並びは使わない'],
+  ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
-/* キー, 見出し, みんなのタブ, 人のタブ, 順番, 夜の順番, 旅行中, 見る人（空＝2人とも。'人1'＝人1だけ）, 説明, 下のタブ（アプリの下の切り替え。同じ名前のものが同じ画面に出る） */
+/* キー, 見出し, みんなのタブ, 人のタブ, 順番, 夜の順番, 旅行中, 見る人（空＝2人とも。'人1'＝人1だけ）, 説明, 下のタブ（アプリの下の切り替え。同じ名前のものが同じ画面に出る）, 朝の順番 */
 var SCREEN_ROWS = [
-  ['photos', '写真', true, false, 1, 0, true, '', '子どもの写真のスライド', '今日'],
-  ['hero', 'つぎの担当', true, true, 2, 1, false, '', '大きな時計と時間帯の帯', '今日'],
-  ['flow', '今日の流れ', true, true, 3, 2, false, '', '今日の担当のチェック', '今日'],
-  ['decide', 'ふたりで決めること', true, true, 3.6, 3, true, '', '相談中のことに、それぞれが答える（「相談」シート）', 'ふたりで'],
-  ['deadline', '期限があるもの', true, true, 3.7, 6, true, '', '書類・支払い・予約などの期限（「期限」シート）', 'ふたりで'],
-  ['topics', '話題', true, true, 3.5, 9, true, '', '旅のしおりなど、いま話している資料へのリンク（「話題」シート）', '予定'],
-  ['diary', '今日の日記', true, true, 4, 10, true, '', '気づき・成長のメモ', '今日'],
-  ['week', '今週のごはん', true, true, 5, 4, false, '', '献立。材料を買い物リストへ送れる', 'ごはん'],
-  ['shop', '買い物リスト', true, true, 6, 5, false, '', '', 'ごはん'],
-  ['weekend', '今週末', true, true, 6.5, 7, false, '', 'お出かけの候補と決まったところ（「お出かけ」シート）', '予定'],
-  ['plan', '今週の予定', true, true, 7, 8, true, '', '人のタブでは、その人と家族の予定だけ', '予定'],
-  ['news', 'ピックアップニュース', true, true, 8, 12, false, '人1', '見る人を人1にすると、人1がログインした時だけ出る', 'ニュース']
+  ['photos', '写真', true, false, 1, 0, true, '', '子どもの写真のスライド', '今日', 0],
+  ['hero', 'つぎの担当', true, true, 2, 1, false, '', '大きな時計と時間帯の帯', '今日', 1],
+  ['flow', '今日の流れ', true, true, 3, 2, false, '', '今日の担当のチェック', '今日', 2],
+  ['decide', 'ふたりで決めること', true, true, 3.6, 3, true, '', '相談中のことに、それぞれが答える（「相談」シート）', 'ふたりで', 5],
+  ['deadline', '期限があるもの', true, true, 3.7, 6, true, '', '書類・支払い・予約などの期限（「期限」シート）', 'ふたりで', 4],
+  ['topics', '話題', true, true, 3.5, 9, true, '', '旅のしおりなど、いま話している資料へのリンク（「話題」シート）', '予定', 9],
+  ['diary', '今日の日記', true, true, 4, 10, true, '', '気づき・成長のメモ', '今日', 11],
+  ['week', '今週のごはん', true, true, 5, 4, false, '', '献立。材料を買い物リストへ送れる', 'ごはん', 7],
+  ['shop', '買い物リスト', true, true, 6, 5, false, '', '', 'ごはん', 8],
+  ['weekend', '今週末', true, true, 6.5, 7, false, '', 'お出かけの候補と決まったところ（「お出かけ」シート）', '予定', 10],
+  ['plan', '今週の予定', true, true, 7, 8, true, '', '人のタブでは、その人と家族の予定だけ', '予定', 3],
+  ['news', 'ピックアップニュース', true, true, 8, 12, false, '人1', '見る人を人1にすると、人1がログインした時だけ出る', 'ニュース', 6]
 ];
 
 /* ================= 入口 ================= */
@@ -182,7 +184,13 @@ function settings() {
   var hit = cache.get(key);
   if (hit) return (_cfg = JSON.parse(hit));
   var s = {};
-  rowsOf('設定').forEach(function (r) { var k = String(r['項目'] || '').trim(); if (k) s[k] = String(r['値'] == null ? '' : r['値']).trim(); });
+  rowsOf('設定').forEach(function (r) {
+    var k = String(r['項目'] || '').trim(); if (!k) return;
+    var v = r['値'];
+    /* 「18:00」と打つとシートが時刻の型にする。文字の「18:00」にそろえる（1900年より前の日付は時刻だけの値） */
+    if (v && typeof v.getFullYear === 'function' && v.getFullYear() < 1901) v = Utilities.formatDate(v, TZ, 'H:mm');
+    s[k] = String(v == null ? '' : v).trim();
+  });
   try { cache.put(key, JSON.stringify(s), 21600); } catch (e) {}
   return (_cfg = s);
 }
@@ -364,7 +372,8 @@ function buildBoot(today) {
       timeStart: minutes(s['時間帯のはじまり']) || 360, timeEnd: minutes(s['時間帯のおわり']) || 1260,
       kidsLabel: s['子どもの呼び方'] || '', kidsBirth: normDate(s['子どもの誕生日']),
       noMenuDish: s['献立がない日の料理名'] || 'まだ決まっていません', noMenuNote: s['献立がない日のメモ'] || '',
-      eveningFrom: minutes(s['夜の並びにする時刻']) || 1080,
+      eveningFrom: timeOrNull(s['夜の並びにする時刻'], 1080),
+      morningFrom: timeOrNull(s['朝の並びにする時刻'], null), morningTo: timeOrNull(s['朝の並びを終える時刻'], null),
       tripFrom: trip[0] || '', tripTo: trip[1] || ''
     }
   };
@@ -390,12 +399,13 @@ function screenRows() {
     var num = r && r['順番'] !== '' && r['順番'] != null && !isNaN(Number(r['順番'])) ? Number(r['順番']) : d[4];
     var has = function (h) { return r && r[h] !== '' && r[h] != null; };
     var eve = has('夜の順番') && !isNaN(Number(r['夜の順番'])) ? Number(r['夜の順番']) : d[5];
+    var morn = has('朝の順番') && !isNaN(Number(r['朝の順番'])) ? Number(r['朝の順番']) : d[10];
     var viewer = has('見る人') ? text(r['見る人']) : (r && ('見る人' in r) ? '' : d[7]);
     return {
       key: d[0], title: r && text(r['見出し']) || d[1],
       all: has('みんなのタブ') ? truthy(r['みんなのタブ']) : d[2],
       person: has('人のタブ') ? truthy(r['人のタブ']) : d[3],
-      order: num + i / 100, evening: eve + i / 100,
+      order: num + i / 100, evening: eve + i / 100, morning: morn + i / 100,
       travel: has('旅行中') ? truthy(r['旅行中']) : d[6],
       tab: has('下のタブ') ? text(r['下のタブ']) : d[9],
       viewer: viewerOf(viewer)
@@ -966,6 +976,8 @@ function normTime(v) {
   var m = String(v || '').match(/^(\d{1,2})[:：](\d{2})/);
   return m ? Number(m[1]) + ':' + m[2] : '';
 }
+/* 設定の時刻：行が無ければ初期値、空なら null（その並びを使わない） */
+function timeOrNull(v, dflt) { if (v === undefined) return dflt; return normTime(v) ? minutes(v) : null; }
 function minutes(v) { var t = normTime(v); if (!t) return 0; var p = t.split(':'); return Number(p[0]) * 60 + Number(p[1]); }
 function truthy(v) { return v === true || v === 'TRUE' || v === 'true' || v === '済' || v === '○' || v === 1; }
 function dayMatch(rule, dow) {
@@ -1030,7 +1042,7 @@ function setup() {
   scr.rows.forEach(function (r) { keys[text(r['キー'])] = 1; });
   SCREEN_ROWS.forEach(function (row) {
     if (keys[row[0]]) return;
-    appendObj('画面', { 'キー': row[0], '見出し': row[1], 'みんなのタブ': row[2], '人のタブ': row[3], '順番': row[4], '夜の順番': row[5], '旅行中': row[6], '見る人': row[7], '説明': row[8], '下のタブ': row[9] });
+    appendObj('画面', { 'キー': row[0], '見出し': row[1], 'みんなのタブ': row[2], '人のタブ': row[3], '順番': row[4], '夜の順番': row[5], '旅行中': row[6], '見る人': row[7], '説明': row[8], '下のタブ': row[9], '朝の順番': row[10] });
   });
   _tables = {};
   scr = table('画面');
@@ -1042,6 +1054,7 @@ function setup() {
     if (newCols.indexOf('旅行中') >= 0 && (r['旅行中'] === '' || r['旅行中'] == null)) o['旅行中'] = d[6];
     if (newCols.indexOf('見る人') >= 0 && d[7] && (r['見る人'] === '' || r['見る人'] == null)) o['見る人'] = d[7];
     if (newCols.indexOf('下のタブ') >= 0 && (r['下のタブ'] === '' || r['下のタブ'] == null)) o['下のタブ'] = d[9];
+    if (newCols.indexOf('朝の順番') >= 0 && (r['朝の順番'] === '' || r['朝の順番'] == null)) o['朝の順番'] = d[10];
     if (Object.keys(o).length) setCells('画面', r._row, o);
   });
   _tables = {};

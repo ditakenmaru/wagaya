@@ -92,7 +92,10 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 
   <sc-if value="{{ready}}" hint-placeholder-val="{{ true }}">
   <div style="display: flex; flex-direction: column">
-  <sc-if value="{{travelOn}}" hint-placeholder-val="{{ false }}"><p role="status" style="margin: 0 16px 12px; padding: 10px 14px; border-radius: 14px; background: #E3E7F6; color: #22337A; font-size: 13px; font-weight: 700; line-height: 1.6">{{travelText}}</p></sc-if>
+  <sc-if value="{{orderBanner.show}}" hint-placeholder-val="{{ false }}"><div role="status" style="{{orderBanner.style}}">
+    <span style="flex: 1">{{orderBanner.text}}</span>
+    <button type="button" onClick="{{orderBanner.toggle}}" style="flex-shrink: 0; min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid currentColor; background: #FFFFFF; color: inherit; font-size: 12px; font-weight: 700; cursor: pointer">{{orderBanner.btn}}</button>
+  </div></sc-if>
   <sc-if value="{{notesHere}}" hint-placeholder-val="{{ false }}">
     <button type="button" onClick="{{openNotes}}" aria-label="{{notesNavLabel}}" style="{{notesCardStyle}}">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#17201B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>
@@ -857,7 +860,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="config.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

@@ -158,6 +158,15 @@ row[head.indexOf('順番')] = 0; row[head.indexOf('見出し')] = 'ニュース'
 env.refreshApp();
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.data.ui.sections[0].key === 'news' && b2.data.ui.sections[0].title === 'ニュース', '画面: 順番と見出し');
+// 朝・夜の並びの時刻：時刻の型（1899年の日付）でも読める。空ならその並びを使わない
+ok(b2.data.ui.morningFrom === 300 && b2.data.ui.morningTo === 540 && b2.data.ui.eveningFrom === 1080, '時刻: 朝5:00〜9:00・夜18:00（初期値）');
+ok(b2.data.ui.sections.find(x => x.key === 'plan').morning < b2.data.ui.sections.find(x => x.key === 'week').morning, '画面: 朝の順番（予定がごはんより先）');
+const setRow = k => env.ss.getSheetByName('設定').data.find(r => r[0] === k);
+setRow('夜の並びにする時刻')[1] = new Date(Date.UTC(1899, 11, 30, 10, 30));   // 東京で19:30の時刻の値
+setRow('朝の並びにする時刻')[1] = '';
+env.refreshApp();
+b2 = post(env, { action: 'boot', session: S, today });
+ok(b2.data.ui.eveningFrom === 19 * 60 + 30 && b2.data.ui.morningFrom === null, '時刻: 時刻の型は19:30として読み、空の朝はnull');
 ok(env.toasts.some(t => t.indexOf('反映') >= 0), 'メニュー: アプリに反映のお知らせ');
 
 // カレンダーの頭の名前
