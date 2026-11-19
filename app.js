@@ -6,6 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
+  var APP_VERSION = '5';
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
     get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -191,7 +192,9 @@
       mounted: {}, seen: {}, goal: 'all', goalAnim: 0, newsOpen: {},
       planDay: null, planAnim: 0,
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
-      accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false
+      accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
+      flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
+      fbOpen: false, fbDraft: '', topicEdit: false
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -225,7 +228,7 @@
       el.classList.toggle('spin', !!spin);
       if (txt) label.textContent = txt;
     };
-    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen; };
+    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen || s.editor || s.fbOpen; };
     document.addEventListener('touchstart', function (e) {
       y0 = (window.scrollY <= 0 && e.touches.length === 1 && !blocked() && !self.pulling) ? e.touches[0].clientY : null;
       dist = 0; el.style.transition = 'none';
@@ -310,10 +313,11 @@
     }).then(function (ok) { self.inflight = null; return ok; });
     return this.inflight;
   };
-  /* 写真：一覧はbootで受け取り、1枚ずつ取りに行って端末に保存する（2回目からはすぐ出る） */
+  /* 写真と動画：一覧はbootで受け取る。1コマ目（写真・動画のサムネイル）を1回の通信でまとめて取り、
+   * 動画の中身はそのあと1本ずつ取る。どれも端末に保存し、2回目からはすぐ出る */
   App.prototype.loadPhotos = function (list) {
     var self = this;
-    list = (list || []).slice(0, 8);
+    list = (list || []).slice(0, 10);
     var key = list.map(function (p) { return p.id + p.v; }).join('|');
     if (key === this.photoKey) return;
     this.photoKey = key;
@@ -321,13 +325,16 @@
     var publish = function () { self.setState({ photos: slots.filter(Boolean) }); };
     var cacheP = (window.caches && window.isSecureContext) ? caches.open('wagaya-photos').catch(function () { return null; }) : Promise.resolve(null);
     var url = function (p) { return location.origin + '/__photo/' + p.id + '?v=' + encodeURIComponent(p.v || ''); };
-    var show = function (i, blob) { slots[i] = { src: URL.createObjectURL(blob), pos: 'center 30%' }; publish(); };
+    var vurl = function (p) { return location.origin + '/__video/' + p.id + '?v=' + encodeURIComponent(p.v || ''); };
+    var base = function (i) { var p = list[i]; return slots[i] || { id: p.id, video: !!p.video, big: !!p.big, pos: 'center 30%' }; };
+    var show = function (i, blob) { slots[i] = Object.assign({}, base(i), { src: URL.createObjectURL(blob) }); publish(); };
+    var play = function (i, blob) { slots[i] = Object.assign({}, base(i), { vsrc: URL.createObjectURL(blob) }); publish(); };
     cacheP.then(function (cache) {
-      /* 1) 端末に保存してある写真はすぐ出す */
+      /* 1) 端末に保存してある1コマ目はすぐ出す */
       return Promise.all(list.map(function (p, i) {
         return (cache ? cache.match(url(p)) : Promise.resolve(null)).then(function (hit) { return hit ? hit.blob().then(function (b) { show(i, b); return true; }) : false; }).catch(function () { return false; });
       })).then(function (have) {
-        /* 2) 足りない写真だけ、1回の通信でまとめて取る */
+        /* 2) 足りない1コマ目だけ、1回の通信でまとめて取る */
         var missing = list.filter(function (_, i) { return !have[i]; });
         if (!missing.length || self.state.needLogin) return;
         return api('photosBatch', { ids: missing.map(function (p) { return p.id; }) }).then(function (res) {
@@ -341,8 +348,26 @@
           }));
         }).catch(function () {});
       }).then(function () {
+        /* 3) 動画の中身を1本ずつ（大きすぎる動画は1コマだけ） */
+        return list.reduce(function (chain, p, i) {
+          if (!p.video || p.big) return chain;
+          return chain.then(function () {
+            return (cache ? cache.match(vurl(p)) : Promise.resolve(null)).then(function (hit) {
+              if (hit) return hit.blob().then(function (b) { play(i, b); });
+              if (self.state.needLogin) return;
+              return api('video', { id: p.id }).then(function (res) {
+                var bin = atob(res.data), arr = new Uint8Array(bin.length);
+                for (var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+                var blob = new Blob([arr], { type: res.type || 'video/mp4' });
+                play(i, blob);
+                if (cache) return cache.put(vurl(p), new Response(blob, { headers: { 'Content-Type': blob.type } })).catch(function () {});
+              });
+            }).catch(function () {});
+          });
+        }, Promise.resolve());
+      }).then(function () {
         if (!cache) return;
-        var keep = {}; list.forEach(function (p) { keep[url(p)] = 1; });
+        var keep = {}; list.forEach(function (p) { keep[url(p)] = 1; keep[vurl(p)] = 1; });
         return cache.keys().then(function (reqs) { reqs.forEach(function (r) { if (!keep[r.url]) cache.delete(r); }); });
       }).catch(function () {});
     });
@@ -487,9 +512,173 @@
     this.send('ackNote', { id: n.id, read: val }, function () { flip(!val); });
   };
 
+  /* ---------- 担当・買い物の編集（先に画面を変え、失敗したら戻す） ---------- */
+  function hhmm(t) { return t ? pad(Math.floor(t / 60)) + ':' + pad(t % 60) : ''; }
+  function minOf(s) { var m = String(s || '').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : 0; }
+  function dayMatch(rule, dow) {
+    rule = String(rule || '').trim();
+    if (!rule || rule === '毎日') return true;
+    if (rule === '平日') return dow >= 1 && dow <= 5;
+    if (rule === '土日' || rule === '週末') return dow === 0 || dow === 6;
+    return rule.indexOf(DOWS[dow]) >= 0;
+  }
+  function ruleDays(rule) { return DOWS.map(function (_, i) { return dayMatch(rule, i); }); }
+  function daysRule(on) {
+    var s = DOWS.filter(function (_, i) { return on[i]; }).join('');
+    if (s.length === 7) return '毎日';
+    if (s === '月火水木金') return '平日';
+    if (s === '日土') return '土日';
+    return s;
+  }
+  App.prototype.snapshot = function () {
+    var self = this, before = JSON.stringify(this.state.data || {});
+    return function () { var d = JSON.parse(before); LS.set('boot', d); self.setState({ data: d }); };
+  };
+  App.prototype.openDuty = function (d) {
+    var D = this.state.data || {};
+    var all = d ? ((D.dutiesAll || []).filter(function (x) { return x.id === d.id; })[0] || d) : null;
+    var who = this.state.who !== 'all' && this.names().indexOf(this.state.who) >= 0 ? this.state.who : this.meWho();
+    this.setState({ editor: {
+      kind: 'duty', isNew: !d, id: d ? d.id : uid('d'), task: d ? d.task : '', time: d ? hhmm(d.t) : '',
+      who: d ? d.who : who, once: all ? !!all.date : true, rule: (all && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date())
+    } });
+  };
+  App.prototype.editSet = function (k, v) { var e = Object.assign({}, this.state.editor); e[k] = v; this.setState({ editor: e }); };
+  App.prototype.saveDuty = function () {
+    var self = this, e = this.state.editor, task = (e.task || '').trim();
+    if (!task) { this.showToast('やることを入力してください', null); return; }
+    var rule = e.once ? '' : (e.rule || '毎日');
+    var d = { id: e.id, task: task, time: e.time, who: e.who, rule: rule, date: e.once ? e.date : '' };
+    var revert = this.snapshot();
+    this.mutate(function (D) {
+      var row = { id: d.id, t: minOf(d.time), task: task, who: d.who, rule: rule || '毎日', date: d.date };
+      D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== d.id; }).concat([row]);
+      var today = parseYmd(D.today || ymd(new Date()));
+      var on = d.date ? d.date === D.today : dayMatch(rule, today.getDay());
+      D.duties = (D.duties || []).filter(function (x) { return x.id !== d.id; });
+      if (on) D.duties.push({ id: d.id, t: row.t, task: task, who: d.who, once: !!d.date });
+    });
+    this.setState({ editor: null });
+    this.send('saveDuty', { duty: d }, revert);
+    this.showToast(e.isNew ? '「' + task + '」を足しました' : '「' + task + '」を直しました', null);
+  };
+  App.prototype.deleteDuty = function () {
+    var self = this, e = this.state.editor;
+    var revert = this.snapshot();
+    var old = (this.state.data.dutiesAll || []).filter(function (x) { return x.id === e.id; })[0];
+    this.mutate(function (D) {
+      D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== e.id; });
+      D.duties = (D.duties || []).filter(function (x) { return x.id !== e.id; });
+    });
+    this.setState({ editor: null });
+    this.send('deleteDuty', { id: e.id }, revert);
+    this.showToast('「' + e.task + '」を消しました', old ? function () {
+      revert(); self.send('saveDuty', { duty: { id: old.id, task: old.task, time: hhmm(old.t), who: old.who, rule: old.date ? '' : old.rule, date: old.date } }); self.setState({ toast: null });
+    } : null);
+  };
+
+  App.prototype.addShopItem = function (name, qty, cat) {
+    name = String(name || '').trim();
+    if (!name) { this.showToast('品名を入力してください', null); return; }
+    var D = this.state.data || {}, groups = (D.shop && D.shop.groups) || [];
+    cat = cat || (groups[0] && groups[0].label) || 'その他';
+    var id = uid('s'), week = (D.shop && D.shop.week) || ymd(new Date());
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      d.shop = d.shop || { week: week, groups: [] };
+      var g = d.shop.groups.filter(function (x) { return x.label === cat; })[0];
+      if (!g) { g = { label: cat, items: [] }; d.shop.groups.push(g); }
+      g.items.push([id, name, qty || '']);
+      d.shopSuggest = (d.shopSuggest || []).filter(function (x) { return x.name !== name; });
+    });
+    this.send('saveShop', { item: { id: id, name: name, qty: qty || '', cat: cat, week: week } }, revert);
+    this.showToast(name + 'をリストに足しました', null);
+  };
+  App.prototype.addShopFromForm = function () {
+    var st = this.state, D = st.data || {}, groups = (D.shop && D.shop.groups) || [];
+    var cats = groups.map(function (g) { return g.label; }); if (cats.indexOf('その他') < 0) cats.push('その他');
+    var cat = st.shopCat && cats.indexOf(st.shopCat) >= 0 ? st.shopCat : cats[0];
+    var name = (st.shopDraft || '').trim();
+    if (!name) { this.showToast('品名を入力してください', null); return; }
+    this.addShopItem(name, (st.shopQty || '').trim(), cat);
+    this.setState({ shopDraft: '', shopQty: '' });
+  };
+  App.prototype.openShop = function (x, cat) {
+    this.setState({ editor: { kind: 'shop', isNew: false, id: x[0], name: x[1], qty: x[2] || '', cat: cat } });
+  };
+  App.prototype.saveShopEdit = function () {
+    var e = this.state.editor, name = (e.name || '').trim();
+    if (!name) { this.showToast('品名を入力してください', null); return; }
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      var groups = d.shop.groups;
+      groups.forEach(function (g) { g.items = g.items.filter(function (x) { return x[0] !== e.id; }); });
+      var g = groups.filter(function (x) { return x.label === e.cat; })[0];
+      if (!g) { g = { label: e.cat, items: [] }; groups.push(g); }
+      g.items.push([e.id, name, e.qty || '']);
+      d.shop.groups = groups.filter(function (x) { return x.items.length; });
+    });
+    this.setState({ editor: null });
+    this.send('saveShop', { item: { id: e.id, name: name, qty: e.qty || '', cat: e.cat } }, revert);
+  };
+  App.prototype.deleteShop = function () {
+    var self = this, e = this.state.editor;
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      d.shop.groups.forEach(function (g) { g.items = g.items.filter(function (x) { return x[0] !== e.id; }); });
+      d.shop.groups = d.shop.groups.filter(function (x) { return x.items.length; });
+    });
+    this.setState({ editor: null });
+    this.send('deleteShop', { id: e.id }, revert);
+    this.showToast(e.name + 'をリストから消しました', null);
+  };
+
+  App.prototype.sendFeedback = function () {
+    var self = this, text = (this.state.fbDraft || '').trim();
+    if (!text) { this.showToast('書きたいことを入力してください', null); return; }
+    var ua = navigator.userAgent, os = (ua.match(/OS (\d+)_(\d+)/) || []).slice(1).join('.');
+    var screen = 'v' + APP_VERSION + ' / タブ:' + (this.state.who === 'all' ? 'みんな' : this.state.who) + ' / ' + (/iPhone/.test(ua) ? 'iPhone iOS' + os : ua.slice(0, 60)) + ' / ' + (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches ? 'ホーム画面' : 'ブラウザ');
+    this.setState({ fbOpen: false, fbDraft: '' });
+    api('addFeedback', { feedback: { text: text, screen: screen } }).then(function () {
+      self.showToast('要望を送りました。次の修正で見ます', null);
+    }).catch(function () {
+      self.setState({ fbOpen: true, fbDraft: text });
+      self.showToast('送れませんでした。通信を確かめて、もう一度お試しください', null);
+    });
+  };
+
+  /* 話題（旅のしおりなどのリンク） */
+  App.prototype.openTopic = function (t) {
+    this.setState({ editor: { kind: 'topic', isNew: !t, id: t ? t.id : uid('t'), title: t ? t.title : '', url: t ? t.url : '', note: t ? t.note : '' } });
+  };
+  App.prototype.saveTopic = function () {
+    var e = this.state.editor, title = (e.title || '').trim(), url = (e.url || '').trim();
+    if (!title) { this.showToast('見出しを入力してください', null); return; }
+    if (url && !/^https:\/\/\S+$/.test(url)) { this.showToast('リンクは https:// から始まるものを入れてください', null); return; }
+    var t = { id: e.id, title: title, url: url, note: (e.note || '').trim() };
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      var now = new Date(), list = (d.topics || []).filter(function (x) { return x.id !== t.id; });
+      d.topics = e.isNew ? [Object.assign({ date: (now.getMonth() + 1) + '/' + now.getDate() }, t)].concat(list) : (d.topics || []).map(function (x) { return x.id === t.id ? Object.assign({}, x, t) : x; });
+    });
+    this.setState({ editor: null });
+    this.send('saveTopic', { topic: t }, revert);
+    this.showToast(e.isNew ? '話題に「' + title + '」を足しました' : '話題を直しました', null);
+  };
+  App.prototype.deleteTopic = function () {
+    var e = this.state.editor, revert = this.snapshot();
+    this.mutate(function (d) { d.topics = (d.topics || []).filter(function (x) { return x.id !== e.id; }); });
+    this.setState({ editor: null });
+    this.send('deleteTopic', { id: e.id }, revert);
+    this.showToast('話題から消しました', null);
+  };
+
   /* 写真のスライド */
   App.prototype.media = function () {
-    return (this.state.photos || []).map(function (p) { return { type: 'photo', src: p.src, dur: 5, pos: p.pos || 'center 30%' }; });
+    return (this.state.photos || []).filter(function (p) { return p.src || p.vsrc; }).map(function (p) {
+      if (p.vsrc) return { type: 'video', src: p.vsrc, poster: p.src || '', dur: 12, pos: p.pos || 'center 30%', id: p.id };
+      return { type: 'photo', src: p.src, dur: 5, pos: p.pos || 'center 30%', id: p.id, video: !!p.video, big: !!p.big };
+    });
   };
   App.prototype.order = function () {
     var m = this.media();
@@ -586,7 +775,7 @@
       var c = self.person(d.who);
       var tnotes = notesAll.filter(function (n) { return n.taskId === d.id; });
       return {
-        time: hm(d.t), task: d.task, who: d.who, done: isDone,
+        time: hm(d.t), task: d.task, who: d.who, done: isDone, once: !!d.once,
         toggle: function () {
           var v = !isDone;
           self.setDone(d, v);
@@ -610,6 +799,16 @@
         badgeStyle: self.badge(d.who)
       };
     });
+
+    /* 担当の編集：くり返しも「その日だけ」も全部並べる */
+    function ruleLabel(x) {
+      if (x.date) { var dd = parseYmd(x.date); return (x.date === D.today ? '今日' : (dd.getMonth() + 1) + '/' + dd.getDate()) + 'だけ'; }
+      return x.rule || '毎日';
+    }
+    var flowEditRows = (D.dutiesAll || []).filter(function (d) { return whoSel === 'all' || d.who === whoSel || d.who === '家族'; })
+      .slice().sort(function (a, b) { return a.t - b.t; }).map(function (d) {
+        return { time: d.t ? hm(d.t) : '—', task: d.task, who: d.who, rule: ruleLabel(d), badgeStyle: self.badge(d.who), open: function () { self.openDuty(d); } };
+      });
 
     /* 今週のごはん */
     var start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayIdx);
@@ -650,8 +849,9 @@
         total += 1; if (on) got += 1;
         if (st.hideBought && on) return;
         items.push({
-          name: x[1], qty: x[2], checked: on,
+          name: x[1], qty: x[2], checked: on, editing: !!st.shopEdit,
           toggle: function () {
+            if (self.state.shopEdit) { self.openShop(x, g.label); return; }
             var v = !on;
             self.setShop(x, v);
             var c2 = Object.assign({}, checked); if (v) c2[x[0]] = true; else delete c2[x[0]];
@@ -664,6 +864,48 @@
       });
       return { label: g.label, items: items, empty: items.length === 0 };
     });
+    var shopCats = groups.map(function (g) { return g.label; });
+    if (shopCats.indexOf('その他') < 0) shopCats.push('その他');
+    var shopCatSel = st.shopCat && shopCats.indexOf(st.shopCat) >= 0 ? st.shopCat : shopCats[0];
+    function chip(on, ink) {
+      ink = ink || '#17201B';
+      return 'flex-shrink: 0; min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer; border: 1.5px solid ' + ink + '; ' + (on ? 'background: ' + ink + '; color: #FFFFFF' : 'background: transparent; color: ' + ink);
+    }
+    var shopSuggest = (D.shopSuggest || []).map(function (x) {
+      return { name: x.name, note: x.note || '', due: !!x.due, add: function () { self.addShopItem(x.name, x.qty, x.cat && shopCats.indexOf(x.cat) >= 0 ? x.cat : (x.cat || shopCatSel)); },
+        style: 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 12px; border-radius: 14px; border: 1.5px dashed ' + (x.due ? '#C99A1E' : '#B9C3B5') + '; background: ' + (x.due ? '#FFF6E8' : '#FFFFFF') + '; color: #17201B; cursor: pointer; text-align: left' };
+    });
+
+    /* 話題 */
+    var topics = (D.topics || []).map(function (t) {
+      return { title: t.title, note: t.note, url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
+        host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
+    });
+
+    /* 編集シート（担当・買い物・話題） */
+    var E = st.editor;
+    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
+    if (E) {
+      ed.heading = E.kind === 'duty' ? (E.isNew ? '担当を足す' : '担当を直す') : (E.kind === 'shop' ? '買い物を直す' : (E.isNew ? '話題を足す' : '話題を直す'));
+      ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed[k] = E[k] || ''; });
+      ed.set = {};
+      ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
+      if (E.kind === 'duty') {
+        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
+        ed.kindChips = [['once', '今日だけ'], ['repeat', 'くり返し']].map(function (k) { var on = (k[0] === 'once') === !!E.once; return { label: k[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('once', k[0] === 'once'); } }; });
+        ed.repeat = !E.once;
+        var days = ruleDays(E.rule || '毎日');
+        ed.dayChips = DOWS.map(function (dn, i) { return { label: dn, pressed: days[i] ? 'true' : 'false', style: chip(days[i]) + '; min-width: 40px; padding: 0', pick: function () { var on2 = ruleDays(self.state.editor.rule || '毎日'); on2[i] = !on2[i]; if (!on2.some(Boolean)) return; self.editSet('rule', daysRule(on2)); } }; });
+        ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('rule', r[0]); } }; });
+        ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
+      } else if (E.kind === 'shop') {
+        ed.catChips = shopCats.map(function (c) { var on = E.cat === c; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('cat', c); } }; });
+        ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
+      } else {
+        ed.save = function () { self.saveTopic(); }; ed.del = function () { self.deleteTopic(); };
+      }
+      ed.close = function () { self.setState({ editor: null }); };
+    }
 
     var lazy = {};
     var skelH = { diary: 260, week: 540, shop: 520, plan: 400, news: 520 };
@@ -732,7 +974,7 @@
     var nb = /^\d{4}-\d{2}-\d{2}$/.test(ui.kidsBirth || '') ? parseYmd(ui.kidsBirth) : null;
 
     /* セクションの見出し・表示・順番（スプレッドシートの「画面」） */
-    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
+    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
     var secCfg = ui.sections && ui.sections.length ? ui.sections : SEC_DEF.map(function (x, k) { return { key: x[0], title: x[1], all: true, person: x[0] !== 'photos', order: k }; });
     var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
     var title = {}, sections = [];
@@ -746,6 +988,29 @@
 
     return {
       sections: sections, title: title, planNote: '担当の色は、文字（' + names.concat(['家族']).join('・') + '）でも見分けられます。',
+      flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
+      flowEditLabel: st.flowEdit ? '終わる' : '編集',
+      toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
+      addDuty: function () { self.openDuty(null); },
+      shopEdit: !!st.shopEdit, shopEditLabel: st.shopEdit ? '終わる' : '編集',
+      toggleShopEdit: function () { self.setState({ shopEdit: !self.state.shopEdit }); },
+      shopDraft: st.shopDraft, shopQty: st.shopQty,
+      setShopDraft: function (e) { self.setState({ shopDraft: e.target.value }); },
+      setShopQty: function (e) { self.setState({ shopQty: e.target.value }); },
+      shopKey: function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); self.addShopFromForm(); } },
+      addShop: function () { self.addShopFromForm(); },
+      shopCatChips: shopCats.map(function (c) { var on = c === shopCatSel; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.setState({ shopCat: c }); } }; }),
+      shopSuggest: shopSuggest, hasSuggest: shopSuggest.length > 0,
+      topics: topics, topicsEmpty: topics.length === 0, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '終わる' : '編集',
+      toggleTopicEdit: function () { self.setState({ topicEdit: !self.state.topicEdit }); },
+      addTopic: function () { self.openTopic(null); },
+      ed: ed, edBackdropStyle: backdrop(!!E), edSheetStyle: sheetStyle(!!E, 'max-height: 88vh; overflow-y: auto; '),
+      fbDraft: st.fbDraft, setFbDraft: function (e) { self.setState({ fbDraft: e.target.value }); },
+      openFb: function () { self.setState({ fbOpen: true, accountOpen: false }); },
+      closeFb: function () { self.setState({ fbOpen: false }); },
+      sendFb: function () { self.sendFeedback(); },
+      fbBackdropStyle: backdrop(st.fbOpen), fbSheetStyle: sheetStyle(st.fbOpen, ''),
+      appVersion: 'v' + APP_VERSION,
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
       goalCardStyle: 'margin: 0 20px; padding: 12px 16px; border-radius: 16px; background: #E0EEE7; display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
@@ -812,7 +1077,8 @@
       slides: o.map(function (m, i) {
         var on = i === cur;
         var base = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: ' + m.pos + '; transition: opacity 1.2s ease, transform ' + (on ? (m.dur + 1) + 's linear' : '1.2s ease') + '; ';
-        return { isVideo: false, isPhoto: true, src: m.src, poster: '', style: base + (on ? 'opacity: 1; transform: scale(1.08)' : 'opacity: 0; transform: scale(1)') };
+        var vis = on ? 'opacity: 1; transform: scale(' + (m.type === 'video' ? '1' : '1.08') + ')' : 'opacity: 0; transform: scale(1)';
+        return { isVideo: m.type === 'video', isPhoto: m.type !== 'video', src: m.src, poster: m.poster || '', badge: !!m.video && m.type !== 'video', style: base + vis };
       }),
       bars: o.map(function (m, i) {
         var w = i < cur ? 'width: 100%' : (i === cur ? 'width: 0; animation: ' + (st.slideIdx % 2 ? 'barA' : 'barB') + ' ' + m.dur + 's linear forwards; animation-play-state: ' + (st.paused ? 'paused' : 'running') : 'width: 0');
@@ -932,6 +1198,7 @@
         me: { email: 'demo@example.com', who: 'とと' }, today: ymd(t),
         duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
         done: {}, checked: {},
+        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
         notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { return { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; }),
@@ -939,6 +1206,8 @@
         plans: [{ date: dd(3), time: '10:00', what: '保育園の面談', who: 'まま' }, { date: dd(6), time: '10:00', what: '公園へおでかけ', who: '家族' }],
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
+        topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }],
+        shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,
         people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },
         ui: { timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }

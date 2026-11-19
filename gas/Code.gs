@@ -23,7 +23,7 @@ var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予
 var SHEETS = {
   '設定': ['項目', '値', '説明'],
   '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '説明'],
-  '担当': ['id', '時刻', 'やること', '担当', '曜日'],
+  '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人'],
   '日記': ['id', '日付', '時刻', '誰', 'text', '対象'],
@@ -32,6 +32,8 @@ var SHEETS = {
   '予定': ['日付', '時刻', '内容', '誰'],
   '中期': ['id', '名前', '次の一手', '期限'],
   'ニュース': ['id', '中期ID', '出どころ', '発信元', '日付', '見出し', 'なぜ今', '本文', 'URL'],
+  '話題': ['id', '見出し', 'URL', '説明', '日付', '表示'],
+  '要望': ['id', '日時', '誰', '内容', '画面', '状態', 'メモ'],
   '_sessions': ['hash', 'email', '作成', '期限']
 };
 
@@ -52,7 +54,8 @@ var SETTING_ROWS = [
   ['献立がない日の料理名', 'まだ決まっていません', ''],
   ['献立がない日のメモ', '日曜の15分で決めます。', ''],
   ['カレンダーID', '', '家族の共有Googleカレンダーの「カレンダーID」。空なら「予定」シートを使う。予定名の頭に「とと:」「まま:」で担当の色'],
-  ['写真フォルダID', '', '子どもの写真を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない']
+  ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
+  ['動画の上限MB', '15', 'これより大きい動画は、アプリでは1コマだけ出す（最大25）']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
@@ -63,6 +66,7 @@ var SCREEN_ROWS = [
   ['diary', '今日の日記', true, true, 4, '気づきのメモ'],
   ['week', '今週のごはん', true, true, 5, '献立'],
   ['shop', '買い物リスト', true, true, 6, ''],
+  ['topics', '話題', true, true, 3.5, '旅のしおりなど、いま話している資料へのリンク（「話題」シート）'],
   ['plan', '今週の予定', true, true, 7, '人のタブでは、その人と家族の予定だけ'],
   ['news', 'ピックアップニュース', true, true, 8, '']
 ];
@@ -85,6 +89,7 @@ function doPost(e) {
       case 'boot': return out({ ok: true, data: bootFor(req, me) });
       case 'photos': return out({ ok: true, photos: photoList() });
       case 'photosBatch': return out(photosBatch(req.ids));
+      case 'video': return out(videoData(req.id));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
@@ -93,6 +98,13 @@ function doPost(e) {
       case 'deleteNote': return out(withLock(function () { return deleteOwn('申し送り', req.id, 'from', me); }));
       case 'addDiary': return out(withLock(function () { return addDiary(req.entry, me); }));
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
+      case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
+      case 'deleteDuty': return out(withLock(function () { return deleteById('担当', req.id, DUTY_KEYS); }));
+      case 'saveShop': return out(withLock(function () { return saveShop(req.item || {}); }));
+      case 'deleteShop': return out(withLock(function () { return deleteById('買い物', req.id, SHOP_KEYS); }));
+      case 'saveTopic': return out(withLock(function () { return saveTopic(req.topic || {}); }));
+      case 'deleteTopic': return out(withLock(function () { return deleteById('話題', req.id, TOPIC_KEYS); }));
+      case 'addFeedback': return out(withLock(function () { return addFeedback(req.feedback || {}, me); }));
     }
     return out({ ok: false, code: 'unknown_action' });
   } catch (err) {
@@ -242,9 +254,13 @@ function buildBoot(today) {
   var dow = t.getDay();
   var s = settings();
 
-  var duties = rowsOf('担当').filter(function (r) { return text(r['やること']) && dayMatch(text(r['曜日']) || '毎日', dow); }).map(function (r) {
-    return { id: idOf(r, ['時刻', 'やること']), t: minutes(r['時刻']), task: text(r['やること']), who: whoOf(r['担当']) };
+  /* 担当：日付があれば「その日だけ」、なければ曜日のくり返し */
+  var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
+    return { id: idOf(r, DUTY_KEYS), t: minutes(r['時刻']), task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
   });
+  var duties = dutyRows.filter(function (d) { return d.date ? d.date === today : dayMatch(d.rule, dow); })
+    .map(function (d) { return { id: d.id, t: d.t, task: d.task, who: d.who, once: !!d.date }; });
+  var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
 
   var shop = shopFor(weekStart);
   var done = {}, checked = {};
@@ -276,9 +292,15 @@ function buildBoot(today) {
     return { id: idOf(r, ['見出し']), goals: text(r['中期ID']).split(/[,、\s]+/).filter(String), src: text(r['出どころ']) || 'Web', from: text(r['発信元']), date: d instanceof Date ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : text(d), title: text(r['見出し']), why: text(r['なぜ今']), body: text(r['本文']), url: text(r['URL']) };
   });
 
+  var topics = rowsOf('話題').filter(function (r) { return text(r['見出し']) && (r['表示'] === '' || r['表示'] == null || truthy(r['表示'])); }).map(function (r) {
+    var d = r['日付'];
+    return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: text(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d) };
+  }).reverse();
+
   var ps = people();
   return {
-    today: today, duties: duties, done: done, checked: checked, notes: notes, diary: diary,
+    topics: topics,
+    today: today, duties: duties, dutiesAll: dutiesAll, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
@@ -317,7 +339,7 @@ function shopFor(weekStart) {
     if (normDate(r['週']) !== week) return;
     var label = text(r['分類']) || 'その他';
     if (!byLabel[label]) { byLabel[label] = { label: label, items: [] }; groups.push(byLabel[label]); }
-    byLabel[label].items.push([idOf(r, ['週', '分類', '品名']), text(r['品名']), text(r['量'])]);
+    byLabel[label].items.push([idOf(r, SHOP_KEYS), text(r['品名']), text(r['量'])]);
   });
   return { week: week, groups: groups };
 }
@@ -354,6 +376,38 @@ function plansFor(weekStart, weekEnd, calendarId) {
   });
   return outList;
 }
+
+/* 買うかも：これまでの買い物リストから、くり返し買っている物を出す。
+ * 何週ごとに買っているかを見て、そろそろの物を先に。今のリストにある物は出さない */
+function shopSuggest(shop) {
+  var now = {};
+  shop.groups.forEach(function (g) { g.items.forEach(function (x) { now[normName(x[1])] = 1; }); });
+  var byName = {};
+  rowsOf('買い物').forEach(function (r) {
+    var name = text(r['品名']), w = normDate(r['週']);
+    if (!name || !w || w > shop.week) return;
+    var k = normName(name);
+    var e = byName[k] || (byName[k] = { name: name, weeks: {}, qty: '', cat: '' });
+    e.weeks[w] = 1; e.qty = text(r['量']) || e.qty; e.cat = text(r['分類']) || e.cat; e.name = name;
+  });
+  var base = parseYmd(shop.week).getTime(), list = [];
+  Object.keys(byName).forEach(function (k) {
+    if (now[k]) return;
+    var e = byName[k], ws = Object.keys(e.weeks).sort(), n = ws.length;
+    var last = parseYmd(ws[n - 1]).getTime(), since = Math.round((base - last) / 864e5);
+    var gap = n >= 2 ? (last - parseYmd(ws[0]).getTime()) / 864e5 / (n - 1) : 0;
+    var due = n >= 2 && since >= gap * 0.9;
+    var weeksGap = Math.max(1, Math.round(gap / 7));
+    list.push({
+      name: e.name, qty: e.qty, cat: e.cat, n: n, due: due,
+      note: due ? 'そろそろ（' + weeksGap + '週ごと）' : (n >= 2 ? n + '回買った' : (since <= 7 ? '先週買った' : Math.round(since / 7) + '週前に買った')),
+      score: (due ? 1000 : 0) + n * 10 - since / 7
+    });
+  });
+  return list.sort(function (a, b) { return b.score - a.score; }).slice(0, 12)
+    .map(function (x) { return { name: x.name, qty: x.qty, cat: x.cat, note: x.note, due: x.due }; });
+}
+function normName(s) { return String(s || '').replace(/[\s　]/g, '').toLowerCase(); }
 
 /* ================= まとめたデータ（スナップショット） ================= */
 
@@ -399,17 +453,35 @@ function bigPut(key, str, seconds) {
 
 function photoQuery() {
   var folderId = settings()['写真フォルダID'];
-  return folderId ? "'" + folderId.replace(/'/g, '') + "' in parents and mimeType contains 'image/' and trashed = false" : '';
+  return folderId ? "'" + folderId.replace(/'/g, '') + "' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false" : '';
 }
+function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 25) : 15) * 1048576; }
 
-/* 写真の一覧（idだけ。軽い） */
+/* 写真と動画の一覧（idだけ。軽い）。動画は大きさも見る */
 function photoList() {
   var q = photoQuery();
   if (!q) return [];
   try {
-    return (Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,modifiedTime)' }).files || [])
-      .map(function (f) { return { id: f.id, v: f.modifiedTime }; });
+    var lim = videoLimit();
+    return (Drive.Files.list({ q: q, pageSize: 10, orderBy: 'createdTime desc', fields: 'files(id,modifiedTime,mimeType,size)' }).files || [])
+      .map(function (f) {
+        var v = /^video\//.test(f.mimeType || '');
+        return { id: f.id, v: f.modifiedTime, video: v, big: v && Number(f.size || 0) > lim };
+      });
   } catch (err) { console.error(err); return []; }
+}
+
+/* 動画の中身（写真フォルダの中のものだけ、上限まで） */
+function videoData(id) {
+  var folderId = settings()['写真フォルダID'];
+  if (!folderId || !id) return { ok: false, code: 'bad_request' };
+  var f;
+  try { f = Drive.Files.get(String(id), { fields: 'id,parents,mimeType,size' }); } catch (err) { return { ok: false, code: 'not_found' }; }
+  if ((f.parents || []).indexOf(folderId) < 0 || !/^video\//.test(f.mimeType || '')) return { ok: false, code: 'not_found' };
+  if (Number(f.size || 0) > videoLimit()) return { ok: false, code: 'too_big' };
+  var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) return { ok: false, code: 'fetch_failed' };
+  return { ok: true, type: f.mimeType, data: Utilities.base64Encode(r.getContent()) };
 }
 
 /* 写真をまとめて返す（写真フォルダの中のものだけ）。覚えている分はすぐ返し、足りない分は並行して取る */
@@ -419,7 +491,7 @@ function photosBatch(ids) {
   var want = {};
   (ids || []).forEach(function (id) { want[String(id)] = 1; });
   var files;
-  try { files = Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || []; }
+  try { files = Drive.Files.list({ q: q, pageSize: 10, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || []; }
   catch (err) { console.error(err); return { ok: true, photos: {} }; }
   var res0 = {}, need = [];
   files.forEach(function (f) {
@@ -489,6 +561,67 @@ function addDiary(k, me) {
   return { ok: true };
 }
 
+var DUTY_KEYS = ['時刻', 'やること'];
+var SHOP_KEYS = ['週', '分類', '品名'];
+var TOPIC_KEYS = ['見出し', 'URL'];
+
+/* 話題：旅のしおりなどのリンク。https だけ受け付ける */
+function saveTopic(t) {
+  var title = String(t.title || '').slice(0, 100).trim(), url = String(t.url || '').trim();
+  if (!title || !t.id || (url && !/^https:\/\/[^\s]+$/.test(url))) return { ok: false, code: 'bad_request' };
+  var obj = { id: String(t.id), '見出し': title, 'URL': url, '説明': String(t.note || '').slice(0, 200).trim() };
+  var r = findById('話題', t.id, TOPIC_KEYS);
+  if (r) setCells('話題', r._row, obj);
+  else {
+    obj['日付'] = ymd(new Date()); obj['表示'] = true; appendObj('話題', obj);
+    var t2 = table('話題');
+    if (t2.col['表示'] != null) t2.sh.getRange(t2.sh.getLastRow(), t2.col['表示'] + 1).insertCheckboxes().setValue(true);
+  }
+  return { ok: true };
+}
+
+/* idで行を探す（idの列が空の行は、中身から決まるidで探す） */
+function findById(name, id, keys) {
+  var rows = rowsOf(name);
+  for (var i = 0; i < rows.length; i++) if (idOf(rows[i], keys) === String(id)) return rows[i];
+  return null;
+}
+function deleteById(name, id, keys) {
+  var r = findById(name, id, keys);
+  if (!r) return { ok: false, code: 'not_found' };
+  sheet(name).deleteRow(r._row); delete _tables[name];
+  return { ok: true };
+}
+
+/* 担当を足す・直す。date があれば「その日だけ」、なければ rule（毎日・平日・土日・月水金など）でくり返す */
+function saveDuty(d) {
+  var task = String(d.task || '').slice(0, 100).trim();
+  if (!task || !d.id) return { ok: false, code: 'bad_request' };
+  var obj = { id: String(d.id), '時刻': normTime(d.time) || '', 'やること': task, '担当': whoOf(d.who), '曜日': d.date ? '' : (String(d.rule || '毎日').trim() || '毎日'), '日付': normDate(d.date) || '' };
+  var r = findById('担当', d.id, DUTY_KEYS);
+  if (r) setCells('担当', r._row, obj); else appendObj('担当', obj);
+  return { ok: true };
+}
+
+/* 買い物を足す・直す（週は、アプリに出ているリストの週） */
+function saveShop(x) {
+  var name = String(x.name || '').slice(0, 60).trim();
+  if (!name || !x.id) return { ok: false, code: 'bad_request' };
+  var r = findById('買い物', x.id, SHOP_KEYS);
+  var obj = { id: String(x.id), '品名': name, '量': String(x.qty || '').slice(0, 30).trim(), '分類': String(x.cat || '').slice(0, 30).trim() || 'その他' };
+  if (r) setCells('買い物', r._row, obj);
+  else { obj['週'] = normDate(x.week) || ymd(new Date()); appendObj('買い物', obj); }
+  return { ok: true };
+}
+
+/* 要望・不具合のメモ（Claudeがあとで読んで直す） */
+function addFeedback(f, me) {
+  var body = String(f.text || '').slice(0, 2000).trim();
+  if (!body) return { ok: false, code: 'bad_request' };
+  appendObj('要望', { id: 'f' + Date.now().toString(36), '日時': new Date(), '誰': me.who, '内容': body, '画面': String(f.screen || '').slice(0, 300), '状態': '未対応', 'メモ': '' });
+  return { ok: true };
+}
+
 /* 自分が書いたものだけ消せる（whoHead は「誰」の列の見出し） */
 function deleteOwn(name, id, whoHead, me) {
   var rows = rowsOf(name);
@@ -521,13 +654,23 @@ function table(name) {
   return (_tables[name] = t);
 }
 function rowsOf(name) { return table(name).rows; }
-function setCells(name, rowNum, obj) {
+/* 書き込む列が見出しに無ければ、右はしに足す（列を消してしまっても、書いた値が消えないように） */
+function ensureCols(name, keys) {
   var t = table(name);
+  if (!t.head.length) return t;
+  var add = keys.filter(function (k) { return !(k in t.col) && SHEETS[name] && SHEETS[name].indexOf(k) >= 0; });
+  if (!add.length) return t;
+  t.sh.getRange(1, t.head.length + 1, 1, add.length).setValues([add]).setFontWeight('bold');
+  delete _tables[name];
+  return table(name);
+}
+function setCells(name, rowNum, obj) {
+  var t = ensureCols(name, Object.keys(obj));
   Object.keys(obj).forEach(function (k) { if (t.col[k] != null) t.sh.getRange(rowNum, t.col[k] + 1).setValue(obj[k]); });
   delete _tables[name];
 }
 function appendObj(name, obj) {
-  var t = table(name);
+  var t = ensureCols(name, Object.keys(obj));
   var head = t.head.length ? t.head : SHEETS[name];
   t.sh.appendRow(head.map(function (h) { return h in obj ? obj[h] : ''; }));
   delete _tables[name];
@@ -625,6 +768,9 @@ function setup() {
     var c = scr.col[h];
     if (c != null && scr.rows.length) scr.sh.getRange(2, c + 1, scr.rows.length, 1).insertCheckboxes();
   });
+
+  var tp = table('話題');
+  if (tp.col['表示'] != null && tp.rows.length) tp.sh.getRange(2, tp.col['表示'] + 1, tp.rows.length, 1).insertCheckboxes();
 
   if (!ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'warmPhotos'; })) {
     ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
