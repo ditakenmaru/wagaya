@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '14';
+  var APP_VERSION = '15';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -1504,7 +1504,18 @@
           sun: kind[1] === 'sun', part: kind[1] === 'part', cloud: kind[1] === 'cloud', rain: kind[1] === 'rain', snow: kind[1] === 'snow' };
       }
       var dd = now;
+      /* ホーム以外は、そのタブの目的に合わせた短い見出し */
+      var tid = TAB_ID[curTab] || '';
+      var soon = (D.deadlines || []).filter(function (x) { return !x.done && x.due && Math.round((parseYmd(x.due) - parseYmd(todayStr)) / 864e5) <= 3; }).length;
+      var sum = tid === 'two' ? [turn ? 'あなたの番 ' + turn + '件' : 'あなたの番はありません', soon ? '3日以内の期限 ' + soon + '件' : '']
+        : tid === 'food' ? ['今日：' + dayMenu.dish, total ? '買い物 のこり' + (total - got) + '品' : '']
+        : tid === 'plan' ? [plansRaw.length ? '今週の予定 ' + plansRaw.length + '件' : '今週の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
+        : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
+      var isHomeTab = curTab === tabNames[0];
       return {
+        big: isHomeTab, small: !isHomeTab,
+        smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
+        smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
         wx: wx, hasWx: !!wx,
         style: 'position: relative; overflow: hidden; margin: 10px 12px 0; padding: 18px 18px 16px; border-radius: 28px; color: #FFFFFF; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); background: ' + bg,
         greet: greet,

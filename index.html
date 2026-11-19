@@ -69,6 +69,23 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </sc-if>
 
+  <sc-if value="{{hdr.small}}" hint-placeholder-val="{{ false }}">
+  <header style="{{hdr.smallStyle}}">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+      <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: .02em">{{hdr.smallTitle}}</h1>
+        <span style="font-size: 13px; font-weight: 700; opacity: .85; line-height: 1.5">{{hdr.smallSum}}</span>
+      </div>
+      <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}">{{syncLabel}}</button>
+    </div>
+    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 12px; padding: 3px">
+      <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
+        <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+      </sc-for>
+    </div>
+  </header>
+  </sc-if>
+  <sc-if value="{{hdr.big}}" hint-placeholder-val="{{ true }}">
   <header style="{{hdr.style}}">
     <svg aria-hidden="true" width="220" height="220" viewBox="0 0 220 220" style="position: absolute; right: -60px; top: -70px; opacity: .12; pointer-events: none"><circle cx="110" cy="110" r="100" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="70" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="40" fill="#FFFFFF"></circle></svg>
     <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px">
@@ -110,6 +127,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-for>
     </div>
   </header>
+  </sc-if>
   <div style="height: 14px"></div>
 
   <sc-if value="{{loading}}" hint-placeholder-val="{{ false }}">
@@ -891,7 +909,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="config.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
