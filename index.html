@@ -93,6 +93,16 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <sc-if value="{{ready}}" hint-placeholder-val="{{ true }}">
   <div style="display: flex; flex-direction: column">
   <sc-if value="{{travelOn}}" hint-placeholder-val="{{ false }}"><p role="status" style="margin: 0 16px 12px; padding: 10px 14px; border-radius: 14px; background: #E3E7F6; color: #22337A; font-size: 13px; font-weight: 700; line-height: 1.6">{{travelText}}</p></sc-if>
+  <sc-if value="{{notesHere}}" hint-placeholder-val="{{ false }}">
+    <button type="button" onClick="{{openNotes}}" aria-label="{{notesNavLabel}}" style="{{notesCardStyle}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#17201B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>
+      <span style="display: flex; flex-direction: column; gap: 2px; flex: 1">
+        <span style="font-size: 16px; font-weight: 900">申し送り</span>
+        <span style="font-size: 13px; color: #55605A">{{notesCardText}}</span>
+      </span>
+      <span aria-hidden="true" style="font-size: 20px; color: #55605A">›</span>
+    </button>
+  </sc-if>
   <sc-for list="{{sections}}" as="sec" hint-placeholder-count="8">
   <sc-if value="{{sec.is_photos}}" hint-placeholder-val="{{ true }}"><div data-sec="{{sec.key}}" style="{{sec.wrapStyle}}">
   <figure aria-label="{{title.photos}}" style="{{figStyle}}">
@@ -591,28 +601,20 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </sc-if>
 
-  <nav aria-label="メニュー" style="position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25">
-    <a href="#top" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
-      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path></svg>今日
-    </a>
-    <a href="#w-week" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
-      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h16a8 8 0 0 1-16 0z"></path><path d="M9 5c0 2 2 2 2 4M13 5c0 2 2 2 2 4"></path></svg>ごはん
-    </a>
-    <a href="#w-plan" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
-      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg>予定
-    </a>
-    <a href="#w-shop" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
-      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14l-1.5 11h-11z"></path><path d="M9 7a3 3 0 0 1 6 0"></path></svg>買い物
-    </a>
-    <button type="button" aria-label="{{notesNavLabel}}" onClick="{{openNotes}}" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: none; border-radius: 16px; background: {{notesNavBg}}; color: #FFFFFF; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .3s">
-      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>申し送り
-      <sc-if value="{{hasUnread}}" hint-placeholder-val="{{ true }}">
-        <span aria-hidden="true" style="position: absolute; top: 4px; right: 18px; width: 18px; height: 18px">
-          <span style="position: absolute; inset: 0; border-radius: 50%; background: #F2A33A; animation: ring 1.8s ease-out infinite"></span>
-          <span style="position: absolute; inset: 0; border-radius: 50%; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .4s ease-out">{{unreadCount}}</span>
-        </span>
-      </sc-if>
-    </button>
+  <nav aria-label="画面の切り替え" style="{{navStyle}}">
+    <sc-for list="{{navTabs}}" as="t" hint-placeholder-count="4">
+      <button type="button" aria-label="{{t.aria}}" aria-current="{{t.current}}" onClick="{{t.go}}" style="{{t.style}}">
+        <sc-if value="{{t.ic_today}}" hint-placeholder-val="{{ true }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path></svg></sc-if>
+        <sc-if value="{{t.ic_two}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"></circle><circle cx="16" cy="10" r="2.5"></circle><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5M14 15c2.6-.4 5 1 5.8 4"></path></svg></sc-if>
+        <sc-if value="{{t.ic_food}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h16a8 8 0 0 1-16 0z"></path><path d="M9 5c0 2 2 2 2 4M13 5c0 2 2 2 2 4"></path></svg></sc-if>
+        <sc-if value="{{t.ic_plan}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg></sc-if>
+        <sc-if value="{{t.ic_news}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 9h8M8 13h8M8 17h5"></path></svg></sc-if>
+        <span>{{t.label}}</span>
+        <sc-if value="{{t.hasBadge}}" hint-placeholder-val="{{ false }}">
+          <span aria-hidden="true" style="position: absolute; top: 4px; right: calc(50% - 22px); min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .4s ease-out">{{t.badge}}</span>
+        </sc-if>
+      </button>
+    </sc-for>
   </nav>
 
   <button type="button" aria-label="申し送りを閉じる" onClick="{{closeNotes}}" style="{{notesBackdropStyle}}"></button>
@@ -831,7 +833,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="config.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

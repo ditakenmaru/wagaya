@@ -66,12 +66,14 @@ async def main():
         txt = await page.locator('section[aria-labelledby=sec-flow]').inner_text()
         print('two-step delete:', still == 1 and '洗濯物をたたむ' not in txt)
         await page.get_by_role('button', name='完了').first.click(); await page.wait_for_timeout(300)
-        # topics
+        # topics（下のタブ「予定」）
+        async def go(name):
+            await page.locator('nav[aria-label=画面の切り替え] button', has_text=name).click(); await page.wait_for_timeout(600)
+        await go('予定')
         await page.locator('#sec-topics').scroll_into_view_if_needed(); await page.wait_for_timeout(500)
         await page.screenshot(path='/tmp/u_topics.png')
-        # shop
-        for i in range(10):
-            await page.mouse.wheel(0, 600); await page.wait_for_timeout(200)
+        # shop（下のタブ「ごはん」）
+        await go('ごはん')
         await page.locator('#w-shop').scroll_into_view_if_needed(); await page.wait_for_timeout(1200)
         await page.locator('#w-shop').screenshot(path='/tmp/u_shop.png')
         await page.get_by_role('button', name='＋ 牛乳').click(); await page.wait_for_timeout(400)

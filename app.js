@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '9';
+  var APP_VERSION = '10';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -229,7 +229,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', topicEdit: false
+      fbOpen: false, fbDraft: '', topicEdit: false, nav: null
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -504,6 +504,11 @@
     this.setState({ toast: { msg: msg, undo: undo } });
     this.toastTimer = setTimeout(function () { self.setState({ toast: null }); }, 3500);
   };
+
+  /* 下のタブ（画面を切り替える）。どのセクションをどのタブに出すかは「画面」シートの「下のタブ」で変えられる */
+  var TAB_ORDER = ['今日', 'ふたりで', 'ごはん', '予定', 'ニュース'];
+  var TAB_ID = { '今日': 'today', 'ふたりで': 'two', 'ごはん': 'food', '予定': 'plan', 'ニュース': 'news' };
+  var DEF_TAB = { photos: '今日', hero: '今日', flow: '今日', diary: '今日', decide: 'ふたりで', deadline: 'ふたりで', week: 'ごはん', shop: 'ごはん', topics: '予定', weekend: '予定', plan: '予定', news: 'ニュース' };
 
   /* 2人の呼び名と色は、スプレッドシートの「設定」から届く */
   var DEFAULT_PEOPLE = [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }];
@@ -1348,17 +1353,51 @@
     var secAll = secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x, k) { return { key: x[0], title: x[1], all: true, person: true, order: 50 + k, evening: 50 + k, travel: true }; }));
     /* 夜（設定の時刻から）は「夜の順番」、旅行中は話題を一番上に */
     var ordOf = function (c) { if (travel && c.key === 'topics') return -1; return evening && c.evening != null ? c.evening : (c.order != null ? c.order : 99); };
+    /* 下のタブ：セクションごとに「画面」の「下のタブ」。旅行中は話題を最初のタブへ */
+    var tabOf = function (c) { if (travel && c.key === 'topics') return TAB_ORDER[0]; return c.tab || DEF_TAB[c.key] || TAB_ORDER[0]; };
+    var shown = [], tabHas = {};
     secAll.slice().sort(function (a, b) { return ordOf(a) - ordOf(b); }).forEach(function (c) {
       var vis = whoSel === 'all' ? c.all !== false : c.person !== false;
       if (c.viewer && c.viewer !== meWho) vis = false;        /* 見る人が決まっているセクションは、その人がログインした時だけ */
       if (travel && c.travel === false) vis = false;           /* 旅行中は印のあるセクションだけ */
-      var o2 = { key: c.key, wrapStyle: vis ? '' : 'display: none' };
-      SEC_DEF.forEach(function (x) { o2['is_' + x[0]] = x[0] === c.key; });
+      if (vis) tabHas[tabOf(c)] = true;
+      shown.push({ c: c, vis: vis });
+    });
+    var tabNames = TAB_ORDER.filter(function (t) { return tabHas[t]; });
+    secAll.forEach(function (c) { var t = tabOf(c); if (tabHas[t] && tabNames.indexOf(t) < 0) tabNames.push(t); });
+    var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
+    shown.forEach(function (x) {
+      var vis = x.vis && tabOf(x.c) === curTab;
+      var o2 = { key: x.c.key, wrapStyle: vis ? '' : 'display: none' };
+      SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === x.c.key; });
       sections.push(o2);
     });
+    /* 自分の番：自分宛ての未確認の申し送りと、まだ答えていない相談 */
+    var myTurnDecide = (D.decisions || []).filter(function (x) { return x.state !== '決まった' && !(me1 ? x.a1 : x.a2); }).length;
+    var twoTab = tabOf(secByKey.decide || { key: 'decide' });
+    var navTabs = tabNames.map(function (t) {
+      var badge = t === twoTab ? myUnread.length + myTurnDecide : 0;
+      var on = t === curTab;
+      return {
+        label: t, ic_today: TAB_ID[t] === 'today' || !TAB_ID[t], ic_two: TAB_ID[t] === 'two', ic_food: TAB_ID[t] === 'food', ic_plan: TAB_ID[t] === 'plan', ic_news: TAB_ID[t] === 'news', current: on ? 'page' : 'false', badge: badge, hasBadge: badge > 0,
+        aria: t + (badge ? '（あなたの番 ' + badge + '件）' : ''),
+        style: 'position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: none; border-radius: 16px; color: #FFFFFF; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .25s; background: ' + (on ? 'rgba(255,255,255,0.18)' : 'transparent'),
+        go: function () {
+          if (on) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+          USAGE.add('nav:' + (TAB_ID[t] || 'n' + tabNames.indexOf(t)));
+          self.setState({ nav: t });
+          window.scrollTo(0, 0);
+        }
+      };
+    });
+    var notesHere = curTab === twoTab;
 
     return {
       sections: sections, title: title, planNote: '', travelOn: travel,
+      navTabs: navTabs, navStyle: 'position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25',
+      notesHere: notesHere,
+      notesCardText: myUnread.length ? 'あなた宛てが ' + myUnread.length + '件あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
+      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: 20px; text-align: left; cursor: pointer; font-family: inherit; color: #17201B; border: ' + (myUnread.length ? '2px solid #F2A33A' : '1.5px solid #DDE3DA') + '; background: #FFFFFF',
       travelText: travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）' : '',
       decisions: decisions, decisionsEmpty: decisions.length === 0, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
