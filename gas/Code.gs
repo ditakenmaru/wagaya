@@ -67,7 +67,9 @@ var SETTING_ROWS = [
   ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
   ['朝の並びにする時刻', '5:00', 'この時刻から「朝の並びを終える時刻」までは「朝の順番」で並べる。空なら朝の並びは使わない'],
-  ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」']
+  ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」'],
+  ['天気の場所', '', '例：福岡 33.59,130.40（地名と緯度,経度）。上の見出しに今日の天気を出す。空なら出さない'],
+  ['旅行先の天気の場所', '', '例：フーコック 10.22,103.96。旅行の期間はこちらの天気を出す']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
@@ -306,13 +308,16 @@ function buildBoot(today) {
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
 
   var shop = shopFor(weekStart);
-  var done = {}, checked = {};
+  var done = {}, checked = {}, doneBy = {}, skipBy = {}, firstDay = today;
   rowsOf('チェック').forEach(function (r) {
     if (!truthy(r['済'])) return;
     var d = normDate(r['日付']);
     if (r['種類'] === '担当' && d === today) done[String(r['対象ID'])] = true;
     if (r['種類'] === '買い物' && d === shop.week) checked[String(r['対象ID'])] = true;
+    if (r['種類'] === '担当' && d) { (doneBy[d] = doneBy[d] || {})[String(r['対象ID'])] = true; if (d < firstDay) firstDay = d; }
+    if (r['種類'] === '休み' && d) (skipBy[d] = skipBy[d] || {})[String(r['対象ID'])] = true;
   });
+  var streak = streakOf(dutyRows, doneBy, skipBy, firstDay, t);
 
   var since = Date.now() - 14 * 864e5;
   var notes = rowsOf('申し送り').filter(function (r) { return r.id; }).map(function (r) {
@@ -362,7 +367,8 @@ function buildBoot(today) {
   var trip = tripRange(s['旅行の期間']);
   var ps = people();
   return {
-    topics: topics, decisions: decisions, deadlines: deadlines, outings: outings,
+    topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
+    weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
@@ -377,6 +383,49 @@ function buildBoot(today) {
       tripFrom: trip[0] || '', tripTo: trip[1] || ''
     }
   };
+}
+
+/* 担当を全部終えた日が何日続いているか（今日は全部終わっていれば数える。担当がない日・休みは飛ばす） */
+function streakOf(dutyRows, doneBy, skipBy, firstDay, t) {
+  var dayOf = function (k) { var x = new Date(t.getTime()); x.setDate(x.getDate() - k); return x; };
+  var allDone = function (x) {
+    var d = ymd(x), dow = x.getDay(), dn = doneBy[d] || {}, sk = skipBy[d] || {};
+    var list = dutyRows.filter(function (r) { return (r.date ? r.date === d : dayMatch(r.rule, dow)) && !sk[r.id]; });
+    if (!list.length) return null;
+    return list.every(function (r) { return dn[r.id]; });
+  };
+  var n = 0;
+  for (var k = 1; k <= 60; k++) {
+    var x = dayOf(k);
+    if (ymd(x) < firstDay) break;
+    var a = allDone(x);
+    if (a === null) continue;
+    if (!a) break;
+    n++;
+  }
+  if (allDone(dayOf(0)) === true) n++;
+  return n;
+}
+
+/* 今日の天気（Open-Meteo。登録なし・無料）。設定の「地名 緯度,経度」から。1時間まとめて置く */
+function weatherFor(spec, today) {
+  var m = String(spec || '').match(/(-?\d+(?:\.\d+)?)\s*[,、]\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  var place = String(spec).replace(m[0], '').trim();
+  var key = 'wx_' + m[1] + '_' + m[2] + '_' + today, cache = CacheService.getScriptCache();
+  var hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  try {
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + m[1] + '&longitude=' + m[2] +
+      '&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1';
+    var r = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return null;
+    var j = JSON.parse(r.getContentText()), dl = j.daily || {}, cu = j.current || {};
+    var w = { place: place, code: dl.weather_code ? dl.weather_code[0] : cu.weather_code, now: Math.round(cu.temperature_2m),
+      max: Math.round(dl.temperature_2m_max[0]), min: Math.round(dl.temperature_2m_min[0]), pop: dl.precipitation_probability_max ? dl.precipitation_probability_max[0] : null };
+    cache.put(key, JSON.stringify(w), 3600);
+    return w;
+  } catch (e) { return null; }
 }
 
 /* 画面シート：見出し・表示・順番。行が無いキーは初期値 */

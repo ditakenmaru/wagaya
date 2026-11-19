@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '13';
+  var APP_VERSION = '14';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -196,6 +196,12 @@
       .catch(function (err) { if (action !== 'logUsage') USAGE.add('err:' + String((err && err.code) || 'network').replace(/[^\w]/g, '').slice(0, 30)); throw err; });
   }
 
+  /* 新しい版があるか確かめる（ホーム画面のアプリは、戻ってきただけでは読み直さないため）。
+     新しい版が入ると controllerchange で、入力中でなければ読み直す */
+  function checkUpdate() {
+    try { if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); } catch (e) {}
+  }
+
   /* ---------------- 日付の道具 ---------------- */
   var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
   function pad(n) { return ('0' + n).slice(-2); }
@@ -259,7 +265,7 @@
       if (n && self.showPhotos() && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd = upd || {}; upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
       if (upd) self.setState(upd);
     }, 1000);
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.setState({ now: Date.now() }); self.refresh(true); } });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.setState({ now: Date.now() }); self.refresh(true); checkUpdate(); } });
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.refresh(true); }, 60000);
     this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
     if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
@@ -295,6 +301,7 @@
       self.pulling = true;
       show(56, '更新しています…', true);
       var t0 = Date.now();
+      checkUpdate();
       self.refresh(false, true).then(function (ok) {
         setTimeout(function () {
           show(56, ok ? '新しくしました' : '更新できませんでした', false);
@@ -1488,8 +1495,17 @@
         if (tripNow) chips.push({ k: '旅行', v: (Math.round((parseYmd(todayStr) - parseYmd(ui.tripFrom)) / 864e5) + 1) + '日目', sub: '', style: chip(false), go: function () {} });
         else if (dTo > 0 && dTo <= 120) chips.push({ k: '旅行まで', v: 'あと' + dTo + '日', sub: '', style: chip(false), go: function () {} });
       }
+      var streak = D.streak || 0;
+      if (streak >= 2) chips.splice(1, 0, { k: '全部できた日', v: '連続' + streak + '日', sub: '', style: chip(false), go: function () {} });
+      var W = D.weather, wx = null;
+      if (W && W.max != null) {
+        var c = W.code, kind = c === 0 ? ['晴れ', 'sun'] : c <= 2 ? ['晴れときどき曇り', 'part'] : c === 3 ? ['曇り', 'cloud'] : c <= 48 ? ['霧', 'cloud'] : c <= 67 || (c >= 80 && c <= 82) ? ['雨', 'rain'] : c <= 77 || c === 85 || c === 86 ? ['雪', 'snow'] : ['雷雨', 'rain'];
+        wx = { label: (W.place && tripNow ? W.place + '　' : '') + kind[0], temp: W.max + '° / ' + W.min + '°', pop: W.pop != null ? '雨 ' + W.pop + '%' : '',
+          sun: kind[1] === 'sun', part: kind[1] === 'part', cloud: kind[1] === 'cloud', rain: kind[1] === 'rain', snow: kind[1] === 'snow' };
+      }
       var dd = now;
       return {
+        wx: wx, hasWx: !!wx,
         style: 'position: relative; overflow: hidden; margin: 10px 12px 0; padding: 18px 18px 16px; border-radius: 28px; color: #FFFFFF; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); background: ' + bg,
         greet: greet,
         date: (dd.getMonth() + 1) + '月' + dd.getDate() + '日（' + DOWS[dd.getDay()] + '）',
@@ -1778,6 +1794,7 @@
         decisions: [{ id: 'q1', q: '見本：週末の朝ごはん、どうする？', options: ['見本：A案', '見本：B案'], due: dd(5), state: '相談中', a1: '見本：A案', a2: '', decided: '', note: '' }],
         deadlines: [{ id: 'k1', what: '見本：保育園の書類を出す', due: ymd(t), who: 'まま', done: false, url: '', note: '' }, { id: 'k2', what: '見本：ペットホテルの予約', due: dd(9), who: 'とと', done: false, url: '', note: '' }],
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
+        weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
         topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,

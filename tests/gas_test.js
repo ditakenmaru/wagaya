@@ -52,7 +52,7 @@ function makeEnv(sheets) {
       computeDigest: (a, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map(b => b > 127 ? b - 256 : b),
       DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64')
     },
-    UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(env.token) }), fetchAll: () => [] },
+    UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }), fetchAll: () => [] },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
     Drive: { Files: {
       list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
@@ -167,6 +167,22 @@ setRow('朝の並びにする時刻')[1] = '';
 env.refreshApp();
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.data.ui.eveningFrom === 19 * 60 + 30 && b2.data.ui.morningFrom === null, '時刻: 時刻の型は19:30として読み、空の朝はnull');
+// 天気：設定の「地名 緯度,経度」から
+setRow('天気の場所')[1] = '福岡 33.59,130.40';
+env.refreshApp();
+b2 = post(env, { action: 'boot', session: S, today });
+ok(b2.data.weather && b2.data.weather.place === '福岡' && b2.data.weather.max === 18 && b2.data.weather.pop === 70, '天気: 地名と最高気温と降水確率');
+// 続けた日数：昨日の担当を全部済にすると1日
+{
+  const y = (d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - 1); return t.toISOString().slice(0, 10); })(today);
+  const chkSh = env.ss.getSheetByName('チェック');
+  const yd = new Date(y + 'T00:00:00'), dow = yd.getDay();
+  const ids = b2.data.dutiesAll.filter(d => !d.date && (d.rule === '毎日' || !d.rule)).map(d => d.id);
+  ids.forEach(id => chkSh.data.push([y, '担当', id, true, 'とと', '']));
+  env.refreshApp();
+  b2 = post(env, { action: 'boot', session: S, today });
+  ok(b2.data.streak >= 1, '続けた日数: 昨日ぜんぶ済で ' + b2.data.streak);
+}
 ok(env.toasts.some(t => t.indexOf('反映') >= 0), 'メニュー: アプリに反映のお知らせ');
 
 // カレンダーの頭の名前
