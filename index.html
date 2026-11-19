@@ -45,6 +45,44 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 #ptr i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#FFFFFF;box-sizing:border-box}
 #ptr.spin i{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* ===== 着せかえ：Apple風（data-theme="apple"） ===== */
+#top[data-theme="apple"]{background:#F2F2F7 !important;color:#000 !important}
+#top[data-theme="apple"],#top[data-theme="apple"] *{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif !important;-webkit-font-smoothing:antialiased}
+#top[data-theme="apple"] [style*="font-weight: 900"]{font-weight:700 !important;letter-spacing:-.01em}
+#top[data-theme="apple"] .appbar{background:rgba(242,242,247,.86) !important;backdrop-filter:saturate(180%) blur(20px) !important;border-bottom:.5px solid rgba(60,60,67,.2) !important}
+#top[data-theme="apple"] .logomark{width:30px !important;height:30px !important;border-radius:8px !important;background:linear-gradient(180deg,#34C759,#248A3D) !important;box-shadow:none !important}
+#top[data-theme="apple"] .wordmark{font-size:17px !important;font-weight:600 !important;letter-spacing:.18em !important}
+#top[data-theme="apple"] .appbar button{background:#E3E3E8 !important;color:#3C3C43 !important}
+/* タブの見出し：iPhoneの大きな見出し */
+#top[data-theme="apple"] .tabhead,#top[data-theme="apple"] .homehead{background:transparent !important;color:#000 !important;box-shadow:none !important;margin:4px 0 0 !important;padding:6px 16px 4px !important}
+#top[data-theme="apple"] .tabhead h2{font-size:34px !important;font-weight:700 !important;letter-spacing:-.02em !important}
+#top[data-theme="apple"] .tabhead span,#top[data-theme="apple"] .homehead span{opacity:1 !important}
+#top[data-theme="apple"] .tabhead>div>div>span{color:#8E8E93 !important;font-size:15px !important;font-weight:400 !important}
+#top[data-theme="apple"] .homehead>svg{display:none}
+/* 切り替え：iPhoneの標準の切り替え */
+#top[data-theme="apple"] .seg{background:rgba(118,118,128,.12) !important;border-radius:9px !important;padding:2px !important;gap:0 !important}
+#top[data-theme="apple"] .seg button{min-height:36px !important;border-radius:7px !important;font-size:14px !important;font-weight:500 !important;color:#000 !important;background:transparent !important;box-shadow:none !important}
+#top[data-theme="apple"] .seg button[aria-pressed="true"]{background:#FFFFFF !important;font-weight:600 !important;box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04) !important}
+/* 数字の札：白いカード、色は数字だけ */
+#top[data-theme="apple"] .statchip{background:#FFFFFF !important;color:#000 !important;box-shadow:none !important;border-radius:14px !important}
+#top[data-theme="apple"] .statchip span:first-child{color:#8E8E93 !important;opacity:1 !important;font-weight:500 !important;font-size:12px !important}
+#top[data-theme="apple"] .statchip[data-k="あなたの番"] span:last-child{color:#FF9500 !important}
+#top[data-theme="apple"] .statchip[data-k="新着"] span:last-child{color:#007AFF !important}
+#top[data-theme="apple"] .statchip[data-k="全部できた日"] span:last-child{color:#34C759 !important}
+/* 下のタブ：すりガラスの白い標準タブ */
+#top[data-theme="apple"] .tabbar{left:0 !important;right:0 !important;bottom:0 !important;max-width:none !important;border-radius:0 !important;padding:6px 8px calc(4px + env(safe-area-inset-bottom)) !important;background:rgba(249,249,249,.88) !important;backdrop-filter:saturate(180%) blur(20px) !important;-webkit-backdrop-filter:saturate(180%) blur(20px) !important;box-shadow:none !important;border-top:.5px solid rgba(60,60,67,.29) !important}
+#top[data-theme="apple"] .tabbar button{background:transparent !important;color:#8E8E93 !important;font-weight:500 !important;font-size:10px !important;min-height:48px !important}
+#top[data-theme="apple"] .tabbar button svg{stroke:currentColor !important;width:25px !important;height:25px !important}
+#top[data-theme="apple"] .tabbar button[aria-current="page"]{color:#007AFF !important}
+#top[data-theme="apple"] .tabbar button span[aria-hidden]{background:#FF3B30 !important;color:#FFFFFF !important;font-weight:600 !important}
+/* ボタン：黒いボタンは青に、四角いカードは影をなくす */
+#top[data-theme="apple"] button[style*="background: #17201B; color: #FFFFFF"]{background:#007AFF !important}
+#top[data-theme="apple"] [style*="border-radius: 20px; background: #FFFFFF"],#top[data-theme="apple"] [style*="border-radius: 24px; background: #FFFFFF"]{box-shadow:none !important;border-radius:16px !important}
+#top[data-theme="apple"] a{color:#007AFF !important}
+#top[data-theme="apple"] [style*="2px solid #F2A33A"]{border:none !important}
+#top[data-theme="apple"] [style*="border: 2px solid #DDE3DA"]{border:none !important;background:#F2F2F7 !important}
+#top[data-theme="apple"] [style*="border: 2px solid #17201B"][aria-pressed="true"]{border:none !important;background:#E5F1FF !important;color:#007AFF !important}
+#top[data-theme="apple"] [style*="border: 1.5px solid #2C6B52"]{border-color:#007AFF !important;color:#007AFF !important}
 @media (prefers-reduced-motion: reduce){[data-lazy]{transition:none !important;transform:none !important;opacity:1 !important}}
 @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
 </style>
@@ -53,7 +91,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 <div id="ptr" aria-hidden="true"><i></i><span>引っぱって更新</span></div>
 <div id="app"><div id="boot">読み込んでいます…</div></div>
 <template id="tpl">
-<div id="top" style="width: 100%; max-width: 480px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); box-sizing: border-box; background: #EEF1EC; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif; color: #17201B; display: flex; flex-direction: column; font-variant-numeric: tabular-nums">
+<div id="top" data-theme="{{theme}}" style="width: 100%; max-width: 480px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); box-sizing: border-box; background: #EEF1EC; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif; color: #17201B; display: flex; flex-direction: column; font-variant-numeric: tabular-nums">
 
   <sc-if value="{{needLogin}}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; inset: 0; z-index: 80; background: #EEF1EC; display: flex; flex-direction: column; justify-content: center; gap: 18px; padding: 32px 28px calc(32px + env(safe-area-inset-bottom)); box-sizing: border-box; max-width: 480px; margin: 0 auto">
@@ -69,17 +107,17 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </sc-if>
 
-  <div style="position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: rgba(238,241,236,0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(23,32,27,0.06)">
+  <div class="appbar" style="position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: rgba(238,241,236,0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(23,32,27,0.06)">
     <div style="display: flex; align-items: center; gap: 9px">
-      <span aria-hidden="true" style="width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, #2C6B52 0%, #17402F 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(23,64,47,0.3)">
+      <span class="logomark" aria-hidden="true" style="width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, #2C6B52 0%, #17402F 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(23,64,47,0.3)">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 5l8 6.5"></path><path d="M8 18a4 4 0 0 1 8 0"></path><path d="M4.5 18h15"></path><path d="M12 10.5v1.6M7.6 12.6l1 1M16.4 12.6l-1 1"></path></svg>
       </span>
-      <h1 aria-label="わが家の今日" style="margin: 0; font-size: 18px; font-weight: 900; letter-spacing: .3em; color: #17201B">WAGAYA</h1>
+      <h1 class="wordmark" aria-label="わが家の今日" style="margin: 0; font-size: 18px; font-weight: 900; letter-spacing: .3em; color: #17201B">WAGAYA</h1>
     </div>
     <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}"><span style="display: inline-flex; align-items: center; gap: 5px">{{syncLabel}}<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg></span></button>
   </div>
   <sc-if value="{{hdr.small}}" hint-placeholder-val="{{ false }}">
-  <header style="{{hdr.smallStyle}}">
+  <header class="tabhead" style="{{hdr.smallStyle}}">
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
       <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
         <h2 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: .02em">{{hdr.smallTitle}}</h2>
@@ -87,7 +125,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </div>
     </div>
 <sc-if value="{{hdr.showWho}}" hint-placeholder-val="{{ true }}">
-    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 12px; padding: 3px">
+    <div class="seg" role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 12px; padding: 3px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
@@ -96,7 +134,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </header>
   </sc-if>
   <sc-if value="{{hdr.big}}" hint-placeholder-val="{{ true }}">
-  <header style="{{hdr.style}}">
+  <header class="homehead" style="{{hdr.style}}">
     <svg aria-hidden="true" width="220" height="220" viewBox="0 0 220 220" style="position: absolute; right: -60px; top: -70px; opacity: .12; pointer-events: none"><circle cx="110" cy="110" r="100" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="70" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="40" fill="#FFFFFF"></circle></svg>
     <div style="position: relative; display: flex; flex-direction: column; gap: 2px; animation: rise .5s cubic-bezier(.2,.8,.2,1) both">
       <span style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; font-weight: 700"><span style="opacity: .8">{{hdr.date}}</span>
@@ -113,13 +151,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
     <div style="position: relative; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -18px; padding: 0 18px">
       <sc-for list="{{hdr.chips}}" as="c" hint-placeholder-count="3">
-        <button type="button" onClick="{{c.go}}" style="{{c.style}}">
+        <button type="button" class="statchip" data-k="{{c.k}}" onClick="{{c.go}}" style="{{c.style}}">
           <span style="font-size: 11px; font-weight: 700; opacity: .8">{{c.k}}</span>
           <span style="font-size: 18px; font-weight: 900; line-height: 1.15">{{c.v}}</span>
         </button>
       </sc-for>
     </div>
-    <div role="group" aria-label="誰の担当を見るか" style="position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 14px; padding: 4px">
+    <div class="seg" role="group" aria-label="誰の担当を見るか" style="position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 14px; padding: 4px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
@@ -151,7 +189,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <button type="button" onClick="{{tiles.goTurn}}" style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; border: none; cursor: pointer; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; font-family: inherit; color: #17201B"><span style="font-size: 12px; font-weight: 700; color: #6B706B">あなたの番</span><span style="font-size: 26px; font-weight: 900">{{tiles.turn}}</span><span style="font-size: 11px; color: #6B706B">{{tiles.turnSub}}</span></button>
       <button type="button" onClick="{{tiles.last.go}}" style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; border: none; cursor: pointer; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; font-family: inherit; background: #17201B; color: #FFFFFF"><span style="font-size: 12px; font-weight: 700; opacity: .75">{{tiles.last.k}}</span><span style="font-size: 26px; font-weight: 900">{{tiles.last.v}}</span><span style="font-size: 11px; opacity: .75">{{tiles.last.sub}}</span></button>
     </div>
-    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 12px 0 0; background: #17201B; border-radius: 14px; padding: 4px">
+    <div class="seg" role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 12px 0 0; background: #17201B; border-radius: 14px; padding: 4px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
@@ -239,13 +277,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <sc-if value="{{hdr.inPhoto}}" hint-placeholder-val="{{ true }}">
     <div style="display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 12px 12px 0">
       <sc-for list="{{hdr.chips}}" as="c" hint-placeholder-count="3">
-        <button type="button" onClick="{{c.go}}" style="{{c.style}}">
+        <button type="button" class="statchip" data-k="{{c.k}}" onClick="{{c.go}}" style="{{c.style}}">
           <span style="font-size: 11px; font-weight: 700; opacity: .7">{{c.k}}</span>
           <span style="font-size: 19px; font-weight: 900; line-height: 1.15">{{c.v}}</span>
         </button>
       </sc-for>
     </div>
-    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 10px 12px 14px; background: #17201B; border-radius: 14px; padding: 4px">
+    <div class="seg" role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 10px 12px 14px; background: #17201B; border-radius: 14px; padding: 4px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
@@ -743,7 +781,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </sc-if>
 
-  <nav aria-label="画面の切り替え" style="{{navStyle}}">
+  <nav class="tabbar" aria-label="画面の切り替え" style="{{navStyle}}">
     <sc-for list="{{navTabs}}" as="t" hint-placeholder-count="4">
       <button type="button" aria-label="{{t.aria}}" aria-current="{{t.current}}" onClick="{{t.go}}" style="{{t.style}}">
         <sc-if value="{{t.ic_today}}" hint-placeholder-val="{{ true }}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path></svg></sc-if>
@@ -862,8 +900,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{meEmail}}</p>
     <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{lastSyncLabel}}（{{appVersion}}）</p>
     <p style="margin: 0; font-size: 12px; color: #55605A; line-height: 1.7">アプリをよくするために、どこが使われたかを「回数だけ」記録しています。書いた文章は記録しません。</p>
-    <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; font-weight: 700; color: #55605A">ホームの見た目（この端末だけ）</span>
-      <div role="group" aria-label="ホームの見た目" style="display: flex; gap: 8px"><button type="button" aria-pressed="{{homeStyleA}}" onClick="{{pickHomeA}}" style="{{homeAStyle}}">写真が主役</button><button type="button" aria-pressed="{{homeStyleB}}" onClick="{{pickHomeB}}" style="{{homeBStyle}}">タイル</button></div>
+    <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; font-weight: 700; color: #55605A">見た目（この端末だけ）</span>
+      <div role="group" aria-label="ホームの見た目" style="display: flex; gap: 8px"><button type="button" aria-pressed="{{homeStyleA}}" onClick="{{pickHomeA}}" style="{{homeAStyle}}">写真が主役</button><button type="button" aria-pressed="{{homeStyleB}}" onClick="{{pickHomeB}}" style="{{homeBStyle}}">タイル</button><button type="button" aria-pressed="{{homeStyleC}}" onClick="{{pickHomeC}}" style="{{homeCStyle}}">Apple風</button></div>
     </div>
     <button type="button" onClick="{{refreshNow}}" style="min-height: 48px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">いま更新する</button>
     <button type="button" onClick="{{openFb}}" style="min-height: 48px; border: 1.5px solid #3046A6; border-radius: 14px; background: transparent; color: #3046A6; font-size: 15px; font-weight: 700; cursor: pointer">要望・不具合を書く</button>
@@ -978,7 +1016,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="config.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

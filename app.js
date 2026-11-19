@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '20';
+  var APP_VERSION = '21';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1757,10 +1757,13 @@
       lastSyncLabel: st.lastSync ? '最後に更新：' + whenLabel(st.lastSync) : 'まだ更新していません',
       refreshNow: function () { self.setState({ accountOpen: false }); self.refresh(); },
       logout: function () { self.logout(); },
-      homeStyleA: st.homeStyle !== 'b' ? 'true' : 'false', homeStyleB: st.homeStyle === 'b' ? 'true' : 'false',
+      theme: st.homeStyle === 'c' ? 'apple' : '',
+      homeStyleA: st.homeStyle !== 'b' && st.homeStyle !== 'c' ? 'true' : 'false', homeStyleB: st.homeStyle === 'b' ? 'true' : 'false', homeStyleC: st.homeStyle === 'c' ? 'true' : 'false',
+      pickHomeC: function () { LS.set('homeStyle', 'c'); USAGE.add('act:home_c'); self.setState({ homeStyle: 'c', accountOpen: false }); window.scrollTo(0, 0); },
+      homeCStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle === 'c' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
       pickHomeA: function () { LS.set('homeStyle', 'a'); USAGE.add('act:home_a'); self.setState({ homeStyle: 'a', accountOpen: false }); window.scrollTo(0, 0); },
       pickHomeB: function () { LS.set('homeStyle', 'b'); USAGE.add('act:home_b'); self.setState({ homeStyle: 'b', accountOpen: false }); window.scrollTo(0, 0); },
-      homeAStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle !== 'b' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
+      homeAStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle !== 'b' && st.homeStyle !== 'c' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
       homeBStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle === 'b' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
       accountBackdropStyle: backdrop(st.accountOpen),
       accountSheetStyle: sheetStyle(st.accountOpen, '')
