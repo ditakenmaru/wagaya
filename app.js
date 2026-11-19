@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '19';
+  var APP_VERSION = '20';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -245,7 +245,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', topicEdit: false, nav: null, expanded: {}
+      fbOpen: false, fbDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -1473,9 +1473,10 @@
     secAll.forEach(function (c) { var t = tabOf(c); if (tabHas[t] && tabNames.indexOf(t) < 0) tabNames.push(t); });
     var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
+    var tileMode = st.homeStyle === 'b' && isHome;   /* ホームの見た目 B：タイル（写真と「つぎの担当」はタイルの中に出す） */
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     shown.forEach(function (x) {
-      var vis = x.vis && (isHome || tabOf(x.c) === curTab);
+      var vis = x.vis && (isHome || tabOf(x.c) === curTab) && !(tileMode && (x.c.key === 'photos' || x.c.key === 'hero'));
       var o2 = { key: x.c.key, wrapStyle: vis ? '' : 'display: none' };
       SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === x.c.key; });
       sections.push(o2);
@@ -1530,7 +1531,7 @@
       var W = D.weather, wx = null;
       if (W && W.max != null && W.min != null) {
         var c = W.code, kind = c === 0 ? ['晴れ', 'sun'] : c <= 2 ? ['晴れときどき曇り', 'part'] : c === 3 ? ['曇り', 'cloud'] : c <= 48 ? ['霧', 'cloud'] : c <= 67 || (c >= 80 && c <= 82) ? ['雨', 'rain'] : c <= 77 || c === 85 || c === 86 ? ['雪', 'snow'] : ['雷雨', 'rain'];
-        wx = { label: (W.place && tripNow ? W.place + '　' : '') + kind[0], temp: W.max + '° / ' + W.min + '°', pop: W.pop != null ? '雨 ' + W.pop + '%' : '',
+        wx = { label: (W.place && tripNow ? W.place + '　' : '') + kind[0], temp: W.max + '° / ' + W.min + '°', pop: W.pop != null ? '雨 ' + W.pop + '%' : '', place: W.place || '', kind: kind[0], max: W.max + '°', minPop: '最低' + W.min + '°' + (W.pop != null ? '・雨' + W.pop + '%' : ''),
           sun: kind[1] === 'sun', part: kind[1] === 'part', cloud: kind[1] === 'cloud', rain: kind[1] === 'rain', snow: kind[1] === 'snow' };
       }
       var dd = now;
@@ -1544,7 +1545,8 @@
       var isHomeTab = curTab === tabNames[0];
       var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && !x.wrapStyle; });
       return {
-        big: isHomeTab && !photoHero, small: !isHomeTab, inPhoto: photoHero, newChip: newChip, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
+        big: isHomeTab && !photoHero && st.homeStyle !== 'b', small: !isHomeTab, inPhoto: photoHero, newChip: newChip,
+        tot: tot, dn: dn, turn: turn, streak: D.streak || 0, twoTab: twoTab, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
         smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
         smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
         wx: wx, hasWx: !!wx,
@@ -1755,12 +1757,18 @@
       lastSyncLabel: st.lastSync ? '最後に更新：' + whenLabel(st.lastSync) : 'まだ更新していません',
       refreshNow: function () { self.setState({ accountOpen: false }); self.refresh(); },
       logout: function () { self.logout(); },
+      homeStyleA: st.homeStyle !== 'b' ? 'true' : 'false', homeStyleB: st.homeStyle === 'b' ? 'true' : 'false',
+      pickHomeA: function () { LS.set('homeStyle', 'a'); USAGE.add('act:home_a'); self.setState({ homeStyle: 'a', accountOpen: false }); window.scrollTo(0, 0); },
+      pickHomeB: function () { LS.set('homeStyle', 'b'); USAGE.add('act:home_b'); self.setState({ homeStyle: 'b', accountOpen: false }); window.scrollTo(0, 0); },
+      homeAStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle !== 'b' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
+      homeBStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle === 'b' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
       accountBackdropStyle: backdrop(st.accountOpen),
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
     /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
     R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
+    R.tiles = this.tilesFor(tileMode, R, hero, nNew);
     R.notesTop = R.notesHere && !R.hdr.inPhoto; R.notesInHero = R.notesHere && !!R.hdr.inPhoto;   /* 申し送りの入口も写真の下へ */
     /* 見出しの「新着」は、いま画面に出ているものだけ数える（今日でない担当や、しぼって隠れた分は数えない） */
     var visSec = {}; sections.forEach(function (x) { if (!x.wrapStyle) visSec[x.key] = true; });
@@ -1770,6 +1778,31 @@
     R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== '新着'; });
     if (nNew) R.hdr.chips.unshift(R.hdr.newChip(nNew));   /* 新着はいちばん左（見切れないように） */
     return R;
+  };
+
+  /* ホームの見た目 B（タイル）：写真・天気・今日の担当・つぎの担当・あなたの番・新着をタイルで並べる */
+  App.prototype.tilesFor = function (on, R, hero, nNew) {
+    if (!on) return { show: false };
+    var self = this, st = this.state, H = R.hdr, o = this.order();
+    var cur = o.length ? o[st.slideIdx % o.length] : null;
+    var circ = 263.9, pct = H.tot ? H.dn / H.tot : 0;
+    var goHome = function (sel) { setTimeout(function () { var el = document.querySelector(sel); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60); };
+    var last = nNew ? { k: '新着', v: nNew + '件', sub: '押すと最初の新着へ', dark: true, go: function () { goHome('[data-new]'); } }
+      : (R.hdr.chips.filter(function (c) { return c.k === '旅行まで' || c.k === '旅行'; })[0] ? (function (c) { return { k: c.k, v: c.v, sub: '', dark: true, go: function () {} }; })(R.hdr.chips.filter(function (c) { return c.k === '旅行まで' || c.k === '旅行'; })[0])
+      : { k: '全部できた日', v: H.streak ? '連続' + H.streak + '日' : 'これから', sub: '', dark: true, go: function () {} });
+    return {
+      show: true, date: H.date, greet: H.greet,
+      hasPhoto: !!cur, photoSrc: cur ? (cur.type === 'video' ? (cur.poster || '') : cur.src) : '', age: R.capAge, photoHint: R.photoHint,
+      nextPhoto: function () { if (o.length) self.setState({ slideIdx: st.slideIdx + 1, slideAt: Date.now() }); },
+      hasWx: H.hasWx, wx: H.wx || {},
+      ringOffset: (circ * (1 - pct)).toFixed(1), prog: H.tot ? H.dn + '/' + H.tot : 'なし', streakText: H.streak >= 2 ? '連続' + H.streak + '日' : (H.tot && H.dn === H.tot ? 'ぜんぶ終わり' : ''),
+      goFlow: function () { goHome('[data-sec="flow"]'); },
+      next: { kicker: hero.kicker + (hero.countdown ? '・' + hero.countdown : ''), time: hero.time, task: hero.task, who: hero.who === '—' ? '' : '担当：' + hero.who,
+        style: 'grid-column: span 2; border: none; cursor: pointer; text-align: left; font-family: inherit; padding: 14px 16px; border-radius: 22px; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; min-height: 112px; box-sizing: border-box; background: ' + hero.color },
+      turn: H.turn ? H.turn + '件' : 'なし', turnSub: H.turn ? '押すと「ふたりで」へ' : '答える番はありません',
+      goTurn: function () { self.setState({ nav: H.twoTab }); window.scrollTo(0, 0); },
+      last: last
+    };
   };
 
   /* ホームでは長い一覧を数件にしぼり、「すべて見る」を付ける。

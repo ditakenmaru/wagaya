@@ -126,6 +126,38 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </header>
   </sc-if>
+  <sc-if value="{{tiles.show}}" hint-placeholder-val="{{ false }}">
+  <div style="padding: 14px 12px 0">
+    <div style="margin: 0 6px; font-size: 13px; font-weight: 700; color: #6B706B">{{tiles.date}}</div>
+    <div style="margin: 0 6px 12px; font-size: 26px; font-weight: 900; line-height: 1.25">{{tiles.greet}}</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 118px; gap: 10px">
+      <button type="button" aria-label="次の写真へ" onClick="{{tiles.nextPhoto}}" style="grid-row: span 2; position: relative; padding: 0; border: none; cursor: pointer; background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; background: linear-gradient(160deg, #2C6B52 0%, #3E8A6B 45%, #C99A1E 100%)">
+        <sc-if value="{{tiles.hasPhoto}}" hint-placeholder-val="{{ false }}"><img src="{{tiles.photoSrc}}" alt="" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover"></sc-if>
+        <sc-if value="{{tiles.hasPhoto}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 70px; background: linear-gradient(to top, rgba(0,0,0,.5), rgba(0,0,0,0))"></span></sc-if>
+        <span style="position: absolute; left: 12px; right: 12px; bottom: 10px; text-align: left; color: #FFFFFF; font-size: 12px; font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,.4)">{{tiles.age}}</span>
+      </button>
+      <div style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(160deg, #F7C77E, #EE9A5B); color: #3A2410">
+        <span style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700"><span>{{tiles.wx.place}}</span><span>{{tiles.wx.kind}}</span></span>
+        <sc-if value="{{tiles.hasWx}}" hint-placeholder-val="{{ false }}"><span><span style="display: block; font-size: 30px; font-weight: 900; line-height: 1">{{tiles.wx.max}}</span><span style="font-size: 12px; font-weight: 700">{{tiles.wx.minPop}}</span></span></sc-if>
+      </div>
+      <button type="button" onClick="{{tiles.goFlow}}" style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; border: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 10px; text-align: left; font-family: inherit; color: #17201B">
+        <svg width="60" height="60" viewBox="0 0 100 100" aria-hidden="true" style="flex-shrink: 0"><circle cx="50" cy="50" r="42" fill="none" stroke="#E7ECE6" stroke-width="12"></circle><circle cx="50" cy="50" r="42" fill="none" stroke="#2C6B52" stroke-width="12" stroke-linecap="round" stroke-dasharray="263.9" stroke-dashoffset="{{tiles.ringOffset}}" transform="rotate(-90 50 50)" style="transition: stroke-dashoffset .7s"></circle></svg>
+        <span style="display: flex; flex-direction: column"><span style="font-size: 11px; font-weight: 700; color: #6B706B">今日の担当</span><span style="font-size: 22px; font-weight: 900">{{tiles.prog}}</span><span style="font-size: 11px; font-weight: 700; color: #2C6B52">{{tiles.streakText}}</span></span>
+      </button>
+      <button type="button" onClick="{{tiles.goFlow}}" style="{{tiles.next.style}}">
+        <span style="font-size: 12px; font-weight: 700; opacity: .88">{{tiles.next.kicker}}</span>
+        <span style="display: flex; align-items: baseline; gap: 12px"><span style="font-size: 34px; font-weight: 900; letter-spacing: -.02em">{{tiles.next.time}}</span><span style="display: flex; flex-direction: column"><span style="font-size: 18px; font-weight: 900; line-height: 1.3">{{tiles.next.task}}</span><span style="font-size: 12px; opacity: .88">{{tiles.next.who}}</span></span></span>
+      </button>
+      <button type="button" onClick="{{tiles.goTurn}}" style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; border: none; cursor: pointer; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; font-family: inherit; color: #17201B"><span style="font-size: 12px; font-weight: 700; color: #6B706B">あなたの番</span><span style="font-size: 26px; font-weight: 900">{{tiles.turn}}</span><span style="font-size: 11px; color: #6B706B">{{tiles.turnSub}}</span></button>
+      <button type="button" onClick="{{tiles.last.go}}" style="background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; border: none; cursor: pointer; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; font-family: inherit; background: #17201B; color: #FFFFFF"><span style="font-size: 12px; font-weight: 700; opacity: .75">{{tiles.last.k}}</span><span style="font-size: 26px; font-weight: 900">{{tiles.last.v}}</span><span style="font-size: 11px; opacity: .75">{{tiles.last.sub}}</span></button>
+    </div>
+    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 12px 0 0; background: #17201B; border-radius: 14px; padding: 4px">
+      <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
+        <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
   <div style="height: 14px"></div>
 
   <sc-if value="{{loading}}" hint-placeholder-val="{{ false }}">
@@ -830,6 +862,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{meEmail}}</p>
     <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{lastSyncLabel}}（{{appVersion}}）</p>
     <p style="margin: 0; font-size: 12px; color: #55605A; line-height: 1.7">アプリをよくするために、どこが使われたかを「回数だけ」記録しています。書いた文章は記録しません。</p>
+    <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; font-weight: 700; color: #55605A">ホームの見た目（この端末だけ）</span>
+      <div role="group" aria-label="ホームの見た目" style="display: flex; gap: 8px"><button type="button" aria-pressed="{{homeStyleA}}" onClick="{{pickHomeA}}" style="{{homeAStyle}}">写真が主役</button><button type="button" aria-pressed="{{homeStyleB}}" onClick="{{pickHomeB}}" style="{{homeBStyle}}">タイル</button></div>
+    </div>
     <button type="button" onClick="{{refreshNow}}" style="min-height: 48px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">いま更新する</button>
     <button type="button" onClick="{{openFb}}" style="min-height: 48px; border: 1.5px solid #3046A6; border-radius: 14px; background: transparent; color: #3046A6; font-size: 15px; font-weight: 700; cursor: pointer">要望・不具合を書く</button>
     <button type="button" onClick="{{logout}}" style="min-height: 48px; border: 1.5px solid #C9D0C6; border-radius: 14px; background: transparent; color: #17201B; font-size: 15px; font-weight: 700; cursor: pointer">ログアウト</button>
@@ -943,7 +978,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="config.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
