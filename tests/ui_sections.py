@@ -22,7 +22,7 @@ async def main():
         print('nav tabs:', labels)
         async def go(name):
             await page.locator('nav[aria-label=画面の切り替え] button', has_text=name).click(); await page.wait_for_timeout(500)
-        print('today shows hero, hides shop:', await page.locator('[data-sec=hero]').is_visible() and not await page.locator('[data-sec=shop]').is_visible())
+        print('home shows hero and shop:', await page.locator('[data-sec=hero]').is_visible() and await page.locator('[data-sec=shop]').is_visible())
         await page.screenshot(path='/tmp/s_nav_today.png')
         await go('ふたりで')
         print('two: notes card + decide, no hero:', await page.get_by_role('button', name='申し送り').first.is_visible() and await page.locator('[data-sec=decide]').is_visible() and not await page.locator('[data-sec=hero]').is_visible())

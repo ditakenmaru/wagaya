@@ -259,6 +259,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A">この人の担当は今日はありません。</p>
     </sc-if>
     </sc-if>
+    <sc-if value="{{more.flow.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.flow.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.flow.label}}</button>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -290,6 +293,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </article>
     </sc-for>
     <sc-if value="{{decisionsEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A; line-height: 1.6">いま相談していることはありません。「＋ 相談」から、選択肢をつけて聞けます。</p></sc-if>
+    <sc-if value="{{more.decisions.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.decisions.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.decisions.label}}</button>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -310,6 +316,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-for>
       <sc-if value="{{deadlinesEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 12px 0; font-size: 14px; color: #55605A; line-height: 1.6">期限があるものはありません。書類・支払い・予約などを「＋ 期限」で足すと、近い順に並びます。</p></sc-if>
     </div>
+    <sc-if value="{{more.deadlines.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.deadlines.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.deadlines.label}}</button>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -340,6 +349,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <div style="flex-shrink: 0; width: 280px; box-sizing: border-box; padding: 16px; border-radius: 18px; border: 2px dashed #C9D1C5; font-size: 13px; line-height: 1.7; color: #55605A">旅のしおりなど、いま2人で話している資料のリンクを置く場所です。「＋ 話題」から足せます。</div>
       </sc-if>
     </div>
+    <sc-if value="{{more.topics.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.topics.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.topics.label}}</button>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -363,6 +375,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <p style="margin: 0; font-size: 13px; color: #55605A; line-height: 1.6">写真のペンのボタンから、気づきや「できたこと」「よく食べた物」を残すと、ここに並びます。</p>
       </sc-if>
     </div>
+    <sc-if value="{{more.diary.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.diary.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.diary.label}}</button>
+    </sc-if>
   </section>
   </sc-if>
   </div>
@@ -464,6 +479,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         </sc-if>
       </div>
     </sc-for>
+    <sc-if value="{{more.shop.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.shop.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.shop.label}}</button>
+    </sc-if>
   </section>
   </sc-if>
   </div>
@@ -498,6 +516,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-for>
       <sc-if value="{{outingsEmpty}}" hint-placeholder-val="{{ false }}"><div style="flex-shrink: 0; width: 280px; box-sizing: border-box; padding: 16px; border-radius: 18px; border: 2px dashed #C9D1C5; font-size: 13px; line-height: 1.7; color: #55605A">週末に行きたいところの候補を置く場所です。「＋ 候補」から足して、2人で「行きたい」を押し、行く日を決めます。</div></sc-if>
     </div>
+    <sc-if value="{{more.outings.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.outings.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.outings.label}}</button>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -584,6 +605,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <div style="flex-shrink: 0; width: 290px; box-sizing: border-box; padding: 18px; border-radius: 20px; border: 2px dashed #C9D1C5; font-size: 14px; line-height: 1.7; color: #55605A">このやることに関係するニュースは、まだありません。</div>
       </sc-if>
     </div>
+    <sc-if value="{{more.news.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.news.go}}" style="align-self: stretch; margin: 10px 0 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{more.news.label}}</button>
+    </sc-if>
   </section>
   </sc-if>
   </div>
@@ -833,7 +857,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="config.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

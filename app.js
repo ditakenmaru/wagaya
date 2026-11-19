@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '10';
+  var APP_VERSION = '11';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -229,7 +229,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', topicEdit: false, nav: null
+      fbOpen: false, fbDraft: '', topicEdit: false, nav: null, expanded: {}
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -507,6 +507,7 @@
 
   /* 下のタブ（画面を切り替える）。どのセクションをどのタブに出すかは「画面」シートの「下のタブ」で変えられる */
   var TAB_ORDER = ['今日', 'ふたりで', 'ごはん', '予定', 'ニュース'];
+  var TAB_LABEL = { '今日': 'ホーム' };   /* 最初のタブはホーム（全部を少しずつ） */
   var TAB_ID = { '今日': 'today', 'ふたりで': 'two', 'ごはん': 'food', '予定': 'plan', 'ニュース': 'news' };
   var DEF_TAB = { photos: '今日', hero: '今日', flow: '今日', diary: '今日', decide: 'ふたりで', deadline: 'ふたりで', week: 'ごはん', shop: 'ごはん', topics: '予定', weekend: '予定', plan: '予定', news: 'ニュース' };
 
@@ -1366,8 +1367,10 @@
     var tabNames = TAB_ORDER.filter(function (t) { return tabHas[t]; });
     secAll.forEach(function (c) { var t = tabOf(c); if (tabHas[t] && tabNames.indexOf(t) < 0) tabNames.push(t); });
     var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
+    var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
+    var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     shown.forEach(function (x) {
-      var vis = x.vis && tabOf(x.c) === curTab;
+      var vis = x.vis && (isHome || tabOf(x.c) === curTab);
       var o2 = { key: x.c.key, wrapStyle: vis ? '' : 'display: none' };
       SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === x.c.key; });
       sections.push(o2);
@@ -1379,8 +1382,8 @@
       var badge = t === twoTab ? myUnread.length + myTurnDecide : 0;
       var on = t === curTab;
       return {
-        label: t, ic_today: TAB_ID[t] === 'today' || !TAB_ID[t], ic_two: TAB_ID[t] === 'two', ic_food: TAB_ID[t] === 'food', ic_plan: TAB_ID[t] === 'plan', ic_news: TAB_ID[t] === 'news', current: on ? 'page' : 'false', badge: badge, hasBadge: badge > 0,
-        aria: t + (badge ? '（あなたの番 ' + badge + '件）' : ''),
+        label: TAB_LABEL[t] || t, ic_today: TAB_ID[t] === 'today' || !TAB_ID[t], ic_two: TAB_ID[t] === 'two', ic_food: TAB_ID[t] === 'food', ic_plan: TAB_ID[t] === 'plan', ic_news: TAB_ID[t] === 'news', current: on ? 'page' : 'false', badge: badge, hasBadge: badge > 0,
+        aria: (TAB_LABEL[t] || t) + (badge ? '（あなたの番 ' + badge + '件）' : ''),
         style: 'position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: none; border-radius: 16px; color: #FFFFFF; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .25s; background: ' + (on ? 'rgba(255,255,255,0.18)' : 'transparent'),
         go: function () {
           if (on) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
@@ -1390,9 +1393,9 @@
         }
       };
     });
-    var notesHere = curTab === twoTab;
+    var notesHere = curTab === twoTab || (isHome && myUnread.length > 0);
 
-    return {
+    var R = {
       sections: sections, title: title, planNote: '', travelOn: travel,
       navTabs: navTabs, navStyle: 'position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25',
       notesHere: notesHere,
@@ -1593,6 +1596,52 @@
       accountBackdropStyle: backdrop(st.accountOpen),
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
+    R.more = this.homeMore(R, isHome, secTab, curTab, flow);
+    return R;
+  };
+
+  /* ホームでは長い一覧を数件にしぼり、「すべて見る」を付ける。
+     そのセクションの居場所が別のタブならそのタブへ、ホームの中ならその場で広げる */
+  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 3], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5] };
+  App.prototype.homeMore = function (R, isHome, secTab, curTab, flowAll) {
+    var self = this, st = this.state, more = {};
+    Object.keys(HOME_LIMIT).forEach(function (k) {
+      var sec = HOME_LIMIT[k][0], n = HOME_LIMIT[k][1], list = R[k] || [];
+      var count = k === 'shop' ? list.reduce(function (a, g) { return a + g.items.length; }, 0) : list.length;
+      var m = { show: false, label: '', go: function () {} };
+      more[k] = m;
+      var here = secTab[sec] === curTab;
+      var open = !!(st.expanded && st.expanded[sec]);
+      if (!isHome || count <= n) return;
+      if (here && open) {
+        m.show = true; m.label = '少なく表示';
+        m.go = function () { var e = Object.assign({}, self.state.expanded); delete e[sec]; self.setState({ expanded: e }); };
+        return;
+      }
+      if (k === 'flow') {
+        /* まだのものを優先して選び、並びは時刻のまま */
+        var pick = flowAll.filter(function (r) { return !r.done; }).slice(0, n);
+        if (pick.length < n) pick = pick.concat(flowAll.filter(function (r) { return r.done; }).slice(0, n - pick.length));
+        R.flow = flowAll.filter(function (r) { return pick.indexOf(r) >= 0; });
+      } else if (k === 'shop') {
+        /* まだ買っていないものを優先して、全部で n 品まで */
+        var left = n;
+        var rest = list.map(function (g) { return g.items.filter(function (it) { return !it.checked; }); });
+        var taken = rest.map(function (items) { var t = items.slice(0, Math.max(0, left)); left -= t.length; return t; });
+        R.shop = list.map(function (g, i) { return Object.assign({}, g, { items: taken[i], empty: false }); }).filter(function (g) { return g.items.length; });
+      } else {
+        R[k] = list.slice(0, n);
+      }
+      m.show = true;
+      m.label = 'すべて見る（全' + count + '件）';
+      m.go = function () {
+        USAGE.add('act:more_' + sec);
+        if (here) { var e = Object.assign({}, self.state.expanded || {}); e[sec] = true; self.setState({ expanded: e }); return; }
+        self.setState({ nav: secTab[sec] });
+        setTimeout(function () { var el = document.querySelector('[data-sec="' + sec + '"]'); if (el) el.scrollIntoView({ block: 'start' }); else window.scrollTo(0, 0); }, 80);
+      };
+    });
+    return more;
   };
 
   /* ---------------- 見本モード（?demo=1） ---------------- */
