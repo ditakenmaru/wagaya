@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#EEF1EC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="わが家">
+<title>わが家の今日</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;background:#EEF1EC;-webkit-text-size-adjust:100%}
+body{overscroll-behavior-y:none}
+*{-webkit-tap-highlight-color:transparent}
+#boot{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#55605A;font-size:14px}
+a{color:#3046A6}a:hover{color:#22337A}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offset:2px}
+.strip::-webkit-scrollbar{display:none}
+@keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes rise{0%{opacity:0;transform:translateY(18px)}100%{opacity:1;transform:none}}
+@keyframes slideA{0%{opacity:0;transform:translateX(28px)}100%{opacity:1;transform:none}}
+@keyframes slideB{0%{opacity:0;transform:translateX(28px)}100%{opacity:1;transform:none}}
+@keyframes tickA{0%{opacity:0;transform:translateY(-60%)}100%{opacity:1;transform:none}}
+@keyframes tickB{0%{opacity:0;transform:translateY(-60%)}100%{opacity:1;transform:none}}
+@keyframes shimmer{0%{background-position:-390px 0}100%{background-position:390px 0}}
+@keyframes heroIn{0%{opacity:0;transform:scale(.94) translateY(12px)}100%{opacity:1;transform:none}}
+@keyframes bigTime{0%{letter-spacing:.2em;opacity:0}100%{letter-spacing:-.02em;opacity:1}}
+@keyframes fall{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(520px) rotate(540deg);opacity:0}}
+@keyframes ring{0%{transform:scale(.4);opacity:.6}100%{transform:scale(2.4);opacity:0}}
+@keyframes barA{0%{width:0}100%{width:100%}}
+@keyframes barB{0%{width:0}100%{width:100%}}
+@keyframes capIn{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:none}}
+@keyframes capIn2{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){[data-lazy]{transition:none !important;transform:none !important;opacity:1 !important}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</head>
+<body>
+<div id="app"><div id="boot">読み込んでいます…</div></div>
+<template id="tpl">
+<div id="top" style="width: 100%; max-width: 480px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); box-sizing: border-box; background: #EEF1EC; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif; color: #17201B; display: flex; flex-direction: column; font-variant-numeric: tabular-nums">
+
+  <sc-if value="{{needLogin}}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 80; background: #EEF1EC; display: flex; flex-direction: column; justify-content: center; gap: 18px; padding: 32px 28px calc(32px + env(safe-area-inset-bottom)); box-sizing: border-box; max-width: 480px; margin: 0 auto">
+      <div style="width: 72px; height: 72px; border-radius: 22px; background: #2C6B52; display: flex; align-items: center; justify-content: center; animation: pop .5s ease-out both">
+        <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"></path></svg>
+      </div>
+      <h1 style="margin: 0; font-size: 28px; font-weight: 900; line-height: 1.3; animation: rise .5s cubic-bezier(.2,.8,.2,1) .1s both">わが家の今日</h1>
+      <p style="margin: 0; font-size: 15px; line-height: 1.8; color: #39433D; animation: rise .5s cubic-bezier(.2,.8,.2,1) .2s both">家族のGoogleアカウントでログインしてください。登録した2人だけが使えます。</p>
+      <button type="button" onClick="{{login}}" style="min-height: 54px; border: none; border-radius: 16px; background: #17201B; color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; animation: rise .5s cubic-bezier(.2,.8,.2,1) .3s both">{{loginLabel}}</button>
+      <sc-if value="{{loginError}}" hint-placeholder-val="{{ false }}">
+        <p role="alert" style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #F5E2E9; color: #7A2645; font-size: 14px; line-height: 1.6">{{loginError}}</p>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <header style="padding: 20px 20px 12px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 0.02em">わが家の今日</h1>
+      <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}">{{syncLabel}}</button>
+    </div>
+    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: #DDE3DA; border-radius: 14px; padding: 4px">
+      <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
+        <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+      </sc-for>
+    </div>
+  </header>
+
+  <sc-if value="{{loading}}" hint-placeholder-val="{{ false }}">
+    <div aria-hidden="true" style="display: flex; flex-direction: column; gap: 16px; padding: 4px 16px 0">
+      <div style="height: 236px; border-radius: 24px; background: linear-gradient(90deg, #DDE3DA 0%, #E9EDE6 40%, #DDE3DA 80%); background-size: 780px 100%; animation: shimmer 1.1s linear infinite"></div>
+      <sc-for list="{{skeletonRows}}" as="s" hint-placeholder-count="6">
+        <div style="{{s.style}}"></div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ready}}" hint-placeholder-val="{{ true }}">
+  <div style="display: flex; flex-direction: column">
+  <figure aria-label="ふたりの写真と動画" style="margin: 0 16px 12px; position: relative; height: 448px; border-radius: 24px; overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both">
+    <sc-for list="{{slides}}" as="sl" hint-placeholder-count="4">
+      <sc-if value="{{sl.isVideo}}" hint-placeholder-val="{{ false }}">
+        <video src="{{sl.src}}" poster="{{sl.poster}}" autoPlay="{{ true }}" muted="{{ true }}" loop="{{ true }}" playsInline="{{ true }}" aria-hidden="true" style="{{sl.style}}"></video>
+      </sc-if>
+      <sc-if value="{{sl.isPhoto}}" hint-placeholder-val="{{ true }}">
+        <img src="{{sl.src}}" alt="" loading="lazy" decoding="async" style="{{sl.style}}">
+      </sc-if>
+    </sc-for>
+    <sc-if value="{{noPhotos}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: linear-gradient(160deg, #2C6B52 0%, #3E8A6B 45%, #C99A1E 100%); display: flex; align-items: flex-start; justify-content: flex-end; padding: 28px 20px; box-sizing: border-box">
+        <p style="margin: 0; max-width: 220px; color: rgba(255,255,255,0.92); font-size: 13px; line-height: 1.7; text-align: right">{{photoHint}}</p>
+      </div>
+    </sc-if>
+    <div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 160px; background: linear-gradient(to top, rgba(10,14,12,0.55), rgba(10,14,12,0))"></div>
+    <div aria-hidden="true" style="position: absolute; top: 12px; left: 14px; right: 14px; display: flex; gap: 4px">
+      <sc-for list="{{bars}}" as="b" hint-placeholder-count="4">
+        <span style="flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.38); overflow: hidden">
+          <span style="{{b.fillStyle}}"></span>
+        </span>
+      </sc-for>
+    </div>
+    <button type="button" aria-label="次の写真へ" onClick="{{nextSlide}}" style="position: absolute; inset: 0; width: 100%; height: 100%; border: none; padding: 0; background: transparent; cursor: pointer"></button>
+    <figcaption style="{{capStyle}}">
+      <span style="display: flex; align-items: flex-end; gap: 10px">
+        <span style="font-size: 72px; font-weight: 900; line-height: 0.82; letter-spacing: -0.03em">{{capDay}}</span>
+        <span style="display: flex; flex-direction: column; gap: 1px; padding-bottom: 2px; font-size: 14px; font-weight: 700; line-height: 1.25"><span>{{capMonth}}</span><span>{{capDow}}</span></span>
+      </span>
+      <span style="margin-top: 10px; font-size: 13px; font-weight: 500; opacity: 0.95">{{capAge}}</span>
+    </figcaption>
+    <button type="button" aria-label="{{pauseLabel}}" onClick="{{togglePause}}" style="position: absolute; right: 12px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255,255,255,0.22); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <sc-if value="{{paused}}" hint-placeholder-val="{{ false }}">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="#FFFFFF"></path></svg>
+      </sc-if>
+      <sc-if value="{{playing}}" hint-placeholder-val="{{ true }}">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="#FFFFFF"></rect><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="#FFFFFF"></rect></svg>
+      </sc-if>
+    </button>
+    <button type="button" aria-label="今日の日記に気づきを残す" onClick="{{openDiaryNote}}" style="position: absolute; right: 64px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255,255,255,0.22); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #FFFFFF">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 10-10-3-3L5 16z"></path><path d="M13 7l3 3"></path></svg>
+    </button>
+  </figure>
+  <section aria-label="つぎの担当" style="{{hero.bandStyle}}">
+    <p style="margin: 0; font-size: 13px; font-weight: 700; opacity: 0.85">{{hero.kicker}}</p>
+    <div style="display: flex; align-items: flex-end; gap: 12px">
+      <span style="font-size: 64px; font-weight: 900; line-height: 0.95; letter-spacing: -0.02em; animation: bigTime .7s cubic-bezier(.2,.8,.2,1) .15s both">{{hero.time}}</span>
+      <span style="display: flex; flex-direction: column; padding-bottom: 4px">
+        <span style="font-size: 15px; font-weight: 700">{{hero.countdown}}</span>
+        <span style="display: inline-flex; align-items: baseline; gap: 2px; font-size: 13px; font-weight: 500; opacity: 0.85; overflow: hidden; height: 18px">
+          <span style="{{hero.secStyle}}">{{hero.sec}}</span><span>秒</span>
+        </span>
+      </span>
+    </div>
+    <p style="margin: 0; font-size: 22px; font-weight: 700; line-height: 1.35">{{hero.task}}</p>
+    <p style="margin: 0; font-size: 14px; font-weight: 500; opacity: 0.9">担当：{{hero.who}}</p>
+    <div aria-hidden="true" style="position: relative; height: 28px; margin-top: 8px">
+      <div style="position: absolute; left: 0; right: 0; top: 13px; height: 2px; background: rgba(255,255,255,0.35); border-radius: 2px"></div>
+      <div style="{{hero.passedStyle}}"></div>
+      <sc-for list="{{timeline}}" as="d" hint-placeholder-count="7">
+        <span style="{{d.dotStyle}}"></span>
+      </sc-for>
+      <span style="{{hero.nowStyle}}"></span>
+    </div>
+    <div aria-hidden="true" style="display: flex; justify-content: space-between; font-size: 11px; opacity: 0.8; margin-top: -4px">
+      <span>6:00</span><span>12:00</span><span>18:00</span><span>21:00</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="sec-flow" style="padding: 24px 16px 8px; display: flex; flex-direction: column; gap: 12px; animation: rise .55s cubic-bezier(.2,.8,.2,1) .25s both">
+    <h2 id="sec-flow" style="margin: 0; padding: 0 4px; font-size: 18px; font-weight: 900">今日の流れ</h2>
+
+    <div style="display: flex; align-items: center; gap: 18px; background: #FFFFFF; border-radius: 22px; padding: 16px 18px">
+      <div style="position: relative; width: 104px; height: 104px; flex-shrink: 0">
+        <svg width="104" height="104" viewBox="0 0 104 104" aria-hidden="true" style="transform: rotate(-90deg)">
+          <circle cx="52" cy="52" r="44" fill="none" style="stroke: #E4E9E1; stroke-width: 11"></circle>
+          <circle cx="52" cy="52" r="44" fill="none" style="{{prog.ringStyle}}"></circle>
+        </svg>
+        <div role="img" aria-label="{{prog.aria}}" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center">
+          <span style="font-size: 30px; font-weight: 900; line-height: 1">{{prog.pct}}<span style="font-size: 14px; font-weight: 700">%</span></span>
+          <span style="font-size: 11px; font-weight: 700; color: #55605A; margin-top: 2px">{{prog.count}}</span>
+        </div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0">
+        <p style="margin: 0; font-size: 16px; font-weight: 900; line-height: 1.4">{{prog.message}}</p>
+        <sc-for list="{{prog.people}}" as="pp" hint-placeholder-count="2">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700">
+              <span style="{{pp.nameStyle}}">{{pp.name}}</span><span style="color: #55605A">{{pp.count}}</span>
+            </div>
+            <div style="height: 8px; background: #E4E9E1; border-radius: 999px; overflow: hidden"><div style="{{pp.barStyle}}"></div></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <sc-for list="{{flow}}" as="r" hint-placeholder-count="7">
+        <div style="{{r.wrapStyle}}">
+          <div style="display: flex; align-items: center; gap: 4px">
+            <button type="button" aria-pressed="{{r.done}}" onClick="{{r.toggle}}" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 0 14px; border: none; background: transparent; color: inherit; cursor: pointer; text-align: left">
+              <span style="width: 44px; flex-shrink: 0; font-size: 15px; font-weight: 900">{{r.time}}</span>
+              <span style="{{r.markStyle}}">
+                <sc-if value="{{r.done}}" hint-placeholder-val="{{ false }}">
+                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="animation: pop .28s ease-out"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                </sc-if>
+              </span>
+              <span style="{{r.taskStyle}}">{{r.task}}</span>
+              <span style="{{r.badgeStyle}}">{{r.who}}</span>
+            </button>
+            <button type="button" aria-label="{{r.noteLabel}}" onClick="{{r.openNote}}" style="{{r.noteBtnStyle}}">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>
+              <sc-if value="{{r.hasNotes}}" hint-placeholder-val="{{ false }}">
+                <span style="position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 10px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .35s ease-out">{{r.noteCount}}</span>
+              </sc-if>
+            </button>
+          </div>
+          <sc-for list="{{r.notes}}" as="nt" hint-placeholder-count="0">
+            <p style="{{nt.bubbleStyle}}">{{nt.text}}<span style="display: block; font-size: 11px; font-weight: 700; color: #6B5A33; margin-top: 2px">{{nt.meta}}</span></p>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+    <sc-if value="{{flowEmpty}}" hint-placeholder-val="{{ false }}">
+      <p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A">この人の担当は今日はありません。</p>
+    </sc-if>
+  </section>
+
+  <div id="w-diary" data-lazy style="{{lazy.diary.wrapStyle}}">
+  <sc-if value="{{lazy.diary.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.diary.skelStyle}}"></div></sc-if>
+  <sc-if value="{{lazy.diary.on}}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="sec-diary" style="padding: 24px 0 8px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px">
+      <h2 id="sec-diary" style="margin: 0; font-size: 18px; font-weight: 900">今日の日記</h2>
+      <span style="font-size: 12px; color: #55605A">{{diaryCount}}</span>
+    </div>
+    <div class="strip" style="display: flex; gap: 10px; overflow-x: auto; padding: 0 20px 4px; scrollbar-width: none">
+      <sc-for list="{{diary}}" as="dy" hint-placeholder-count="3">
+        <article style="{{dy.cardStyle}}">
+          <span style="font-size: 12px; font-weight: 900; color: #6B5A33">{{dy.time}}</span>
+          <p style="margin: 0; font-size: 14px; line-height: 1.7">{{dy.text}}</p>
+        </article>
+      </sc-for>
+      <sc-if value="{{diaryEmpty}}" hint-placeholder-val="{{ false }}">
+        <p style="margin: 0; font-size: 13px; color: #55605A; line-height: 1.6">写真のペンのボタンから残した気づきが、ここに今日の日記として並びます。</p>
+      </sc-if>
+    </div>
+  </section>
+  </sc-if>
+  </div>
+
+  <div id="w-week" data-lazy style="{{lazy.week.wrapStyle}}">
+  <sc-if value="{{lazy.week.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.week.skelStyle}}"></div></sc-if>
+  <sc-if value="{{lazy.week.on}}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="sec-week" style="padding: 24px 0 8px; display: flex; flex-direction: column; gap: 12px">
+    <h2 id="sec-week" style="margin: 0; padding: 0 20px; font-size: 18px; font-weight: 900">今週のごはん</h2>
+    <div class="strip" role="group" aria-label="曜日を選ぶ" style="display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 4px; scrollbar-width: none">
+      <sc-for list="{{week}}" as="w" hint-placeholder-count="7">
+        <button type="button" aria-pressed="{{w.pressed}}" onClick="{{w.pick}}" style="{{w.style}}">
+          <span style="font-size: 12px; font-weight: 700">{{w.dow}}</span>
+          <span style="font-size: 20px; font-weight: 900">{{w.date}}</span>
+          <span style="{{w.dotStyle}}"></span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="{{menuCardStyle}}">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+        <span style="font-size: 13px; font-weight: 700; color: #55605A">{{dayMenu.label}}の夕ごはん</span>
+        <sc-if value="{{dayMenu.hotcook}}" hint-placeholder-val="{{ true }}">
+          <span style="font-size: 12px; font-weight: 700; color: #5E4708; background: #F5E7B8; border-radius: 999px; padding: 4px 10px">ホットクック</span>
+        </sc-if>
+      </div>
+      <div style="position: relative; height: 200px; margin: 0 -8px; border-radius: 16px; overflow: hidden; background: #F7F1DF">
+        <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="{{dayMenu.photoStyle}}">
+        <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,14,12,0.6), rgba(10,14,12,0) 60%)"></div>
+        <span style="position: absolute; left: 16px; bottom: 14px; color: #FFFFFF; font-size: 15px; font-weight: 700; letter-spacing: 0.04em">{{dayMenu.label}}の食卓</span>
+        <span style="position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px; background: rgba(23,32,27,0.55); color: #FFFFFF; font-size: 10px; font-weight: 500">イメージ写真（Pexels）</span>
+      </div>
+      <p style="margin: 0; font-size: 26px; font-weight: 900; line-height: 1.3">{{dayMenu.dish}}</p>
+      <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.6">{{dayMenu.note}}</p>
+      <button type="button" onClick="{{openSheet}}" style="align-self: flex-start; margin-top: 4px; min-height: 44px; padding: 0 16px; border-radius: 12px; border: none; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">材料と作り方を見る</button>
+    </div>
+  </section>
+  </sc-if>
+  </div>
+
+  <div id="w-shop" data-lazy style="{{lazy.shop.wrapStyle}}">
+  <sc-if value="{{lazy.shop.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.shop.skelStyle}}"></div></sc-if>
+  <sc-if value="{{lazy.shop.on}}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="sec-shop" style="padding: 24px 20px 8px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h2 id="sec-shop" style="margin: 0; font-size: 18px; font-weight: 900">買い物リスト</h2>
+      <span style="font-size: 13px; font-weight: 700">{{shopCount}}</span>
+    </div>
+    <div aria-hidden="true" style="height: 8px; background: #DDE3DA; border-radius: 999px; overflow: hidden">
+      <div style="{{shopBarStyle}}"></div>
+    </div>
+    <button type="button" aria-pressed="{{hideBought}}" onClick="{{toggleHide}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{hideLabel}}</button>
+    <sc-for list="{{shop}}" as="g" hint-placeholder-count="2">
+      <div style="display: flex; flex-direction: column; margin-top: 8px">
+        <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #55605A">{{g.label}}</p>
+        <sc-for list="{{g.items}}" as="it" hint-placeholder-count="4">
+          <button type="button" aria-pressed="{{it.checked}}" onClick="{{it.toggle}}" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0; border: none; border-bottom: 1px solid #DDE3DA; background: transparent; text-align: left; cursor: pointer; color: inherit">
+            <span style="{{it.boxStyle}}">
+              <sc-if value="{{it.checked}}" hint-placeholder-val="{{ false }}">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="animation: pop .28s ease-out"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </sc-if>
+            </span>
+            <span style="{{it.nameStyle}}">{{it.name}}</span>
+            <span style="margin-left: auto; font-size: 14px; color: #55605A">{{it.qty}}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{g.empty}}" hint-placeholder-val="{{ false }}">
+          <p style="margin: 6px 0 0; font-size: 14px; color: #55605A">ここは全部そろいました。</p>
+        </sc-if>
+      </div>
+    </sc-for>
+  </section>
+  </sc-if>
+  </div>
+
+  <div id="w-plan" data-lazy style="{{lazy.plan.wrapStyle}}">
+  <sc-if value="{{lazy.plan.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.plan.skelStyle}}"></div></sc-if>
+  <sc-if value="{{lazy.plan.on}}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="sec-plan" style="padding: 24px 20px 16px; display: flex; flex-direction: column; gap: 4px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px">
+      <h2 id="sec-plan" style="margin: 0; font-size: 18px; font-weight: 900">今週の予定</h2>
+      <span style="font-size: 12px; color: #55605A">今週 {{planTotal}}件</span>
+    </div>
+    <div class="strip" role="group" aria-label="予定を見る曜日を選ぶ" style="display: flex; gap: 8px; overflow-x: auto; margin: 0 -20px; padding: 0 20px 6px; scrollbar-width: none">
+      <sc-for list="{{planWeek}}" as="pw" hint-placeholder-count="7">
+        <button type="button" aria-pressed="{{pw.pressed}}" aria-label="{{pw.aria}}" onClick="{{pw.pick}}" style="{{pw.style}}">
+          <span style="font-size: 12px; font-weight: 700">{{pw.dow}}</span>
+          <span style="font-size: 20px; font-weight: 900">{{pw.date}}</span>
+          <span style="display: flex; gap: 3px; height: 6px">
+            <sc-for list="{{pw.dots}}" as="dt" hint-placeholder-count="1">
+              <span style="{{dt.style}}"></span>
+            </sc-for>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="{{planCardStyle}}">
+      <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #55605A">{{planDayLabel}}の予定</p>
+      <sc-for list="{{plans}}" as="p" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px solid #ECEFE9">
+          <span style="width: 52px; flex-shrink: 0; font-size: 15px; font-weight: 900">{{p.time}}</span>
+          <span style="flex: 1; font-size: 15px; line-height: 1.4">{{p.what}}</span>
+          <span style="{{p.badgeStyle}}">{{p.who}}</span>
+        </div>
+      </sc-for>
+      <sc-if value="{{plansEmpty}}" hint-placeholder-val="{{ false }}">
+        <p style="margin: 4px 0 0; font-size: 14px; color: #55605A">この日の予定はありません。</p>
+      </sc-if>
+    </div>
+    <p style="margin: 12px 0 0; font-size: 12px; color: #55605A; line-height: 1.7">担当の色は、文字（パパ・ママ・家族）でも見分けられます。</p>
+  </section>
+  </sc-if>
+  </div>
+
+  <div id="w-news" data-lazy style="{{lazy.news.wrapStyle}}">
+  <sc-if value="{{lazy.news.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.news.skelStyle}}"></div></sc-if>
+  <sc-if value="{{lazy.news.on}}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="sec-news" style="padding: 16px 0 24px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px">
+      <h2 id="sec-news" style="margin: 0; font-size: 18px; font-weight: 900">ピックアップニュース</h2>
+      <span style="font-size: 12px; color: #55605A">{{newsCount}}件</span>
+    </div>
+    <p style="margin: 0; padding: 0 20px; font-size: 13px; color: #55605A; line-height: 1.6">中期のやることを選ぶと、関係するニュースに切り替わります。</p>
+    <div class="strip" role="group" aria-label="中期のやることを選ぶ" style="display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 4px; scrollbar-width: none">
+      <sc-for list="{{goalChips}}" as="gc" hint-placeholder-count="5">
+        <button type="button" aria-pressed="{{gc.pressed}}" onClick="{{gc.pick}}" style="{{gc.style}}">{{gc.label}}<span style="{{gc.countStyle}}">{{gc.count}}</span></button>
+      </sc-for>
+    </div>
+    <sc-if value="{{goalOn}}" hint-placeholder-val="{{ false }}">
+      <div style="{{goalCardStyle}}">
+        <span style="font-size: 12px; font-weight: 700; color: #55605A">次の一手（期限 {{goalDue}}）</span>
+        <span style="font-size: 15px; font-weight: 700; line-height: 1.5">{{goalNext}}</span>
+      </div>
+    </sc-if>
+    <div class="strip" style="display: flex; gap: 12px; overflow-x: auto; padding: 2px 20px 6px; scroll-snap-type: x mandatory; scrollbar-width: none">
+      <sc-for list="{{news}}" as="nw" hint-placeholder-count="3">
+        <article style="{{nw.cardStyle}}">
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="{{nw.srcStyle}}">{{nw.src}}</span>
+            <span style="font-size: 12px; color: #55605A">{{nw.meta}}</span>
+          </span>
+          <span style="font-size: 16px; font-weight: 900; line-height: 1.45">{{nw.title}}</span>
+          <span style="font-size: 13px; color: #2C6B52; font-weight: 700; line-height: 1.5">{{nw.why}}</span>
+          <sc-if value="{{nw.open}}" hint-placeholder-val="{{ false }}">
+            <span style="display: flex; flex-direction: column; gap: 8px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both">
+              <span style="font-size: 14px; line-height: 1.65">{{nw.body}}</span>
+              <a href="{{nw.url}}" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 700">元の記事を開く</a>
+            </span>
+          </sc-if>
+          <button type="button" aria-expanded="{{nw.expanded}}" onClick="{{nw.toggle}}" style="margin-top: auto; align-self: flex-start; min-height: 40px; padding: 0 14px; border: none; border-radius: 10px; background: #EEF1EC; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{nw.more}}</button>
+        </article>
+      </sc-for>
+      <sc-if value="{{newsEmpty}}" hint-placeholder-val="{{ false }}">
+        <div style="flex-shrink: 0; width: 290px; box-sizing: border-box; padding: 18px; border-radius: 20px; border: 2px dashed #C9D1C5; font-size: 14px; line-height: 1.7; color: #55605A">このやることに関係するニュースは、まだありません。Museの受け渡しと夜の調べものが入ると、ここに並びます。</div>
+      </sc-if>
+    </div>
+    <p style="margin: 0; padding: 0 20px; font-size: 12px; color: #55605A; line-height: 1.7">Museの受け渡しとWebの記事から、中期のやることに合わせて並べています。スプレッドシートの「ニュース」に行を足すと、ここに出ます。</p>
+  </section>
+  </sc-if>
+  </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{celebrate}}" hint-placeholder-val="{{ false }}">
+    <div aria-hidden="true" style="position: fixed; left: 0; right: 0; top: 0; width: 100%; height: 0; overflow: visible; z-index: 50; pointer-events: none">
+      <sc-for list="{{confetti}}" as="c" hint-placeholder-count="0">
+        <span style="{{c.style}}"></span>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <nav aria-label="メニュー" style="position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25">
+    <a href="#top" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path></svg>今日
+    </a>
+    <a href="#w-week" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h16a8 8 0 0 1-16 0z"></path><path d="M9 5c0 2 2 2 2 4M13 5c0 2 2 2 2 4"></path></svg>ごはん
+    </a>
+    <a href="#w-plan" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg>予定
+    </a>
+    <a href="#w-shop" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 16px; color: #FFFFFF; text-decoration: none; font-size: 11px; font-weight: 700">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14l-1.5 11h-11z"></path><path d="M9 7a3 3 0 0 1 6 0"></path></svg>買い物
+    </a>
+    <button type="button" aria-label="{{notesNavLabel}}" onClick="{{openNotes}}" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: none; border-radius: 16px; background: {{notesNavBg}}; color: #FFFFFF; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .3s">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>申し送り
+      <sc-if value="{{hasUnread}}" hint-placeholder-val="{{ true }}">
+        <span aria-hidden="true" style="position: absolute; top: 4px; right: 18px; width: 18px; height: 18px">
+          <span style="position: absolute; inset: 0; border-radius: 50%; background: #F2A33A; animation: ring 1.8s ease-out infinite"></span>
+          <span style="position: absolute; inset: 0; border-radius: 50%; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .4s ease-out">{{unreadCount}}</span>
+        </span>
+      </sc-if>
+    </button>
+  </nav>
+
+  <button type="button" aria-label="申し送りを閉じる" onClick="{{closeNotes}}" style="{{notesBackdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="notes-title" style="{{notesSheetStyle}}">
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h2 id="notes-title" style="margin: 0; font-size: 20px; font-weight: 900">申し送り</h2>
+      <span style="font-size: 13px; color: #55605A">{{notesSummary}}</span>
+    </div>
+    <sc-for list="{{notes}}" as="n" hint-placeholder-count="2">
+      <div style="{{n.cardStyle}}">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="{{n.fromBadge}}">{{n.from}}</span>
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M9 4.5L12.5 8 9 11.5" fill="none" stroke="#55605A" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="{{n.toBadge}}">{{n.to}}</span>
+          <span style="margin-left: auto; font-size: 12px; color: #55605A">{{n.when}}</span>
+        </div>
+        <sc-if value="{{n.hasTask}}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 12px; font-weight: 700; color: #55605A">「{{n.task}}」について</span>
+        </sc-if>
+        <p style="margin: 0; font-size: 15px; line-height: 1.65">{{n.text}}</p>
+        <sc-if value="{{n.unread}}" hint-placeholder-val="{{ true }}">
+          <button type="button" onClick="{{n.ack}}" style="align-self: flex-start; min-height: 40px; padding: 0 14px; border: none; border-radius: 12px; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">確認しました</button>
+        </sc-if>
+        <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 12px; font-weight: 700; color: #2C6B52">確認済み</span>
+        </sc-if>
+      </div>
+    </sc-for>
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px solid #ECEFE9">
+      <div role="group" aria-label="だれに送るか" style="display: flex; gap: 8px; align-items: center">
+        <span style="font-size: 13px; font-weight: 700; color: #55605A">宛先</span>
+        <sc-for list="{{toChoices}}" as="tc" hint-placeholder-count="2">
+          <button type="button" aria-pressed="{{tc.pressed}}" onClick="{{tc.pick}}" style="{{tc.style}}">{{tc.label}}</button>
+        </sc-for>
+      </div>
+      <label for="note-input" style="font-size: 13px; font-weight: 700; color: #55605A">申し送りを書く</label>
+      <textarea id="note-input" rows="3" value="{{draft}}" onChange="{{setDraft}}" placeholder="例：明日は保育園の持ち物に着替えを2組" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 15px; resize: none; background: #FAFBF9; color: #17201B"></textarea>
+      <button type="button" onClick="{{sendNote}}" style="min-height: 48px; border: none; border-radius: 14px; background: #3046A6; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送る</button>
+    </div>
+  </section>
+
+  <div role="status" aria-live="polite" style="{{toastStyle}}">
+    <span style="flex: 1; font-size: 14px; font-weight: 500">{{toastMsg}}</span>
+    <sc-if value="{{toastHasUndo}}" hint-placeholder-val="{{ true }}">
+      <button type="button" onClick="{{undo}}" style="min-height: 40px; padding: 0 12px; border: none; border-radius: 10px; background: rgba(255,255,255,0.14); color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">元に戻す</button>
+    </sc-if>
+  </div>
+
+  <button type="button" aria-label="気づきの入力を閉じる" onClick="{{closeNote}}" style="{{noteBackdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="kizuki-title" style="{{noteSheetStyle}}">
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <p style="margin: 0; font-size: 12px; font-weight: 700; color: #55605A">{{sheetKicker}}</p>
+    <h2 id="kizuki-title" style="margin: 0; font-size: 20px; font-weight: 900">{{noteTarget}}</h2>
+    <sc-if value="{{isHandover}}" hint-placeholder-val="{{ false }}">
+      <div role="group" aria-label="だれに送るか" style="display: flex; gap: 8px; align-items: center">
+        <span style="font-size: 13px; font-weight: 700; color: #55605A">宛先</span>
+        <sc-for list="{{toChoices}}" as="tc" hint-placeholder-count="2">
+          <button type="button" aria-pressed="{{tc.pressed}}" onClick="{{tc.pick}}" style="{{tc.style}}">{{tc.label}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <label for="kizuki-input" style="font-size: 13px; font-weight: 700; color: #55605A">{{sheetLabel}}</label>
+    <textarea id="kizuki-input" rows="4" value="{{noteDraft}}" onChange="{{setNoteDraft}}" placeholder="{{sheetPlaceholder}}" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: none; background: #FAFBF9; color: #17201B"></textarea>
+    <div style="display: flex; gap: 10px; align-items: center">
+      <button type="button" aria-pressed="{{listening}}" onClick="{{toggleMic}}" style="{{micStyle}}">
+        <sc-if value="{{listeningOn}}" hint-placeholder-val="{{ false }}">
+          <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 50%; background: #A3355D; animation: ring 1.4s ease-out infinite"></span>
+        </sc-if>
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="position: relative"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+      </button>
+      <span style="flex: 1; font-size: 13px; color: #55605A; line-height: 1.5">{{micHint}}</span>
+    </div>
+    <button type="button" onClick="{{saveNote}}" style="margin-top: 4px; min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">{{saveLabel}}</button>
+  </section>
+
+  <button type="button" aria-label="材料と作り方を閉じる" onClick="{{closeSheet}}" style="{{backdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="sheet-title" style="{{sheetStyle}}">
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
+      <h2 id="sheet-title" style="margin: 0; font-size: 20px; font-weight: 900">{{dayMenu.dish}}</h2>
+      <span style="font-size: 13px; color: #55605A">{{dayMenu.label}}・4人分</span>
+    </div>
+    <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="display: block; width: 100%; height: 170px; object-fit: cover; border-radius: 16px; background: #F7F1DF">
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #55605A">材料</p>
+    <sc-for list="{{dayMenu.ingredients}}" as="ing" hint-placeholder-count="4">
+      <div style="display: flex; justify-content: space-between; min-height: 40px; align-items: center; border-bottom: 1px solid #ECEFE9; font-size: 15px">
+        <span>{{ing.name}}</span><span style="color: #55605A">{{ing.qty}}</span>
+      </div>
+    </sc-for>
+    <p style="margin: 8px 0 0; font-size: 13px; font-weight: 700; color: #55605A">作り方</p>
+    <p style="margin: 0; font-size: 15px; line-height: 1.7">{{dayMenu.how}}</p>
+    <button type="button" onClick="{{closeSheet}}" style="margin-top: 8px; min-height: 48px; border-radius: 14px; border: none; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">閉じる</button>
+  </section>
+  <button type="button" aria-label="アカウントを閉じる" onClick="{{closeAccount}}" style="{{accountBackdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="acct-title" style="{{accountSheetStyle}}">
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <h2 id="acct-title" style="margin: 0; font-size: 20px; font-weight: 900">{{meLabel}}</h2>
+    <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{meEmail}}</p>
+    <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.7">{{lastSyncLabel}}</p>
+    <button type="button" onClick="{{refreshNow}}" style="min-height: 48px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">いま更新する</button>
+    <button type="button" onClick="{{logout}}" style="min-height: 48px; border: 1.5px solid #C9D0C6; border-radius: 14px; background: transparent; color: #17201B; font-size: 15px; font-weight: 700; cursor: pointer">ログアウト</button>
+  </section>
+</div>
+</template>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
