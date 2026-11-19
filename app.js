@@ -6,13 +6,34 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '7';
-  var API_EXPECTED = 7;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '8';
+  var API_EXPECTED = 8;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
     get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
     del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+
+  /* ---------------- 使われ方（回数だけ。書いた文章は残さない） ---------------- */
+  var USAGE = {
+    add: function (k, n) {
+      if (DEMO) return;
+      var u = LS.get('usage') || {}, d = new Date(), day = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+      if (u.date !== day) { USAGE.flush(); u = LS.get('usage') || {}; if (u.date !== day) u = { date: day, counts: {} }; }
+      u.counts[k] = (u.counts[k] || 0) + (n || 1);
+      LS.set('usage', u);
+    },
+    flush: function () {
+      var u = LS.get('usage');
+      if (DEMO || !u || !u.counts || !Object.keys(u.counts).length || !LS.get('session') || USAGE.busy) return;
+      USAGE.busy = true;
+      LS.set('usage', { date: u.date, counts: {} });
+      api('logUsage', { date: u.date, counts: u.counts }, true).catch(function () {
+        var v = LS.get('usage') || { date: u.date, counts: {} };
+        if (v.date === u.date) { Object.keys(u.counts).forEach(function (k) { v.counts[k] = (v.counts[k] || 0) + u.counts[k]; }); LS.set('usage', v); }
+      }).then(function () { USAGE.busy = false; });
+    }
   };
 
   /* ---------------- 小さな描画の仕組み ---------------- */
@@ -158,13 +179,14 @@
   }
 
   /* ---------------- 通信（GAS） ---------------- */
-  function api(action, payload) {
+  function api(action, payload, keepalive) {
     payload = Object.assign({ action: action, session: LS.get('session') }, payload || {});
     if (DEMO) return demoApi(payload);
     if (!CFG.gasUrl) return Promise.reject({ code: 'not_configured' });
-    return fetch(CFG.gasUrl, { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' })
+    return fetch(CFG.gasUrl, { method: 'POST', body: JSON.stringify(payload), redirect: 'follow', keepalive: !!keepalive })
       .then(function (r) { return r.json(); })
-      .then(function (res) { if (!res || !res.ok) throw res || { code: 'bad_response' }; return res; });
+      .then(function (res) { if (!res || !res.ok) throw res || { code: 'bad_response' }; return res; })
+      .catch(function (err) { if (action !== 'logUsage') USAGE.add('err:' + String((err && err.code) || 'network').replace(/[^\w]/g, '').slice(0, 30)); throw err; });
   }
 
   /* ---------------- 日付の道具 ---------------- */
@@ -208,6 +230,20 @@
 
   App.prototype.componentDidMount = function () {
     var self = this;
+    USAGE.add('open:app');
+    setInterval(function () { USAGE.flush(); }, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') USAGE.flush(); else USAGE.add('open:app'); });
+    /* どのセクションが見られたか（開くたびに1回ずつ） */
+    this.secSeen = {};
+    var watch = function () {
+      if (typeof IntersectionObserver === 'undefined') return;
+      if (!self.secIO) self.secIO = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { var k = e.target.getAttribute('data-sec'); if (e.isIntersecting && k && !self.secSeen[k]) { self.secSeen[k] = 1; USAGE.add('sec:' + k); } });
+      }, { threshold: 0.35 });
+      document.querySelectorAll('[data-sec]').forEach(function (el) { if (!el.__watched) { el.__watched = 1; self.secIO.observe(el); } });
+    };
+    setInterval(watch, 2000); setTimeout(watch, 300);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') self.secSeen = {}; });
     /* 画面の描き直しは「分が変わった時」と「写真を送る時」だけ（毎秒は描かない） */
     this.timer = setInterval(function () {
       var s = self.state, upd = null;
@@ -291,6 +327,7 @@
   };
   App.prototype.logout = function () {
     var self = this;
+    USAGE.flush();
     api('logout', {}).catch(function () {});
     LS.del('session'); LS.del('boot');
     try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
@@ -397,6 +434,7 @@
     var self = this;
     this.pending = (this.pending || 0) + 1;
     this.writeSeq = (this.writeSeq || 0) + 1;
+    USAGE.add('act:' + action);
     var run = function () {
       return api(action, payload).then(function (r) { return r; }).catch(function (err) {
         if (err && err.code === 'no_session') { LS.del('session'); self.setState({ needLogin: true }); return; }
@@ -742,6 +780,134 @@
     });
   };
 
+  /* ---------- ふたりで決めること ---------- */
+  App.prototype.openDecision = function (x) {
+    this.setState({ editor: { kind: 'decide', isNew: !x, id: x ? x.id : uid('q'), q: x ? x.q : '', options: x ? x.options.join('\n') : '', due: x ? x.due : '', note: x ? x.note : '' } });
+  };
+  App.prototype.saveDecision = function () {
+    var e = this.state.editor, q = (e.q || '').trim();
+    if (!q) { this.showToast('相談したいことを入力してください', null); return; }
+    var opts = String(e.options || '').split(/\s*[\n\/／、,]\s*/).map(function (x) { return x.trim(); }).filter(String).slice(0, 6);
+    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim() };
+    this.mutate(function (d) {
+      var list = d.decisions || [], old = list.filter(function (x) { return x.id === item.id; })[0];
+      if (old) Object.assign(old, item); else list.push(Object.assign({ state: '相談中', a1: '', a2: '', decided: '' }, item));
+      d.decisions = list;
+    });
+    this.setState({ editor: null });
+    this.send('saveDecision', { item: item }, this.snapshot());
+    this.showToast(e.isNew ? '相談を足しました' : '相談を直しました', null);
+  };
+  App.prototype.deleteDecision = function () {
+    var e = this.state.editor;
+    this.mutate(function (d) { d.decisions = (d.decisions || []).filter(function (x) { return x.id !== e.id; }); });
+    this.setState({ editor: null });
+    this.send('deleteDecision', { id: e.id }, this.snapshot());
+    this.showToast('相談を消しました', null);
+  };
+  App.prototype.answer = function (x, opt) {
+    var me1 = this.names()[0] === this.meWho(), key = me1 ? 'a1' : 'a2';
+    var val = x[key] === opt ? '' : opt;
+    this.mutate(function (d) { (d.decisions || []).forEach(function (y) { if (y.id === x.id) y[key] = val; }); });
+    this.send('answerDecision', { id: x.id, answer: val }, this.snapshot());
+  };
+  App.prototype.decideNow = function (x, reopen) {
+    var self = this;
+    this.mutate(function (d) { (d.decisions || []).forEach(function (y) { if (y.id === x.id) { y.state = reopen ? '相談中' : '決まった'; y.decided = reopen ? '' : y.a1; } }); });
+    this.send('decide', { id: x.id, reopen: !!reopen }, this.snapshot());
+    this.showToast(reopen ? '相談に戻しました' : '「' + x.a1 + '」で決まりにしました', reopen ? null : function () { self.decideNow(x, true); self.setState({ toast: null }); });
+  };
+
+  /* ---------- 期限があるもの ---------- */
+  App.prototype.openDeadline = function (x) {
+    var D = this.state.data || {};
+    this.setState({ editor: { kind: 'deadline', isNew: !x, id: x ? x.id : uid('k'), what: x ? x.what : '', due: x ? x.due : (D.today || ymd(new Date())), who: x ? x.who : this.meWho(), url: x ? x.url : '', note: x ? x.note : '' } });
+  };
+  App.prototype.saveDeadline = function () {
+    var e = this.state.editor, what = (e.what || '').trim();
+    if (!what) { this.showToast('内容を入力してください', null); return; }
+    var url = (e.url || '').trim(); if (url && !/^https?:\/\//.test(url)) url = 'https://' + url; url = url.replace(/^http:/, 'https:');
+    var item = { id: e.id, what: what, due: e.due || '', who: e.who, url: url, note: (e.note || '').trim() };
+    this.mutate(function (d) {
+      var list = d.deadlines || [], old = list.filter(function (x) { return x.id === item.id; })[0];
+      if (old) Object.assign(old, item); else list.push(Object.assign({ done: false }, item));
+      d.deadlines = list;
+    });
+    this.setState({ editor: null });
+    this.send('saveDeadline', { item: item }, this.snapshot());
+    this.showToast(e.isNew ? '期限を足しました' : '期限を直しました', null);
+  };
+  App.prototype.deleteDeadline = function () {
+    var e = this.state.editor;
+    this.mutate(function (d) { d.deadlines = (d.deadlines || []).filter(function (x) { return x.id !== e.id; }); });
+    this.setState({ editor: null });
+    this.send('deleteDeadline', { id: e.id }, this.snapshot());
+    this.showToast('期限を消しました', null);
+  };
+  App.prototype.toggleDeadline = function (x) {
+    var self = this, v = !x.done;
+    this.mutate(function (d) { (d.deadlines || []).forEach(function (y) { if (y.id === x.id) y.done = v; }); });
+    this.send('doneDeadline', { id: x.id, done: v }, this.snapshot());
+    this.showToast(v ? '「' + x.what + '」を済にしました' : '「' + x.what + '」を戻しました', function () { self.toggleDeadline(Object.assign({}, x, { done: v })); self.setState({ toast: null }); });
+  };
+
+  /* ---------- 今週末（お出かけ） ---------- */
+  App.prototype.openOuting = function (x) {
+    this.setState({ editor: { kind: 'outing', isNew: !x, id: x ? x.id : uid('o'), name: x ? x.name : '', okind: x ? x.kind : '公園', date: x ? x.date : '', place: x ? x.place : '', url: x ? x.url : '', note: x ? x.note : '' } });
+  };
+  App.prototype.saveOuting = function () {
+    var e = this.state.editor, name = (e.name || '').trim();
+    if (!name) { this.showToast('行き先を入力してください', null); return; }
+    var url = (e.url || '').trim(); if (url && !/^https?:\/\//.test(url)) url = 'https://' + url; url = url.replace(/^http:/, 'https:');
+    var item = { id: e.id, name: name, kind: e.okind || '', date: e.date || '', place: (e.place || '').trim(), url: url, note: (e.note || '').trim() };
+    this.mutate(function (d) {
+      var list = d.outings || [], old = list.filter(function (x) { return x.id === item.id; })[0];
+      if (old) Object.assign(old, item); else list.push(Object.assign({ like1: false, like2: false, state: '候補', go: '' }, item));
+      d.outings = list;
+    });
+    this.setState({ editor: null });
+    this.send('saveOuting', { item: item }, this.snapshot());
+    this.showToast(e.isNew ? '候補に「' + name + '」を足しました' : '候補を直しました', null);
+  };
+  App.prototype.deleteOuting = function () {
+    var e = this.state.editor;
+    this.mutate(function (d) { d.outings = (d.outings || []).filter(function (x) { return x.id !== e.id; }); });
+    this.setState({ editor: null });
+    this.send('deleteOuting', { id: e.id }, this.snapshot());
+    this.showToast('候補を消しました', null);
+  };
+  App.prototype.likeOuting = function (x) {
+    var key = this.names()[0] === this.meWho() ? 'like1' : 'like2', v = !x[key];
+    this.mutate(function (d) { (d.outings || []).forEach(function (y) { if (y.id === x.id) y[key] = v; }); });
+    this.send('likeOuting', { id: x.id, like: v }, this.snapshot());
+  };
+  App.prototype.planOuting = function (x, date) {
+    var self = this;
+    this.mutate(function (d) {
+      (d.outings || []).forEach(function (y) { if (y.id === x.id) { y.state = date ? '決めた' : '候補'; y.go = date || ''; } });
+      if (date) d.plans = (d.plans || []).concat([{ date: date, time: '', what: 'おでかけ：' + x.name, who: '家族' }]);
+    });
+    this.send('planOuting', { id: x.id, date: date || '' }, this.snapshot());
+    if (date) { var dd = parseYmd(date); this.showToast((dd.getMonth() + 1) + '/' + dd.getDate() + '（' + DOWS[dd.getDay()] + '）に「' + x.name + '」へ。予定にも入れました', null); }
+  };
+
+  /* ---------- 献立の材料を買い物リストへ ---------- */
+  App.prototype.menuToShop = function (dm) {
+    var D = this.state.data || {}, groups = (D.shop && D.shop.groups) || [], week = (D.shop && D.shop.week) || ymd(new Date());
+    var have = {}; groups.forEach(function (g) { g.items.forEach(function (x) { have[String(x[1]).replace(/\s/g, '')] = 1; }); });
+    var cat = (groups[0] && groups[0].label) || 'お店で買う';
+    var items = (dm.ingredients || []).filter(function (x) { return x.name && !have[String(x.name).replace(/\s/g, '')]; }).map(function (x) { return { id: uid('s'), name: x.name, qty: x.qty || '', cat: cat, week: week }; });
+    if (!items.length) { this.showToast('材料はもう全部リストにあります', null); return; }
+    this.mutate(function (d) {
+      d.shop = d.shop || { week: week, groups: [] };
+      var g = d.shop.groups.filter(function (x) { return x.label === cat; })[0];
+      if (!g) { g = { label: cat, items: [] }; d.shop.groups.push(g); }
+      items.forEach(function (x) { g.items.push([x.id, x.name, x.qty]); });
+    });
+    this.send('addShopMany', { items: items }, this.snapshot());
+    this.showToast(dm.dish + 'の材料を' + items.length + 'つ買い物リストに足しました', null);
+  };
+
   /* 写真のスライド */
   App.prototype.media = function () {
     return (this.state.photos || []).filter(function (p) { return p.src || p.vsrc; }).map(function (p) {
@@ -803,7 +969,7 @@
       var on = whoSel === t[0];
       return {
         label: t[1], pressed: on ? 'true' : 'false',
-        pick: function () { LS.set('who', t[0]); self.setState({ who: t[0] }); },
+        pick: function () { LS.set('who', t[0]); USAGE.add('tab:' + (t[0] === 'all' ? 'all' : (names.indexOf(t[0]) === 0 ? 'p1' : 'p2'))); self.setState({ who: t[0] }); },
         style: 'min-height: 40px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #FFFFFF; color: #17201B; box-shadow: 0 1px 2px rgba(23,32,27,0.12)' : 'background: transparent; color: #55605A')
       };
     });
@@ -954,14 +1120,72 @@
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
+    /* ふたりで決めること */
+    var me1 = names[0] === meWho;
+    var dueLabel = function (due) {
+      if (!due) return '';
+      var n = Math.round((parseYmd(due) - parseYmd(todayStr0)) / 864e5), dd = parseYmd(due), md = (dd.getMonth() + 1) + '/' + dd.getDate();
+      return n < 0 ? md + '（' + (-n) + '日過ぎ）' : n === 0 ? md + '（今日）' : n === 1 ? md + '（明日）' : md + '（あと' + n + '日）';
+    };
+    var todayStr0 = ymd(now);
+    var decisions = (D.decisions || []).slice().sort(function (a, b) { return (a.state === '決まった') - (b.state === '決まった') || ((a.due || '9') < (b.due || '9') ? -1 : 1); }).map(function (x) {
+      var decided = x.state === '決まった';
+      var mine = me1 ? x.a1 : x.a2;
+      var both = x.a1 && x.a1 === x.a2 && x.a1 !== '話したい';
+      var opts = (x.options && x.options.length ? x.options : ['賛成', '反対']).concat(['話したい']).map(function (o) {
+        var picks = [];
+        if (x.a1 === o) picks.push({ label: names[0], style: self.badge(names[0]) });
+        if (x.a2 === o) picks.push({ label: names[1], style: self.badge(names[1]) });
+        var on = mine === o;
+        return { label: o, picks: picks, pressed: on ? 'true' : 'false', pick: function () { self.answer(x, o); },
+          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: 12px; text-align: left; cursor: pointer; font-size: 15px; font-weight: 700; color: #17201B; border: 2px solid ' + (on ? '#17201B' : '#DDE3DA') + '; background: ' + (on ? '#F4F6F2' : '#FFFFFF') };
+      });
+      var waiting = !x.a1 && !x.a2 ? 'まだ2人とも答えていません' : (!x.a1 || !x.a2 ? (!x.a1 ? names[0] : names[1]) + 'の答え待ち' : (both ? '答えがそろいました' : '答えが分かれています。話して決めましょう'));
+      return { q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+        canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
+        cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
+    });
+
+    /* 期限があるもの */
+    var deadlines = (D.deadlines || []).map(function (x) {
+      var n = x.due ? Math.round((parseYmd(x.due) - parseYmd(todayStr0)) / 864e5) : 99;
+      var col = x.done ? '#55605A' : (n < 0 ? '#A3355D' : n <= 2 ? '#8A5A12' : '#39433D');
+      return { what: x.what, due: x.due ? dueLabel(x.due) : '期限なし', who: x.who, done: !!x.done, url: x.url, hasUrl: !!x.url, note: x.note,
+        toggle: function () { self.toggleDeadline(x); }, edit: function () { self.openDeadline(x); }, badgeStyle: self.badge(x.who),
+        dueStyle: 'font-size: 13px; font-weight: 900; color: ' + col,
+        boxStyle: 'width: 26px; height: 26px; flex-shrink: 0; border-radius: 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 2px solid #2C6B52; background: ' + (x.done ? '#2C6B52' : 'transparent'),
+        textStyle: 'font-size: 15px; font-weight: 700; ' + (x.done ? 'text-decoration: line-through; color: #55605A' : '') };
+    });
+
+    /* 今週末 */
+    var sat = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((6 - now.getDay() + 7) % 7));
+    var sun = now.getDay() === 0 ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(sat.getFullYear(), sat.getMonth(), sat.getDate() + 1);
+    var wkDays = (now.getDay() === 0 ? [sun] : [sat, sun]).map(function (d) { return { ymd: ymd(d), label: (d.getMonth() + 1) + '/' + d.getDate() + '（' + DOWS[d.getDay()] + '）' }; });
+    var outings = (D.outings || []).slice().sort(function (a, b) { return (b.state === '決めた') - (a.state === '決めた') || ((b.like1 + b.like2) - (a.like1 + a.like2)); }).map(function (x) {
+      var mineLike = me1 ? x.like1 : x.like2, likes = [];
+      if (x.like1) likes.push({ label: names[0], style: self.badge(names[0]) });
+      if (x.like2) likes.push({ label: names[1], style: self.badge(names[1]) });
+      var planned = x.state === '決めた' && x.go;
+      var gd = planned ? parseYmd(x.go) : null;
+      return { name: x.name, kind: x.kind, meta: [x.date ? dueLabel(x.date).replace(/（.*）/, '') + 'のイベント' : '', x.place].filter(String).join('・'), note: x.note, url: x.url, hasUrl: !!x.url,
+        likes: likes, likeLabel: mineLike ? '行きたい（取り消す）' : '行きたい', like: function () { self.likeOuting(x); },
+        planned: !!planned, notPlanned: !planned, goLabel: planned ? (gd.getMonth() + 1) + '/' + gd.getDate() + '（' + DOWS[gd.getDay()] + '）に行く' : '',
+        days: wkDays.map(function (w) { return { label: w.label + 'に行く', pick: function () { self.planOuting(x, w.ymd); } }; }),
+        unplan: function () { self.planOuting(x, ''); }, edit: function () { self.openOuting(x); },
+        likeStyle: 'min-height: 44px; padding: 0 14px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #A3355D; ' + (mineLike ? 'background: #A3355D; color: #FFFFFF' : 'background: transparent; color: #A3355D'),
+        cardStyle: 'flex-shrink: 0; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (planned ? '#E0EEE7' : '#FFFFFF') };
+    });
+
     /* 編集シート（担当・買い物・話題） */
     var E = st.editor;
-    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
+    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
     if (E) {
-      ed.heading = E.kind === 'duty' ? (E.isNew ? '担当を足す' : '担当を直す') : (E.kind === 'shop' ? '買い物を直す' : (E.isNew ? '話題を足す' : '話題を直す'));
-      ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed[k] = E[k] || ''; });
+      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'] };
+      ed.heading = HEAD[E.kind][E.isNew ? 0 : 1];
+      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date'];
+      FIELDS.forEach(function (k) { ed[k] = E[k] || ''; });
       ed.set = {};
-      ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
+      FIELDS.forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
       ed.cancel = function () { self.setState({ editor: null }); };
       if (E.kind === 'duty') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
@@ -989,6 +1213,14 @@
       } else if (E.kind === 'shop') {
         ed.catChips = shopCats.map(function (c) { var on = E.cat === c; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('cat', c); } }; });
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
+      } else if (E.kind === 'decide') {
+        ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
+      } else if (E.kind === 'deadline') {
+        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
+        ed.save = function () { self.saveDeadline(); }; ed.del = function () { self.deleteDeadline(); };
+      } else if (E.kind === 'outing') {
+        ed.okindChips = ['公園', '行くところ', 'イベント'].map(function (k) { var on = E.okind === k; return { label: k, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('okind', k); } }; });
+        ed.save = function () { self.saveOuting(); }; ed.del = function () { self.deleteOuting(); };
       } else {
         ed.save = function () { self.saveTopic(); }; ed.del = function () { self.deleteTopic(); };
       }
@@ -1076,20 +1308,32 @@
     var nb = /^\d{4}-\d{2}-\d{2}$/.test(ui.kidsBirth || '') ? parseYmd(ui.kidsBirth) : null;
 
     /* セクションの見出し・表示・順番（スプレッドシートの「画面」） */
-    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
+    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['decide', 'ふたりで決めること'], ['deadline', '期限があるもの'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['weekend', '今週末'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
+    var todayStr = ymd(now);
+    var travel = !!(ui.tripFrom && ui.tripTo && todayStr >= ui.tripFrom && todayStr <= ui.tripTo);
+    var evening = nowMin >= (ui.eveningFrom || 1080);
     var secCfg = ui.sections && ui.sections.length ? ui.sections : SEC_DEF.map(function (x, k) { return { key: x[0], title: x[1], all: true, person: x[0] !== 'photos', order: k }; });
     var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
     var title = {}, sections = [];
     SEC_DEF.forEach(function (x) { title[x[0]] = (secByKey[x[0]] && secByKey[x[0]].title) || x[1]; });
-    secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x) { return { key: x[0], title: x[1], all: true, person: true }; })).forEach(function (c) {
+    var secAll = secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x, k) { return { key: x[0], title: x[1], all: true, person: true, order: 50 + k, evening: 50 + k, travel: true }; }));
+    /* 夜（設定の時刻から）は「夜の順番」、旅行中は話題を一番上に */
+    var ordOf = function (c) { if (travel && c.key === 'topics') return -1; return evening && c.evening != null ? c.evening : (c.order != null ? c.order : 99); };
+    secAll.slice().sort(function (a, b) { return ordOf(a) - ordOf(b); }).forEach(function (c) {
       var vis = whoSel === 'all' ? c.all !== false : c.person !== false;
+      if (c.viewer && c.viewer !== meWho) vis = false;        /* 見る人が決まっているセクションは、その人がログインした時だけ */
+      if (travel && c.travel === false) vis = false;           /* 旅行中は印のあるセクションだけ */
       var o2 = { key: c.key, wrapStyle: vis ? '' : 'display: none' };
       SEC_DEF.forEach(function (x) { o2['is_' + x[0]] = x[0] === c.key; });
       sections.push(o2);
     });
 
     return {
-      sections: sections, title: title, planNote: '',
+      sections: sections, title: title, planNote: '', travelOn: travel,
+      decisions: decisions, decisionsEmpty: decisions.length === 0, addDecision: function () { self.openDecision(null); },
+      deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
+      outings: outings, outingsEmpty: outings.length === 0, addOuting: function () { self.openOuting(null); },
+      menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, ingredients: dayMenu.ingredients }); }, hasIngredients: dayMenu.ingredients.length > 0,
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
       flowEditLabel: st.flowEdit ? '完了' : '直す',
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
@@ -1309,6 +1553,9 @@
         plans: [{ date: dd(3), time: '10:00', what: '保育園の面談', who: 'まま' }, { date: dd(6), time: '10:00', what: '公園へおでかけ', who: '家族' }],
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
+        decisions: [{ id: 'q1', q: '平日の朝と夜、どちらを担当する？', options: ['A案：朝はとと・夜はまま', 'B案：朝はまま・夜は週2でとと'], due: dd(5), state: '相談中', a1: 'A案：朝はとと・夜はまま', a2: '', decided: '', note: '' }],
+        deadlines: [{ id: 'k1', what: '見本：保育園の書類を出す', due: ymd(t), who: 'まま', done: false, url: '', note: '' }, { id: 'k2', what: '見本：ペットホテルの予約', due: dd(9), who: 'とと', done: false, url: '', note: '' }],
+        outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: true, like2: false, state: '候補', go: '' }],
         topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,

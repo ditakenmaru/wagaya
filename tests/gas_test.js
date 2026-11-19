@@ -33,7 +33,7 @@ function makeEnv(sheets) {
   ss.getSheetByName = n => ss.sheets.find(s => s.name === n) || null;
   ss.insertSheet = n => { const s = new Sheet(n, []); ss.sheets.push(s); return s; };
   ss.getSheets = () => ss.sheets; ss.deleteSheet = s => { ss.sheets = ss.sheets.filter(x => x !== s); };
-  ss.setSpreadsheetTimeZone = () => {}; ss.toast = (m) => { env.toasts.push(m); };
+  ss.getId = () => 'ssid'; ss.setSpreadsheetTimeZone = () => {}; ss.toast = (m) => { env.toasts.push(m); };
   const store = new Map();
   const cache = {
     get: k => store.has(k) ? store.get(k) : null, put: (k, v) => { if (Buffer.byteLength(String(v), 'utf8') > 100 * 1024) throw new Error('too big'); store.set(k, String(v)); },
@@ -53,8 +53,14 @@ function makeEnv(sheets) {
       DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64')
     },
     UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(env.token) }), fetchAll: () => [] },
-    ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => ({ timeBased: () => ({ everyHours: () => ({ create: () => triggers.push({ getHandlerFunction: () => h }) }) }) }), getOAuthToken: () => 't' },
-    Drive: { Files: { list: () => { env.counts.drive++; return { files: [] }; } } },
+    ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
+    Drive: { Files: {
+      list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
+      create: (r) => ({ id: 'folder1' }), get: (id) => ({ id, trashed: false }),
+      copy: (r, id) => { env.backups = env.backups || []; env.backups.push({ id: 'b' + env.backups.length, name: r.name }); return { id: 'c' }; },
+      update: (r, id) => { const f = (env.backups || []).find(x => x.id === id); if (f) f.trashed = true; return {}; }
+    } },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (env.props || {})[k] || null, setProperty: (k, v) => { env.props = env.props || {}; env.props[k] = v; } }) },
     Calendar: { Events: { list: () => { env.counts.cal++; return { items: env.calItems || [] }; } } },
     console
   };
@@ -79,12 +85,12 @@ env.setup();
 const cfgRows = env.ss.getSheetByName('設定').data.map(r => r[0]);
 ok(cfgRows.includes('人1のメール') && !cfgRows.includes('パパのメール'), 'setup: パパのメール → 人1のメール に移した');
 ok(env.ss.getSheetByName('設定').data.find(r => r[0] === '人1のメール')[1] === 'p1@example.com', 'setup: メールの値を引き継いだ');
-ok(env.ss.getSheetByName('画面').data.length === 10, 'setup: 画面シートに9行');
+ok(env.ss.getSheetByName('画面').data.length === 13, 'setup: 画面シートに12行');
 ok(env.ss.getSheetByName('チェック').data[0].length === 6, 'setup: 空のシートに見出し');
 ok(env.ss.getSheetByName('献立').getLastRow() === 1, 'setup: 見本の行を入れない');
-ok(env.triggers.length === 1, 'setup: トリガー1つ');
+ok(env.triggers.length === 3, 'setup: トリガー3つ（写真・ふりかえり・バックアップ）');
 env.setup();
-ok(env.ss.getSheetByName('画面').data.length === 10 && env.triggers.length === 1, 'setup: 2回目も増えない');
+ok(env.ss.getSheetByName('画面').data.length === 13 && env.triggers.length === 3, 'setup: 2回目も増えない');
 
 // ログイン
 env.token = { iss: 'accounts.google.com', aud: 'cid', email: 'p1@example.com', email_verified: 'true', exp: Date.now() / 1000 + 600, nonce: 'n1' };
@@ -229,7 +235,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 7, 'boot に api の版');
+ok(b3.api === 8, 'boot に api の版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -248,6 +254,69 @@ ok(b3.api === 7, 'boot に api の版');
   post(env, { action: 'skipDuty', session: S, date: today, id: rid, skip: false });
   b4 = post(env, { action: 'boot', session: S, today }).data;
   ok(b4.duties.some(d => d.id === rid), '休みをやめると戻る');
+}
+
+// ふたりで決めること：答えがそろうまで決まったにできない
+{
+  post(env, { action: 'saveDecision', session: S, item: { id: 'q1', q: '平日の朝夜の担当は？', options: ['A案（朝はとと）', 'B案（朝はまま）'], due: today } });
+  let r = post(env, { action: 'answerDecision', session: S, id: 'q1', answer: 'A案（朝はとと）' });
+  r = post(env, { action: 'decide', session: S, id: 'q1' });
+  ok(!r.ok && r.code === 'not_agreed', '決める：片方だけでは決まったにならない');
+  const row = env.ss.getSheetByName('相談').data.find(x => x.includes('q1')); const h = env.ss.getSheetByName('相談').data[0];
+  row[h.indexOf('人2の答え')] = 'A案（朝はとと）'; env.onEdit();
+  r = post(env, { action: 'decide', session: S, id: 'q1' });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(r.ok && bd.decisions[0].state === '決まった' && bd.decisions[0].decided === 'A案（朝はとと）' && bd.decisions[0].options.length === 2, '決める：2人がそろうと決まった');
+}
+// 期限
+{
+  post(env, { action: 'saveDeadline', session: S, item: { id: 'k1', what: '保育園の書類', due: today, who: 'まま' } });
+  post(env, { action: 'saveDeadline', session: S, item: { id: 'k2', what: 'パスポート受け取り', due: '2099-01-01', who: 'とと' } });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.deadlines.length === 2 && bd.deadlines[0].id === 'k1', '期限：近い順');
+  post(env, { action: 'doneDeadline', session: S, id: 'k1', done: true });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.deadlines.find(x => x.id === 'k1').done === true, '期限：済');
+}
+// お出かけ
+{
+  post(env, { action: 'saveOuting', session: S, item: { id: 'o1', name: '油山牧場', kind: '公園' } });
+  post(env, { action: 'likeOuting', session: S, id: 'o1', like: true });
+  post(env, { action: 'planOuting', session: S, id: 'o1', date: '2099-01-03' });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  const o = bd.outings.find(x => x.id === 'o1');
+  ok(o && o.like1 && o.state === '決めた' && o.go === '2099-01-03', 'お出かけ：行きたい・行く日');
+}
+// まとめて買い物に
+{
+  post(env, { action: 'addShopMany', session: S, items: [{ id: 'm1', name: '大根', qty: '1本', cat: 'お店で買う', week: wk(0) }, { id: 'm2', name: '鶏もも', qty: '300g', cat: 'お店で買う', week: wk(0) }] });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.shop.groups.some(g => g.items.some(x => x[1] === '大根')) && bd.shop.groups.some(g => g.items.some(x => x[1] === '鶏もも')), '献立の材料をまとめて買い物へ');
+}
+// 使われ方とふりかえり
+{
+  post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 2, 'sec:flow': 3, 'act:setDone': 1, 'bad key!': 9 } });
+  post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 1, 'sec:shop': 1 } });
+  const lg = env.ss.getSheetByName('使われ方').data;
+  const n = lg.find(x => x[2] === 'open:app');
+  ok(n && n[3] === 3 && !lg.some(x => x[2] === 'bad key!'), '使われ方：回数を足し込む・変な項目は捨てる');
+  env.weeklyReview();
+  const fr = env.ss.getSheetByName('ふりかえり').data;
+  ok(fr.length === 2 && String(fr[1][2]).includes('3') && String(fr[1][4]).includes('写真'), 'ふりかえり：週の1行（見られていないセクションも）');
+}
+// 画面：ニュースは人1だけ、夜の順番、旅行中
+{
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  const news = bd.ui.sections.find(x => x.key === 'news');
+  ok(news.viewer === 'ケン' && typeof news.evening === 'number' && news.travel === false, '画面：見る人・夜の順番・旅行中');
+  env.ss.getSheetByName('設定').data.push(['旅行の期間', '2026-11-26〜2026-12-04', '']); env.onEdit();
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.ui.tripFrom === '2026-11-26' && bd.ui.tripTo === '2026-12-04', '旅行の期間を読む');
+}
+// バックアップ：8週分を超えたら古いものを消す
+{
+  for (let i = 0; i < 10; i++) env.backupNow();
+  ok(env.backups.filter(f => !f.trashed).length === 8, 'バックアップ：8つ残す');
 }
 
 // ログアウト

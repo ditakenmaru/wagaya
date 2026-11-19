@@ -17,13 +17,14 @@
 var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
-var SNAP_SECONDS = 600;
-var API_VERSION = 7;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
+var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
+var API_VERSION = 8;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
   '設定': ['項目', '値', '説明'],
-  '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '説明'],
+  '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明'],
   '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人'],
@@ -35,6 +36,12 @@ var SHEETS = {
   'ニュース': ['id', '中期ID', '出どころ', '発信元', '日付', '見出し', 'なぜ今', '本文', 'URL'],
   '話題': ['id', '見出し', 'URL', '説明', '日付', '表示'],
   '要望': ['id', '日時', '誰', '内容', '画面', '状態', 'メモ'],
+  '相談': ['id', '問い', '選択肢', '期限', '状態', '決まったこと', '人1の答え', '人2の答え', 'メモ', '作成'],
+  '期限': ['id', '内容', '期限', '担当', '済', 'URL', 'メモ'],
+  'お出かけ': ['id', '名前', '種類', '日付', '場所', 'URL', 'メモ', '人1', '人2', '状態', '行く日'],
+  '使われ方': ['日付', '誰', '項目', '回数'],
+  'ふりかえり': ['週', '作成', '開いた回数', 'よく見たセクション', '見られていないセクション', 'よく使った操作', '未対応の要望', 'エラー', '気づき'],
+  '改善ログ': ['日付', 'きっかけ', '仮説', '変えたこと', '結果', '状態'],
   '_sessions': ['hash', 'email', '作成', '期限']
 };
 
@@ -56,20 +63,26 @@ var SETTING_ROWS = [
   ['献立がない日のメモ', '日曜の15分で決めます。', ''],
   ['カレンダーID', '', '家族の共有Googleカレンダーの「カレンダーID」。空なら「予定」シートを使う。予定名の頭に「とと:」「まま:」で担当の色'],
   ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
-  ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）']
+  ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）'],
+  ['旅行の期間', '', '例：2026-11-26〜2026-12-04。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
+  ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
+/* キー, 見出し, みんなのタブ, 人のタブ, 順番, 夜の順番, 旅行中, 見る人（空＝2人とも。'人1'＝人1だけ）, 説明 */
 var SCREEN_ROWS = [
-  ['photos', '写真', true, false, 1, '子どもの写真のスライド'],
-  ['hero', 'つぎの担当', true, true, 2, '大きな時計と時間帯の帯'],
-  ['flow', '今日の流れ', true, true, 3, '今日の担当のチェック'],
-  ['diary', '今日の日記', true, true, 4, '気づきのメモ'],
-  ['week', '今週のごはん', true, true, 5, '献立'],
-  ['shop', '買い物リスト', true, true, 6, ''],
-  ['topics', '話題', true, true, 3.5, '旅のしおりなど、いま話している資料へのリンク（「話題」シート）'],
-  ['plan', '今週の予定', true, true, 7, '人のタブでは、その人と家族の予定だけ'],
-  ['news', 'ピックアップニュース', true, true, 8, '']
+  ['photos', '写真', true, false, 1, 11, true, '', '子どもの写真のスライド'],
+  ['hero', 'つぎの担当', true, true, 2, 1, false, '', '大きな時計と時間帯の帯'],
+  ['flow', '今日の流れ', true, true, 3, 2, false, '', '今日の担当のチェック'],
+  ['decide', 'ふたりで決めること', true, true, 3.6, 3, true, '', '相談中のことに、それぞれが答える（「相談」シート）'],
+  ['deadline', '期限があるもの', true, true, 3.7, 6, true, '', '書類・支払い・予約などの期限（「期限」シート）'],
+  ['topics', '話題', true, true, 3.5, 9, true, '', '旅のしおりなど、いま話している資料へのリンク（「話題」シート）'],
+  ['diary', '今日の日記', true, true, 4, 10, true, '', '気づき・成長のメモ'],
+  ['week', '今週のごはん', true, true, 5, 4, false, '', '献立。材料を買い物リストへ送れる'],
+  ['shop', '買い物リスト', true, true, 6, 5, false, '', ''],
+  ['weekend', '今週末', true, true, 6.5, 7, false, '', 'お出かけの候補と決まったところ（「お出かけ」シート）'],
+  ['plan', '今週の予定', true, true, 7, 8, true, '', '人のタブでは、その人と家族の予定だけ'],
+  ['news', 'ピックアップニュース', true, true, 8, 12, false, '人1', '見る人を人1にすると、人1がログインした時だけ出る']
 ];
 
 /* ================= 入口 ================= */
@@ -106,6 +119,19 @@ function doPost(e) {
       case 'deleteShop': return out(withLock(function () { return deleteById('買い物', req.id, SHOP_KEYS); }));
       case 'saveTopic': return out(withLock(function () { return saveTopic(req.topic || {}); }));
       case 'deleteTopic': return out(withLock(function () { return deleteById('話題', req.id, TOPIC_KEYS); }));
+      case 'saveDecision': return out(withLock(function () { return saveDecision(req.item || {}); }));
+      case 'answerDecision': return out(withLock(function () { return answerDecision(req.id, req.answer, me); }));
+      case 'decide': return out(withLock(function () { return decide(req.id, req.decided, !!req.reopen); }));
+      case 'deleteDecision': return out(withLock(function () { return deleteById('相談', req.id, ['問い']); }));
+      case 'saveDeadline': return out(withLock(function () { return saveDeadline(req.item || {}); }));
+      case 'doneDeadline': return out(withLock(function () { var r = findById('期限', req.id, ['内容', '期限']); if (!r) return { ok: false, code: 'not_found' }; setCells('期限', r._row, { '済': !!req.done }); return { ok: true }; }));
+      case 'deleteDeadline': return out(withLock(function () { return deleteById('期限', req.id, ['内容', '期限']); }));
+      case 'saveOuting': return out(withLock(function () { return saveOuting(req.item || {}); }));
+      case 'likeOuting': return out(withLock(function () { return likeOuting(req.id, !!req.like, me); }));
+      case 'planOuting': return out(withLock(function () { return planOuting(req.id, req.date, me); }));
+      case 'deleteOuting': return out(withLock(function () { return deleteById('お出かけ', req.id, ['名前']); }));
+      case 'addShopMany': return out(withLock(function () { (req.items || []).slice(0, 40).forEach(function (x) { saveShop(x); }); return { ok: true }; }));
+      case 'logUsage': return out(logUsage(req.counts, req.date, me));
       case 'addFeedback': return out(withLock(function () { return addFeedback(req.feedback || {}, me); }));
     }
     return out({ ok: false, code: 'unknown_action' });
@@ -306,9 +332,29 @@ function buildBoot(today) {
     return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: safeUrl(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d) };
   }).reverse();
 
+  /* ふたりで決めること：相談中のものと、決まって2週間以内のもの */
+  var dsince = ymd(new Date(t.getTime() - 14 * 864e5));
+  var decisions = rowsOf('相談').filter(function (r) { return text(r['問い']); }).map(function (r) {
+    return { id: idOf(r, ['問い']), q: text(r['問い']), options: splitList(r['選択肢']), due: normDate(r['期限']), state: text(r['状態']) || '相談中', decided: text(r['決まったこと']),
+      a1: text(r['人1の答え']), a2: text(r['人2の答え']), note: text(r['メモ']), created: normDate(r['作成']) };
+  }).filter(function (x) { return x.state !== '決まった' || !x.created || x.created >= dsince || (x.due && x.due >= dsince); });
+
+  /* 期限があるもの：済んでいないものと、済んで3日以内のもの */
+  var deadlines = rowsOf('期限').filter(function (r) { return text(r['内容']); }).map(function (r) {
+    return { id: idOf(r, ['内容', '期限']), what: text(r['内容']), due: normDate(r['期限']), who: whoOf(r['担当']), done: truthy(r['済']), url: safeUrl(r['URL']), note: text(r['メモ']) };
+  }).filter(function (x) { return !x.done || !x.due || x.due >= ymd(new Date(t.getTime() - 3 * 864e5)); })
+    .sort(function (a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
+
+  /* お出かけ：行った・やめた以外 */
+  var outings = rowsOf('お出かけ').filter(function (r) { return text(r['名前']); }).map(function (r) {
+    return { id: idOf(r, ['名前']), name: text(r['名前']), kind: text(r['種類']), date: normDate(r['日付']), place: text(r['場所']), url: safeUrl(r['URL']), note: text(r['メモ']),
+      like1: truthy(r['人1']), like2: truthy(r['人2']), state: text(r['状態']) || '候補', go: normDate(r['行く日']) };
+  }).filter(function (x) { return x.state !== '行った' && x.state !== 'やめた' && (!x.date || x.date >= today); });
+
+  var trip = (s['旅行の期間'] || '').split(/\s*[〜~ー–-]{1,2}\s*(?=\d{4})/).map(normDate);
   var ps = people();
   return {
-    topics: topics,
+    topics: topics, decisions: decisions, deadlines: deadlines, outings: outings,
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
@@ -317,7 +363,9 @@ function buildBoot(today) {
       sections: screenRows(),
       timeStart: minutes(s['時間帯のはじまり']) || 360, timeEnd: minutes(s['時間帯のおわり']) || 1260,
       kidsLabel: s['子どもの呼び方'] || '', kidsBirth: normDate(s['子どもの誕生日']),
-      noMenuDish: s['献立がない日の料理名'] || 'まだ決まっていません', noMenuNote: s['献立がない日のメモ'] || ''
+      noMenuDish: s['献立がない日の料理名'] || 'まだ決まっていません', noMenuNote: s['献立がない日のメモ'] || '',
+      eveningFrom: minutes(s['夜の並びにする時刻']) || 1080,
+      tripFrom: trip[0] || '', tripTo: trip[1] || ''
     }
   };
 }
@@ -329,11 +377,16 @@ function screenRows() {
   return SCREEN_ROWS.map(function (d, i) {
     var r = byKey[d[0]];
     var num = r && r['順番'] !== '' && r['順番'] != null && !isNaN(Number(r['順番'])) ? Number(r['順番']) : d[4];
+    var has = function (h) { return r && r[h] !== '' && r[h] != null; };
+    var eve = has('夜の順番') && !isNaN(Number(r['夜の順番'])) ? Number(r['夜の順番']) : d[5];
+    var viewer = has('見る人') ? text(r['見る人']) : (r && ('見る人' in r) ? '' : d[7]);
     return {
       key: d[0], title: r && text(r['見出し']) || d[1],
-      all: r && r['みんなのタブ'] !== '' && r['みんなのタブ'] != null ? truthy(r['みんなのタブ']) : d[2],
-      person: r && r['人のタブ'] !== '' && r['人のタブ'] != null ? truthy(r['人のタブ']) : d[3],
-      order: num + i / 100
+      all: has('みんなのタブ') ? truthy(r['みんなのタブ']) : d[2],
+      person: has('人のタブ') ? truthy(r['人のタブ']) : d[3],
+      order: num + i / 100, evening: eve + i / 100,
+      travel: has('旅行中') ? truthy(r['旅行中']) : d[6],
+      viewer: viewer && viewer !== 'みんな' && viewer !== '2人' ? whoOf(viewer === '人1' ? people().list[0].name : viewer === '人2' ? people().list[1].name : viewer) : ''
     };
   }).sort(function (a, b) { return a.order - b.order; });
 }
@@ -632,6 +685,127 @@ function saveShop(x) {
   return { ok: true };
 }
 
+/* ふたりで決めること */
+function saveDecision(x) {
+  var q = String(x.q || '').slice(0, 200).trim();
+  if (!q || !x.id) return { ok: false, code: 'bad_request' };
+  var obj = { id: String(x.id), '問い': q, '選択肢': (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String).join(' / '), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 300) };
+  var r = findById('相談', x.id, ['問い']);
+  if (r) setCells('相談', r._row, obj); else { obj['状態'] = '相談中'; obj['作成'] = ymd(new Date()); appendObj('相談', obj); }
+  return { ok: true };
+}
+function personCol(me) { return people().list[0].name === me.who ? '人1' : '人2'; }
+function answerDecision(id, answer, me) {
+  var r = findById('相談', id, ['問い']);
+  if (!r) return { ok: false, code: 'not_found' };
+  var o = {}; o[personCol(me) + 'の答え'] = String(answer || '').slice(0, 60);
+  setCells('相談', r._row, o);
+  return { ok: true };
+}
+/* 決まったにするのは、2人の答えがそろっている時だけ（片方の判断で決定扱いにしない） */
+function decide(id, decided, reopen) {
+  var r = findById('相談', id, ['問い']);
+  if (!r) return { ok: false, code: 'not_found' };
+  if (reopen) { setCells('相談', r._row, { '状態': '相談中', '決まったこと': '' }); return { ok: true }; }
+  var a1 = text(r['人1の答え']), a2 = text(r['人2の答え']);
+  if (!a1 || a1 !== a2 || a1 === '話したい') return { ok: false, code: 'not_agreed' };
+  setCells('相談', r._row, { '状態': '決まった', '決まったこと': a1 });
+  return { ok: true };
+}
+
+function saveDeadline(x) {
+  var what = String(x.what || '').slice(0, 120).trim();
+  if (!what || !x.id) return { ok: false, code: 'bad_request' };
+  var obj = { id: String(x.id), '内容': what, '期限': normDate(x.due), '担当': whoOf(x.who), 'URL': safeUrl(x.url), 'メモ': String(x.note || '').slice(0, 300) };
+  var r = findById('期限', x.id, ['内容', '期限']);
+  if (r) setCells('期限', r._row, obj); else { obj['済'] = false; appendObj('期限', obj); }
+  return { ok: true };
+}
+
+function saveOuting(x) {
+  var name = String(x.name || '').slice(0, 80).trim();
+  if (!name || !x.id) return { ok: false, code: 'bad_request' };
+  var obj = { id: String(x.id), '名前': name, '種類': String(x.kind || '').slice(0, 20), '日付': normDate(x.date), '場所': String(x.place || '').slice(0, 80), 'URL': safeUrl(x.url), 'メモ': String(x.note || '').slice(0, 300) };
+  var r = findById('お出かけ', x.id, ['名前']);
+  if (r) setCells('お出かけ', r._row, obj); else { obj['状態'] = '候補'; appendObj('お出かけ', obj); }
+  return { ok: true };
+}
+function likeOuting(id, like, me) {
+  var r = findById('お出かけ', id, ['名前']);
+  if (!r) return { ok: false, code: 'not_found' };
+  var o = {}; o[personCol(me)] = like; setCells('お出かけ', r._row, o);
+  return { ok: true };
+}
+/* 行く日を決める（予定シートにも入れる。カレンダーを使っている時は予定シートには入れない） */
+function planOuting(id, date, me) {
+  var r = findById('お出かけ', id, ['名前']);
+  if (!r) return { ok: false, code: 'not_found' };
+  var d = normDate(date);
+  setCells('お出かけ', r._row, { '状態': d ? '決めた' : '候補', '行く日': d });
+  if (d && !settings()['カレンダーID']) appendObj('予定', { '日付': d, '時刻': '', '内容': 'おでかけ：' + text(r['名前']), '誰': '家族' });
+  return { ok: true };
+}
+
+/* 使われ方：回数だけ（書いた文章は残さない）。日付×人×項目で足し込む */
+function logUsage(counts, date, me) {
+  var d = normDate(date) || ymd(new Date());
+  var keys = Object.keys(counts || {}).filter(function (k) { return /^[a-z]+:[\w\-ぁ-んァ-ン一-龥]{1,40}$/.test(k) && Number(counts[k]) > 0; }).slice(0, 80);
+  if (!keys.length) return { ok: true };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    _tables = {};
+    var rows = rowsOf('使われ方'), at = {};
+    rows.forEach(function (r) { if (normDate(r['日付']) === d && whoOf(r['誰']) === me.who) at[text(r['項目'])] = r; });
+    keys.forEach(function (k) {
+      var n = Math.min(500, Math.floor(Number(counts[k])));
+      if (at[k]) setCells('使われ方', at[k]._row, { '回数': Number(at[k]['回数'] || 0) + n });
+      else appendObj('使われ方', { '日付': d, '誰': me.who, '項目': k, '回数': n });
+    });
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+/* 毎週金曜の夜（setupで予約）：1週間の使われ方を「ふりかえり」に1行まとめる */
+function weeklyReview() {
+  _tables = {};
+  var now = new Date(), from = ymd(new Date(now.getTime() - 6 * 864e5)), to = ymd(now);
+  var opens = {}, secs = {}, acts = {}, errs = 0;
+  rowsOf('使われ方').forEach(function (r) {
+    var d = normDate(r['日付']); if (!d || d < from || d > to) return;
+    var k = text(r['項目']), n = Number(r['回数'] || 0), who = whoOf(r['誰']);
+    if (k === 'open:app') opens[who] = (opens[who] || 0) + n;
+    else if (k.indexOf('sec:') === 0) secs[k.slice(4)] = (secs[k.slice(4)] || 0) + n;
+    else if (k.indexOf('act:') === 0) acts[k.slice(4)] = (acts[k.slice(4)] || 0) + n;
+    else if (k.indexOf('err:') === 0) errs += n;
+  });
+  var top = function (o, n) { return Object.keys(o).sort(function (a, b) { return o[b] - o[a]; }).slice(0, n).map(function (k) { return k + ' ' + o[k]; }).join('、'); };
+  var titles = {}; screenRows().forEach(function (x) { titles[x.key] = x.title; });
+  var unseen = SCREEN_ROWS.map(function (x) { return x[0]; }).filter(function (k) { return !secs[k]; }).map(function (k) { return titles[k] || k; }).join('、');
+  var open = rowsOf('要望').filter(function (r) { return text(r['状態']) !== '対応済み' && text(r['内容']); }).length;
+  var secNamed = {}; Object.keys(secs).forEach(function (k) { secNamed[titles[k] || k] = secs[k]; });
+  appendObj('ふりかえり', { '週': from + '〜' + to, '作成': new Date(), '開いた回数': Object.keys(opens).map(function (w) { return w + ' ' + opens[w]; }).join('、') || '0',
+    'よく見たセクション': top(secNamed, 5), '見られていないセクション': unseen, 'よく使った操作': top(acts, 6), '未対応の要望': open, 'エラー': errs, '気づき': '' });
+}
+
+/* 毎週日曜の朝（setupで予約）：シートを丸ごとコピーしてバックアップ。古いものは BACKUP_KEEP を超えたら消す */
+function backupNow() {
+  var props = PropertiesService.getScriptProperties();
+  var folderId = props.getProperty('backupFolder');
+  if (folderId) { try { Drive.Files.get(folderId, { fields: 'id,trashed' }).trashed && (folderId = ''); } catch (e) { folderId = ''; } }
+  if (!folderId) {
+    folderId = Drive.Files.create({ name: 'WAGAYA DB バックアップ', mimeType: 'application/vnd.google-apps.folder' }, null, { fields: 'id' }).id;
+    props.setProperty('backupFolder', folderId);
+  }
+  var id = SpreadsheetApp.getActive().getId();
+  Drive.Files.copy({ name: 'WAGAYA DB ' + ymd(new Date()), parents: [folderId] }, id, { fields: 'id' });
+  var files = Drive.Files.list({ q: "'" + folderId + "' in parents and trashed = false", orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 50 }).files || [];
+  files.slice(BACKUP_KEEP).forEach(function (f) { try { Drive.Files.update({ trashed: true }, f.id); } catch (e) {} });
+  return files.length;
+}
+
+function splitList(v) { return String(v || '').split(/\s*[\/／、,\n]\s*/).map(function (x) { return x.trim(); }).filter(String); }
+
 /* 要望・不具合のメモ（Claudeがあとで読んで直す） */
 function addFeedback(f, me) {
   var body = String(f.text || '').slice(0, 2000).trim();
@@ -740,6 +914,7 @@ function parseIngredients(v) {
 function setup() {
   var ss = SpreadsheetApp.getActive();
   ss.setSpreadsheetTimeZone(TZ);
+  var newCols = [];
   Object.keys(SHEETS).forEach(function (name) {
     var sh = ss.getSheetByName(name) || ss.insertSheet(name);
     var want = SHEETS[name];
@@ -751,6 +926,7 @@ function setup() {
     var head = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0].map(function (h) { return String(h).trim(); });
     var missing = want.filter(function (h) { return head.indexOf(h) < 0; });
     if (missing.length) sh.getRange(1, head.length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+    if (name === '画面') newCols = missing;
   });
   _tables = {};
 
@@ -777,16 +953,27 @@ function setup() {
   });
   _tables = {};
 
-  // 画面：無いキーだけ足す
+  // 画面：無いキーだけ足す。今回足された列（夜の順番・旅行中・見る人）は、空の欄に初期値を入れる
   var scr = table('画面'), keys = {};
   scr.rows.forEach(function (r) { keys[text(r['キー'])] = 1; });
   SCREEN_ROWS.forEach(function (row) {
     if (keys[row[0]]) return;
-    appendObj('画面', { 'キー': row[0], '見出し': row[1], 'みんなのタブ': row[2], '人のタブ': row[3], '順番': row[4], '説明': row[5] });
+    appendObj('画面', { 'キー': row[0], '見出し': row[1], 'みんなのタブ': row[2], '人のタブ': row[3], '順番': row[4], '夜の順番': row[5], '旅行中': row[6], '見る人': row[7], '説明': row[8] });
   });
   _tables = {};
   scr = table('画面');
-  ['みんなのタブ', '人のタブ'].forEach(function (h) {
+  var def = {}; SCREEN_ROWS.forEach(function (row) { def[row[0]] = row; });
+  scr.rows.forEach(function (r) {
+    var d = def[text(r['キー'])]; if (!d) return;
+    var o = {};
+    if (newCols.indexOf('夜の順番') >= 0 && (r['夜の順番'] === '' || r['夜の順番'] == null)) o['夜の順番'] = d[5];
+    if (newCols.indexOf('旅行中') >= 0 && (r['旅行中'] === '' || r['旅行中'] == null)) o['旅行中'] = d[6];
+    if (newCols.indexOf('見る人') >= 0 && d[7] && (r['見る人'] === '' || r['見る人'] == null)) o['見る人'] = d[7];
+    if (Object.keys(o).length) setCells('画面', r._row, o);
+  });
+  _tables = {};
+  scr = table('画面');
+  ['みんなのタブ', '人のタブ', '旅行中'].forEach(function (h) {
     var c = scr.col[h];
     if (c != null && scr.rows.length) scr.sh.getRange(2, c + 1, scr.rows.length, 1).insertCheckboxes();
   });
@@ -794,9 +981,10 @@ function setup() {
   var tp = table('話題');
   if (tp.col['表示'] != null && tp.rows.length) tp.sh.getRange(2, tp.col['表示'] + 1, tp.rows.length, 1).insertCheckboxes();
 
-  if (!ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'warmPhotos'; })) {
-    ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
-  }
+  var trig = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  if (trig.indexOf('warmPhotos') < 0) ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
+  if (trig.indexOf('weeklyReview') < 0) ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(21).create();
+  if (trig.indexOf('backupNow') < 0) ScriptApp.newTrigger('backupNow').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
   var first = ss.getSheets()[0];
   if (first.getName() === 'シート1' && first.getLastRow() === 0) ss.deleteSheet(first);
   bump();
