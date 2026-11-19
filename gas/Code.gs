@@ -37,6 +37,7 @@ function doGet() {
 }
 
 function doPost(e) {
+  _rows = {};
   try {
     var req = JSON.parse(e.postData.contents || '{}');
     var action = String(req.action || '');
@@ -45,7 +46,8 @@ function doPost(e) {
     if (!me) return out({ ok: false, code: 'no_session' });
     switch (action) {
       case 'boot': return out({ ok: true, data: boot(req, me) });
-      case 'photos': return out({ ok: true, photos: photos() });
+      case 'photos': return out({ ok: true, photos: photoList() });
+      case 'photo': return out(photo(String(req.id || '')));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
@@ -69,6 +71,7 @@ function out(o) {
 function withLock(fn) {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  _rows = {};
   try { var r = fn(); return r || { ok: true }; } finally { lock.releaseLock(); }
 }
 
@@ -180,7 +183,7 @@ function boot(req, me) {
   return {
     me: me, today: today, duties: duties, done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
-    photosReady: !!s['写真フォルダID']
+    photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : []
   };
 }
 
@@ -228,27 +231,43 @@ function plansFor(weekStart, weekEnd, calendarId) {
   return outList;
 }
 
-function photos() {
+/* 写真の一覧（idだけ。軽い） */
+function photoList() {
   var folderId = settings()['写真フォルダID'];
   if (!folderId) return [];
   var q = "'" + folderId.replace(/'/g, '') + "' in parents and mimeType contains 'image/' and trashed = false";
-  var auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
-  var files;
   try {
-    files = Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || [];
+    return (Drive.Files.list({ q: q, pageSize: 8, orderBy: 'createdTime desc', fields: 'files(id,modifiedTime)' }).files || [])
+      .map(function (f) { return { id: f.id, v: f.modifiedTime }; });
   } catch (err) { console.error(err); return []; }
-  var cache = CacheService.getScriptCache();
-  return files.map(function (f) {
-    var key = 'p_' + f.id, src = cache.get(key);
-    if (!src && f.thumbnailLink) {
-      var img = UrlFetchApp.fetch(f.thumbnailLink.replace(/=s\d+$/, '=s900'), { headers: auth, muteHttpExceptions: true });
-      if (img.getResponseCode() === 200) {
-        src = 'data:' + (img.getHeaders()['Content-Type'] || 'image/jpeg') + ';base64,' + Utilities.base64Encode(img.getContent());
-        if (src.length < 95000) cache.put(key, src, 21600);
-      }
-    }
-    return src ? { src: src, pos: 'center 30%' } : null;
-  }).filter(Boolean);
+}
+
+/* 写真1枚（写真フォルダの中のものだけ返す）。縮小した画像をしばらく覚えておく */
+function photo(id) {
+  var folderId = settings()['写真フォルダID'];
+  if (!folderId || !id) return { ok: false, code: 'not_found' };
+  var cache = CacheService.getScriptCache(), key = 'p_' + id;
+  var n = Number(cache.get(key + '_n') || 0);
+  if (n) {
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+    var got = cache.getAll(keys), parts = [];
+    for (var k = 0; k < n; k++) { if (!got[keys[k]]) { parts = null; break; } parts.push(got[keys[k]]); }
+    if (parts) return { ok: true, src: parts.join('') };
+  }
+  var f;
+  try { f = Drive.Files.get(id, { fields: 'id,parents,thumbnailLink' }); } catch (err) { return { ok: false, code: 'not_found' }; }
+  if (!f.parents || f.parents.indexOf(folderId) < 0 || !f.thumbnailLink) return { ok: false, code: 'not_found' };
+  var img = UrlFetchApp.fetch(f.thumbnailLink.replace(/=s\d+$/, '=s800'), { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (img.getResponseCode() !== 200) return { ok: false, code: 'not_found' };
+  var src = 'data:' + (img.getHeaders()['Content-Type'] || 'image/jpeg') + ';base64,' + Utilities.base64Encode(img.getContent());
+  var put = {}, size = 90000, count = Math.ceil(src.length / size);
+  if (count <= 20) {
+    for (var j = 0; j < count; j++) put[key + '_' + j] = src.slice(j * size, (j + 1) * size);
+    put[key + '_n'] = String(count);
+    try { cache.putAll(put, 21600); } catch (e) {}
+  }
+  return { ok: true, src: src };
 }
 
 /* ================= 書き込み ================= */
@@ -303,10 +322,12 @@ function deleteOwn(name, id, whoCol, me) {
 /* ================= 道具 ================= */
 
 function sheet(name) { return SpreadsheetApp.getActive().getSheetByName(name); }
+var _rows = {};
 function rowsOf(name) {
+  if (_rows[name]) return _rows[name];
   var sh = sheet(name);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, SHEETS[name].length).getValues();
+  return (_rows[name] = sh.getRange(2, 1, sh.getLastRow() - 1, SHEETS[name].length).getValues());
 }
 function pad(n) { return ('0' + n).slice(-2); }
 function ymd(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }

@@ -208,7 +208,7 @@
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') self.refresh(); });
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.refresh(true); }, 60000);
     this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(); });
-    if (this.state.data) setTimeout(function () { self.attachLazy(); }, 60);
+    if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
   };
 
   /* ログイン：Googleの画面へ移動し、戻ってきたらGASで確かめる */
@@ -257,17 +257,48 @@
       var first = !self.state.data;
       self.setState({ data: data, loading: false, syncing: false, lastSync: data._at, offline: false });
       if (first) setTimeout(function () { self.attachLazy(); }, 60);
-      if (!self.photosLoaded) self.loadPhotos();
+      self.loadPhotos(data.photos);
     }).catch(function (err) {
       if (err && (err.code === 'no_session' || err.code === 'not_allowed')) { LS.del('session'); self.setState({ needLogin: true, syncing: false }); return; }
       self.setState({ syncing: false, offline: true });
       if (!quiet) self.showToast(err && err.code === 'not_configured' ? 'つなぎ先（GASのURL）の設定がまだです' : '新しいデータを取れませんでした。通信を確かめてください', null);
     });
   };
-  App.prototype.loadPhotos = function () {
+  /* 写真：一覧はbootで受け取り、1枚ずつ取りに行って端末に保存する（2回目からはすぐ出る） */
+  App.prototype.loadPhotos = function (list) {
     var self = this;
-    this.photosLoaded = true;
-    api('photos', {}).then(function (res) { self.setState({ photos: res.photos || [] }); }).catch(function () { self.photosLoaded = false; });
+    list = (list || []).slice(0, 8);
+    var key = list.map(function (p) { return p.id + p.v; }).join('|');
+    if (key === this.photoKey) return;
+    this.photoKey = key;
+    var slots = list.map(function () { return null; });
+    var publish = function () { self.setState({ photos: slots.filter(Boolean) }); };
+    var cacheP = (window.caches && window.isSecureContext) ? caches.open('wagaya-photos').catch(function () { return null; }) : Promise.resolve(null);
+    cacheP.then(function (cache) {
+      var queue = list.map(function (p, i) { return { p: p, i: i }; });
+      var url = function (p) { return location.origin + '/__photo/' + p.id + '?v=' + encodeURIComponent(p.v || ''); };
+      var one = function (job) {
+        var u = url(job.p);
+        return (cache ? cache.match(u) : Promise.resolve(null)).then(function (hit) {
+          if (hit) return hit.blob();
+          if (self.state.needLogin) return null;
+          return api('photo', { id: job.p.id }).then(function (res) {
+            return fetch(res.src).then(function (r) { return r.blob(); }).then(function (blob) {
+              if (cache) cache.put(u, new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } })).catch(function () {});
+              return blob;
+            });
+          });
+        }).then(function (blob) {
+          if (blob) { slots[job.i] = { src: URL.createObjectURL(blob), pos: 'center 30%' }; publish(); }
+        }).catch(function () {});
+      };
+      var worker = function () { var job = queue.shift(); return job ? one(job).then(worker) : Promise.resolve(); };
+      return Promise.all([worker(), worker(), worker()]).then(function () {
+        if (!cache) return;
+        var keep = {}; list.forEach(function (p) { keep[url(p)] = 1; });
+        cache.keys().then(function (reqs) { reqs.forEach(function (r) { if (!keep[r.url]) cache.delete(r); }); }).catch(function () {});
+      });
+    });
   };
 
   /* 書き込み：先に画面を変え、失敗したら戻す */
@@ -692,7 +723,7 @@
       toggleHide: function () { self.setState({ hideBought: !self.state.hideBought }); },
       plans: plans,
       noPhotos: o.length === 0,
-      photoHint: D.photosReady ? '写真を読み込んでいます…' : '写真の共有を設定すると、ここにふたりの写真が流れます。',
+      photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : (D.photosReady ? '写真フォルダに写真を入れると、ここに流れます。' : '写真の共有を設定すると、ここにふたりの写真が流れます。'),
       slides: o.map(function (m, i) {
         var on = i === cur;
         var base = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: ' + m.pos + '; transition: opacity 1.2s ease, transform ' + (on ? (m.dur + 1) + 's linear' : '1.2s ease') + '; ';
@@ -830,6 +861,7 @@
         var a = p.action;
         if (a === 'boot') return res({ ok: true, data: JSON.parse(JSON.stringify(db)) });
         if (a === 'photos') return res({ ok: true, photos: [] });
+        if (a === 'photo') return res({ ok: false });
         if (a === 'setDone') { if (p.done) db.done[p.taskId] = true; else delete db.done[p.taskId]; }
         if (a === 'setShop') { if (p.checked) db.checked[p.itemId] = true; else delete db.checked[p.itemId]; }
         if (a === 'addNote') db.notes.unshift(p.note);
