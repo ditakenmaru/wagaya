@@ -71,7 +71,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <header style="padding: 20px 20px 12px; display: flex; flex-direction: column; gap: 14px">
     <div style="display: flex; align-items: baseline; justify-content: space-between">
       <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 0.02em">わが家の今日</h1>
-      <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}">{{syncLabel}}</button>
+      <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}"><span style="display: inline-flex; align-items: center; gap: 5px">{{syncLabel}}<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg></span></button>
     </div>
     <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: #DDE3DA; border-radius: 14px; padding: 4px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
@@ -168,7 +168,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px">
       <h2 id="sec-flow" style="margin: 0; font-size: 18px; font-weight: 900">{{title.flow}}</h2>
       <span style="display: flex; gap: 6px">
-        <button type="button" onClick="{{addDuty}}" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: none; background: #17201B; color: #FFFFFF; font-size: 13px; font-weight: 700; cursor: pointer">＋ 足す</button>
+        <button type="button" onClick="{{addDuty}}" aria-label="担当を足す" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: none; background: #17201B; color: #FFFFFF; font-size: 13px; font-weight: 700; cursor: pointer">＋ 担当</button>
         <button type="button" aria-pressed="{{flowEdit}}" onClick="{{toggleFlowEdit}}" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{flowEditLabel}}</button>
       </span>
     </div>
@@ -223,12 +223,15 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
                   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="animation: pop .28s ease-out"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                 </sc-if>
               </span>
-              <span style="{{r.taskStyle}}">{{r.task}}</span>
-              <sc-if value="{{r.once}}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-size: 11px; font-weight: 700; color: #8A5A12; background: #F3E8D6; border-radius: 6px; padding: 2px 6px">今日だけ</span></sc-if>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px">
+                <span style="{{r.taskStyle}}">{{r.task}}</span>
+                <sc-if value="{{r.once}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 700; color: #8A5A12; background: #F3E8D6; border-radius: 6px; padding: 2px 6px">今日だけ</span></sc-if>
+              </span>
               <span style="{{r.badgeStyle}}">{{r.who}}</span>
             </button>
             <button type="button" aria-label="{{r.noteLabel}}" onClick="{{r.openNote}}" style="{{r.noteBtnStyle}}">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H9l-4 4z"></path></svg>
+              <span aria-hidden="true" style="font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap">ひとこと</span>
               <sc-if value="{{r.hasNotes}}" hint-placeholder-val="{{ false }}">
                 <span style="position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 10px; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pop .35s ease-out">{{r.noteCount}}</span>
               </sc-if>
@@ -252,7 +255,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 20px">
       <h2 id="sec-topics" style="margin: 0; font-size: 18px; font-weight: 900">{{title.topics}}</h2>
       <span style="display: flex; gap: 6px">
-        <button type="button" onClick="{{addTopic}}" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: none; background: #17201B; color: #FFFFFF; font-size: 13px; font-weight: 700; cursor: pointer">＋ 足す</button>
+        <button type="button" onClick="{{addTopic}}" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: none; background: #17201B; color: #FFFFFF; font-size: 13px; font-weight: 700; cursor: pointer">＋ 話題</button>
         <button type="button" aria-pressed="{{topicEdit}}" onClick="{{toggleTopicEdit}}" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{topicEditLabel}}</button>
       </span>
     </div>
@@ -357,7 +360,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <input type="text" aria-label="量" placeholder="量" value="{{shopQty}}" onInput="{{setShopQty}}" onKeyDown="{{shopKey}}" style="width: 64px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
         <button type="button" onClick="{{addShop}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: none; background: #2C6B52; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">足す</button>
       </div>
-      <div class="strip" role="group" aria-label="どこで買うか" style="display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none">
+      <div role="group" aria-label="どこで買うか" style="display: flex; gap: 6px; flex-wrap: wrap">
         <sc-for list="{{shopCatChips}}" as="sc" hint-placeholder-count="2">
           <button type="button" aria-pressed="{{sc.pressed}}" onClick="{{sc.pick}}" style="{{sc.style}}">{{sc.label}}</button>
         </sc-for>
@@ -561,7 +564,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         </sc-for>
       </div>
       <label for="note-input" style="font-size: 13px; font-weight: 700; color: #55605A">申し送りを書く</label>
-      <textarea id="note-input" rows="3" value="{{draft}}" onChange="{{setDraft}}" placeholder="例：明日は保育園の持ち物に着替えを2組" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 15px; resize: none; background: #FAFBF9; color: #17201B"></textarea>
+      <textarea id="note-input" rows="3" value="{{draft}}" onChange="{{setDraft}}" placeholder="例：明日は保育園の持ち物に着替えを2組" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; resize: none; background: #FAFBF9; color: #17201B"></textarea>
       <button type="button" onClick="{{sendNote}}" style="min-height: 48px; border: none; border-radius: 14px; background: #3046A6; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送る</button>
     </div>
   </section>
@@ -636,7 +639,11 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <label for="ed-task" style="font-size: 13px; font-weight: 700; color: #55605A">やること</label>
       <input id="ed-task" type="text" value="{{ed.task}}" onInput="{{ed.set.task}}" placeholder="例：ゴミ出し" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <label for="ed-time" style="font-size: 13px; font-weight: 700; color: #55605A">時刻</label>
-      <input id="ed-time" type="time" value="{{ed.time}}" onInput="{{ed.set.time}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <div style="display: flex; gap: 8px; align-items: center">
+        <input id="ed-time" type="time" lang="ja" value="{{ed.time}}" onInput="{{ed.set.time}}" style="box-sizing: border-box; flex: 1; min-width: 0; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+        <button type="button" aria-pressed="{{ed.noTime}}" onClick="{{ed.toggleNoTime}}" style="{{ed.noTimeStyle}}">時刻なし</button>
+      </div>
+      <sc-if value="{{ed.noTimeOn}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #55605A">時刻を決めない担当は「いつでも」として、今日の流れのいちばん下に出ます。</span></sc-if>
       <span style="font-size: 13px; font-weight: 700; color: #55605A">担当</span>
       <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{ed.whoChips}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
       <span style="font-size: 13px; font-weight: 700; color: #55605A">いつ</span>
@@ -664,7 +671,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </sc-if>
     <button type="button" onClick="{{ed.save}}" style="margin-top: 6px; min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">保存する</button>
     <sc-if value="{{ed.canDelete}}" hint-placeholder-val="{{ false }}">
-      <button type="button" onClick="{{ed.del}}" style="min-height: 48px; border: 1.5px solid #C9A1B0; border-radius: 14px; background: transparent; color: #7A2645; font-size: 15px; font-weight: 700; cursor: pointer">消す</button>
+      <button type="button" onClick="{{ed.del}}" style="{{ed.delStyle}}">{{ed.delLabel}}</button>
     </sc-if>
   </section>
 
@@ -678,7 +685,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

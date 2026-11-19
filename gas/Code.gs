@@ -17,7 +17,8 @@
 var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
-var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
+var SNAP_SECONDS = 600;
+var API_VERSION = 6;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
@@ -55,7 +56,7 @@ var SETTING_ROWS = [
   ['献立がない日のメモ', '日曜の15分で決めます。', ''],
   ['カレンダーID', '', '家族の共有Googleカレンダーの「カレンダーID」。空なら「予定」シートを使う。予定名の頭に「とと:」「まま:」で担当の色'],
   ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
-  ['動画の上限MB', '15', 'これより大きい動画は、アプリでは1コマだけ出す（最大25）']
+  ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）']
 ];
 
 /* 画面シートの行（キーはアプリ側の名前なので変えない。見出し・表示・順番は自由） */
@@ -140,8 +141,8 @@ function onEdit() { bump(); }
 function refreshApp() {
   bump();
   _tables = {}; _cfg = null;
-  var today = ymd(new Date());
-  snapPut(today, buildBoot(today));
+  var today = ymd(new Date()), v = ver();
+  snapPut(today, buildBoot(today), v);
   SpreadsheetApp.getActive().toast('アプリに反映しました。アプリを下に引っぱると新しい内容が出ます。', 'わが家', 5);
 }
 
@@ -189,6 +190,10 @@ function nameOfEmail(email) {
 }
 
 function login(req) {
+  var cache = CacheService.getScriptCache(), rk = 'login_' + Math.floor(Date.now() / 600000);
+  var n = Number(cache.get(rk) || 0) + 1;
+  cache.put(rk, String(n), 900);
+  if (n > 30) return { ok: false, code: 'busy' };   // 10分に30回まで（入口を連打されてもGoogle側の上限を使い切らない）
   var s = settings();
   if (!s['クライアントID']) return { ok: false, code: 'not_configured' };
   var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(req.idToken || ''), { muteHttpExceptions: true });
@@ -241,9 +246,10 @@ function sha(s) {
 /* まとめたデータがあればそれを返す（速い）。fresh のときは必ず作り直す */
 function bootFor(req, me) {
   var today = /^\d{4}-\d{2}-\d{2}$/.test(req.today || '') ? req.today : ymd(new Date());
-  var data = req.fresh ? null : snapGet(today);
-  if (!data) { data = buildBoot(today); snapPut(today, data); }
-  data.me = me;
+  var v = ver();   // 組み立てる前の版で保存する（組み立て中に書き込みがあれば、その版のまとめは使われない）
+  var data = req.fresh ? null : snapGet(today, v);
+  if (!data) { data = buildBoot(today); snapPut(today, data, v); }
+  data.me = me; data.api = API_VERSION;
   return data;
 }
 
@@ -256,7 +262,7 @@ function buildBoot(today) {
 
   /* 担当：日付があれば「その日だけ」、なければ曜日のくり返し */
   var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
-    return { id: idOf(r, DUTY_KEYS), t: minutes(r['時刻']), task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
+    return { id: idOf(r, DUTY_KEYS), t: normTime(r['時刻']) ? minutes(r['時刻']) : null, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
   });
   var duties = dutyRows.filter(function (d) { return d.date ? d.date === today : dayMatch(d.rule, dow); })
     .map(function (d) { return { id: d.id, t: d.t, task: d.task, who: d.who, once: !!d.date }; });
@@ -281,7 +287,7 @@ function buildBoot(today) {
   });
 
   var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(weekEnd); }).map(function (r) {
-    return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: text(r['写真URL']) };
+    return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']) };
   });
 
   var goals = rowsOf('中期').filter(function (r) { return text(r['名前']); }).map(function (r) {
@@ -289,12 +295,12 @@ function buildBoot(today) {
   });
   var news = rowsOf('ニュース').filter(function (r) { return text(r['見出し']); }).slice(-30).reverse().map(function (r) {
     var d = r['日付'];
-    return { id: idOf(r, ['見出し']), goals: text(r['中期ID']).split(/[,、\s]+/).filter(String), src: text(r['出どころ']) || 'Web', from: text(r['発信元']), date: d instanceof Date ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : text(d), title: text(r['見出し']), why: text(r['なぜ今']), body: text(r['本文']), url: text(r['URL']) };
+    return { id: idOf(r, ['見出し']), goals: text(r['中期ID']).split(/[,、\s]+/).filter(String), src: text(r['出どころ']) || 'Web', from: text(r['発信元']), date: d instanceof Date ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : text(d), title: text(r['見出し']), why: text(r['なぜ今']), body: text(r['本文']), url: safeUrl(r['URL']) };
   });
 
   var topics = rowsOf('話題').filter(function (r) { return text(r['見出し']) && (r['表示'] === '' || r['表示'] == null || truthy(r['表示'])); }).map(function (r) {
     var d = r['日付'];
-    return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: text(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d) };
+    return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: safeUrl(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d) };
   }).reverse();
 
   var ps = people();
@@ -421,13 +427,13 @@ function bump() {
   try { CacheService.getScriptCache().put('ver', String(Date.now()) + Math.random().toString(36).slice(2, 6), 21600); } catch (e) {}
   _cfg = null;
 }
-function snapGet(today) {
-  var s = bigGet('b_' + today + '_' + ver());
+function snapGet(today, v) {
+  var s = bigGet('b_' + today + '_' + (v || ver()));
   return s ? JSON.parse(s) : null;
 }
-function snapPut(today, data) {
+function snapPut(today, data, v) {
   var copy = {}; Object.keys(data).forEach(function (k) { if (k !== 'me') copy[k] = data[k]; });
-  bigPut('b_' + today + '_' + ver(), JSON.stringify(copy), SNAP_SECONDS);
+  bigPut('b_' + today + '_' + (v || ver()), JSON.stringify(copy), SNAP_SECONDS);
 }
 
 /* CacheService は1件100KBまでなので、分けて入れる */
@@ -441,9 +447,10 @@ function bigGet(key) {
   for (var k = 0; k < n; k++) { if (got[keys[k]] == null) return null; parts.push(got[keys[k]]); }
   return parts.join('');
 }
+/* 1件100KB（バイト）まで。日本語は1文字最大3バイトなので3万文字ずつ */
 function bigPut(key, str, seconds) {
-  var size = 90000, count = Math.ceil(str.length / size) || 1, put = {};
-  if (count > 20) return;
+  var size = 30000, count = Math.ceil(str.length / size) || 1, put = {};
+  if (count > 40) return;
   for (var j = 0; j < count; j++) put[key + '_' + j] = str.slice(j * size, (j + 1) * size);
   put[key + '_n'] = String(count);
   try { CacheService.getScriptCache().putAll(put, seconds); } catch (e) {}
@@ -455,7 +462,7 @@ function photoQuery() {
   var folderId = settings()['写真フォルダID'];
   return folderId ? "'" + folderId.replace(/'/g, '') + "' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false" : '';
 }
-function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 25) : 15) * 1048576; }
+function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 15) : 10) * 1048576; }
 
 /* 写真と動画の一覧（idだけ。軽い）。動画は大きさも見る */
 function photoList() {
@@ -517,8 +524,16 @@ function photosBatch(ids) {
 /* 1時間ごと（setupで予約）：写真と今日のまとめを先に用意しておく */
 function warmPhotos() {
   photosBatch(photoList().map(function (p) { return p.id; }));
-  var today = ymd(new Date());
-  if (!snapGet(today)) snapPut(today, buildBoot(today));
+  var today = ymd(new Date()), v = ver();
+  if (!snapGet(today, v)) snapPut(today, buildBoot(today), v);
+  cleanSessions();
+}
+
+/* 期限が切れたログインの行を消す */
+function cleanSessions() {
+  var rows = rowsOf('_sessions'), sh = sheet('_sessions'), now = Date.now();
+  for (var i = rows.length - 1; i >= 0; i--) if (rows[i].hash && new Date(rows[i]['期限']).getTime() < now) sh.deleteRow(rows[i]._row);
+  delete _tables['_sessions'];
 }
 
 /* ================= 書き込み ================= */
@@ -654,6 +669,9 @@ function table(name) {
   return (_tables[name] = t);
 }
 function rowsOf(name) { return table(name).rows; }
+/* 文字はそのまま文字として入れる（「1/2」が日付に、「-」「=」で始まる文が数式に化けないように） */
+function asCell(v) { return typeof v === 'string' && v !== '' ? "'" + v : v; }
+
 /* 書き込む列が見出しに無ければ、右はしに足す（列を消してしまっても、書いた値が消えないように） */
 function ensureCols(name, keys) {
   var t = table(name);
@@ -666,13 +684,13 @@ function ensureCols(name, keys) {
 }
 function setCells(name, rowNum, obj) {
   var t = ensureCols(name, Object.keys(obj));
-  Object.keys(obj).forEach(function (k) { if (t.col[k] != null) t.sh.getRange(rowNum, t.col[k] + 1).setValue(obj[k]); });
+  Object.keys(obj).forEach(function (k) { if (t.col[k] != null) t.sh.getRange(rowNum, t.col[k] + 1).setValue(asCell(obj[k])); });
   delete _tables[name];
 }
 function appendObj(name, obj) {
   var t = ensureCols(name, Object.keys(obj));
   var head = t.head.length ? t.head : SHEETS[name];
-  t.sh.appendRow(head.map(function (h) { return h in obj ? obj[h] : ''; }));
+  t.sh.appendRow(head.map(function (h) { return h in obj ? asCell(obj[h]) : ''; }));
   delete _tables[name];
 }
 
@@ -682,6 +700,7 @@ function idOf(r, keys) {
   return 'r' + sha(keys.map(function (k) { return text(r[k]); }).join('|')).slice(0, 10);
 }
 
+function safeUrl(v) { var u = text(v); return /^https:\/\/[^\s"'<>]+$/.test(u) ? u : ''; }
 function text(v) { return v == null ? '' : String(v).trim(); }
 function pad(n) { return ('0' + n).slice(-2); }
 function ymd(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }

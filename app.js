@@ -6,7 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '5';
+  var APP_VERSION = '6';
+  var API_EXPECTED = 6;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
     get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -166,7 +167,7 @@
   function pad(n) { return ('0' + n).slice(-2); }
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parseYmd(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
-  function hm(m) { return Math.floor(m / 60) + ':' + pad(m % 60); }
+  function hm(m) { return m == null ? 'いつでも' : Math.floor(m / 60) + ':' + pad(m % 60); }
   function whenLabel(ms) {
     var d = new Date(ms), now = new Date();
     var day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -287,6 +288,8 @@
     var self = this;
     api('logout', {}).catch(function () {});
     LS.del('session'); LS.del('boot');
+    try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
+    this.photoKey = null;
     self.setState({ needLogin: true, accountOpen: false, data: null, loading: true, photos: [] });
   };
 
@@ -297,8 +300,12 @@
     if (this.state.needLogin || this.pending > 0) return Promise.resolve(false);
     if (this.inflight) return fresh ? this.inflight.then(function () { return self.refresh(quiet, true); }) : this.inflight;
     if (!quiet) this.setState({ syncing: true });
+    var seq0 = this.writeSeq || 0;
     this.inflight = api('boot', { today: ymd(new Date()), fresh: !!fresh }).then(function (res) {
+      /* 読み込みの間に書き込みがあったら、この結果は古いので捨て、書き込みが終わってから読み直す */
+      if ((self.writeSeq || 0) !== seq0 || self.pending > 0) { self.setState({ syncing: false }); self.afterWrites = true; return true; }
       var data = res.data; data._at = Date.now();
+      if (!DEMO && data.api !== API_EXPECTED && !self.apiWarned) { self.apiWarned = true; setTimeout(function () { self.showToast('Google側の更新がまだのようです（版のずれ）。アプリを管理している人に伝えてください', null); }, 800); }
       LS.set('boot', data);
       var first = !self.state.data;
       self.setState({ data: data, loading: false, syncing: false, lastSync: data._at, offline: false });
@@ -380,15 +387,32 @@
     LS.set('boot', d);
     this.setState({ data: d });
   };
+  /* 書き込みは1本の列に並べ、前の結果を待ってから次を送る（順番が入れ替わると、取り消しが先に届いて消えるなどが起きる） */
   App.prototype.send = function (action, payload, revert) {
     var self = this;
     this.pending = (this.pending || 0) + 1;
-    return api(action, payload).then(function (r) { self.pending -= 1; return r; }).catch(function (err) {
+    this.writeSeq = (this.writeSeq || 0) + 1;
+    var run = function () {
+      return api(action, payload).then(function (r) { return r; }).catch(function (err) {
+        if (err && err.code === 'no_session') { LS.del('session'); self.setState({ needLogin: true }); return; }
+        if (revert) revert();
+        self.showToast('保存できませんでした。通信を確かめて、もう一度お試しください', null);
+      });
+    };
+    var p = (this.writeQ || Promise.resolve()).then(run, run);
+    this.writeQ = p.then(function () {
       self.pending -= 1;
-      if (revert) revert();
-      if (err && err.code === 'no_session') { LS.del('session'); self.setState({ needLogin: true }); return; }
-      self.showToast('保存できませんでした。通信を確かめて、もう一度お試しください', null);
+      if (self.pending === 0 && self.afterWrites) { self.afterWrites = false; self.refresh(true); }
     });
+    return p;
+  };
+  /* 前の日のデータを出したまま書かない（朝いちばんのチェックが前日に入らないように） */
+  App.prototype.stale = function () {
+    var d = this.state.data;
+    if (DEMO || !d || !d.today || d.today === ymd(new Date())) return false;
+    this.showToast('今日のデータを読み込んでいます。少し待ってからもう一度押してください', null);
+    this.refresh(false);
+    return true;
   };
 
   App.prototype.markLazy = function (key, id) {
@@ -495,6 +519,7 @@
     this.showToast('気づきを今日の日記に残しました', function () { revert(); self.send('deleteDiary', { id: k.id }); self.setState({ toast: null }); });
   };
   App.prototype.setDone = function (d0, val) {
+    if (this.stale()) return;
     var self = this;
     this.mutate(function (d) { d.done = d.done || {}; if (val) d.done[d0.id] = true; else delete d.done[d0.id]; });
     this.send('setDone', { date: this.state.data.today, taskId: d0.id, done: val }, function () { self.mutate(function (d) { if (val) delete d.done[d0.id]; else d.done[d0.id] = true; }); });
@@ -513,8 +538,8 @@
   };
 
   /* ---------- 担当・買い物の編集（先に画面を変え、失敗したら戻す） ---------- */
-  function hhmm(t) { return t ? pad(Math.floor(t / 60)) + ':' + pad(t % 60) : ''; }
-  function minOf(s) { var m = String(s || '').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : 0; }
+  function hhmm(t) { return t != null ? pad(Math.floor(t / 60)) + ':' + pad(t % 60) : ''; }
+  function minOf(s) { var m = String(s || '').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
   function dayMatch(rule, dow) {
     rule = String(rule || '').trim();
     if (!rule || rule === '毎日') return true;
@@ -530,21 +555,23 @@
     if (s === '日土') return '土日';
     return s;
   }
+  /* 失敗した時は、画面全体を前に戻さず、シートから読み直してそろえる（ほかの操作まで消さないように） */
   App.prototype.snapshot = function () {
-    var self = this, before = JSON.stringify(this.state.data || {});
-    return function () { var d = JSON.parse(before); LS.set('boot', d); self.setState({ data: d }); };
+    var self = this;
+    return function () { self.afterWrites = true; };
   };
   App.prototype.openDuty = function (d) {
     var D = this.state.data || {};
     var all = d ? ((D.dutiesAll || []).filter(function (x) { return x.id === d.id; })[0] || d) : null;
     var who = this.state.who !== 'all' && this.names().indexOf(this.state.who) >= 0 ? this.state.who : this.meWho();
     this.setState({ editor: {
-      kind: 'duty', isNew: !d, id: d ? d.id : uid('d'), task: d ? d.task : '', time: d ? hhmm(d.t) : '',
+      kind: 'duty', isNew: !d, id: d ? d.id : uid('d'), task: d ? d.task : '', time: d ? hhmm(d.t) : pad(Math.min(23, new Date().getHours() + 1)) + ':00',
       who: d ? d.who : who, once: all ? !!all.date : true, rule: (all && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date())
     } });
   };
   App.prototype.editSet = function (k, v) { var e = Object.assign({}, this.state.editor); e[k] = v; this.setState({ editor: e }); };
   App.prototype.saveDuty = function () {
+    if (this.stale()) return;
     var self = this, e = this.state.editor, task = (e.task || '').trim();
     if (!task) { this.showToast('やることを入力してください', null); return; }
     var rule = e.once ? '' : (e.rule || '毎日');
@@ -630,7 +657,16 @@
     });
     this.setState({ editor: null });
     this.send('deleteShop', { id: e.id }, revert);
-    this.showToast(e.name + 'をリストから消しました', null);
+    var self2 = this, week = this.state.data.shop ? this.state.data.shop.week : '';
+    this.showToast(e.name + 'をリストから消しました', function () {
+      self2.mutate(function (d) {
+        var g = d.shop.groups.filter(function (x) { return x.label === e.cat; })[0];
+        if (!g) { g = { label: e.cat, items: [] }; d.shop.groups.push(g); }
+        g.items.push([e.id, e.name, e.qty || '']);
+      });
+      self2.send('saveShop', { item: { id: e.id, name: e.name, qty: e.qty || '', cat: e.cat, week: week } });
+      self2.setState({ toast: null });
+    });
   };
 
   App.prototype.sendFeedback = function () {
@@ -670,7 +706,13 @@
     this.mutate(function (d) { d.topics = (d.topics || []).filter(function (x) { return x.id !== e.id; }); });
     this.setState({ editor: null });
     this.send('deleteTopic', { id: e.id }, revert);
-    this.showToast('話題から消しました', null);
+    var self2 = this;
+    this.showToast('話題から消しました', function () {
+      var t = { id: e.id, title: e.title, url: e.url, note: e.note };
+      self2.mutate(function (d) { d.topics = [t].concat(d.topics || []); });
+      self2.send('saveTopic', { topic: t });
+      self2.setState({ toast: null });
+    });
   };
 
   /* 写真のスライド */
@@ -739,21 +781,24 @@
       };
     });
 
-    var duties = (D.duties || []).slice().sort(function (a, b) { return a.t - b.t; });
+    var tOrd = function (x) { return x.t == null ? 99999 : x.t; };
+    var duties = (D.duties || []).slice().sort(function (a, b) { return tOrd(a) - tOrd(b); });
     var tS = ui.timeStart || 360, tE = ui.timeEnd > tS ? ui.timeEnd : 1260;
     function pct(m) { return Math.max(0, Math.min(100, (m - tS) / (tE - tS) * 100)); }
     var mine = duties.filter(function (d) { return whoSel === 'all' || d.who === whoSel || d.who === '家族'; });
 
     var next = null;
-    for (var i = 0; i < mine.length; i++) { if (!done[mine[i].id] && mine[i].t >= nowMin) { next = mine[i]; break; } }
+    for (var i = 0; i < mine.length; i++) { if (!done[mine[i].id] && mine[i].t != null && mine[i].t >= nowMin) { next = mine[i]; break; } }
     var hero;
     if (next) {
       var diff = Math.max(0, next.t - nowMin);
       var cd = diff <= 0 ? 'いまから' : 'あと' + (diff >= 60 ? Math.floor(diff / 60) + '時間' : '') + (diff % 60 ? (diff % 60) + '分' : '');
       hero = { kicker: 'つぎの担当', time: hm(next.t), countdown: cd, task: next.task, who: next.who, color: this.person(next.who).ink };
     } else {
-      var first = mine[0];
-      hero = { kicker: '今日の担当はおしまい', time: first ? hm(first.t) : '--:--', countdown: '明日の最初', task: first ? first.task : '担当はありません', who: first ? first.who : '—', color: this.person('家族').ink };
+      var left0 = mine.filter(function (d) { return !done[d.id]; });
+      if (!mine.length) hero = { kicker: '今日の担当', time: '—', countdown: '', task: '今日の担当はありません', who: '—', color: this.person('家族').ink };
+      else if (left0.length) hero = { kicker: 'まだ終わっていない担当（' + left0.length + 'つ）', time: hm(left0[0].t), countdown: '時間は過ぎています', task: left0[0].task, who: left0[0].who, color: this.person(left0[0].who).ink };
+      else hero = { kicker: '今日の担当', time: 'おしまい', countdown: 'おつかれさま', task: '今日の担当は全部終わりました', who: whoSel === 'all' ? 'みんな' : whoSel, color: this.person('家族').ink };
     }
     hero.bandStyle = 'margin: 4px 16px 0; padding: 22px 20px 16px; border-radius: 24px; background: ' + hero.color + '; color: #FFFFFF; display: flex; flex-direction: column; gap: 6px; transition: background .5s; animation: heroIn .6s cubic-bezier(.2,.8,.2,1) both';
     hero.marks = [tS, 720, 1080, tE].filter(function (m, k, a) { return (k === 0 || k === a.length - 1 || (m > tS + 90 && m < tE - 90)); }).map(function (m, k, a) {
@@ -762,7 +807,7 @@
     });
     hero.passedStyle = 'position: absolute; left: 0; top: 13px; height: 2px; width: ' + pct(nowMin) + '%; background: #FFFFFF; border-radius: 2px';
     hero.nowStyle = 'position: absolute; top: 4px; left: calc(' + pct(nowMin) + '% - 1px); width: 2px; height: 20px; background: #FFFFFF; border-radius: 2px; animation: breathe 2.4s ease-in-out infinite';
-    var timeline = mine.map(function (d) {
+    var timeline = mine.filter(function (d) { return d.t != null; }).map(function (d) {
       var isNext = next && d.id === next.id;
       var size = isNext ? 14 : 8;
       var fill = done[d.id] || d.t < nowMin ? '#FFFFFF' : 'transparent';
@@ -771,7 +816,7 @@
 
     var flow = mine.map(function (d) {
       var isDone = !!done[d.id];
-      var past = d.t < nowMin;
+      var past = d.t != null && d.t < nowMin;
       var c = self.person(d.who);
       var tnotes = notesAll.filter(function (n) { return n.taskId === d.id; });
       return {
@@ -793,7 +838,7 @@
         noteCount: tnotes.filter(function (n) { return !n.read; }).length,
         noteLabel: '「' + d.task + '」の申し送りを書く',
         openNote: function () { self.openNoteFor(d.task, d.id, 'handover', d.who); },
-        noteBtnStyle: 'position: relative; width: 44px; height: 44px; margin-right: 6px; flex-shrink: 0; border-radius: 14px; border: none; background: transparent; color: #8A928C; display: flex; align-items: center; justify-content: center; cursor: pointer',
+        noteBtnStyle: 'position: relative; width: 50px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: 14px; border: none; background: transparent; color: #6B746E; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; cursor: pointer',
         markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + c.ink + '; background: ' + (isDone ? c.ink : 'transparent'),
         taskStyle: 'flex: 1; min-width: 0; font-size: 16px; font-weight: 700; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: #55605A' : '0% 1.5px'),
         badgeStyle: self.badge(d.who)
@@ -806,8 +851,8 @@
       return x.rule || '毎日';
     }
     var flowEditRows = (D.dutiesAll || []).filter(function (d) { return whoSel === 'all' || d.who === whoSel || d.who === '家族'; })
-      .slice().sort(function (a, b) { return a.t - b.t; }).map(function (d) {
-        return { time: d.t ? hm(d.t) : '—', task: d.task, who: d.who, rule: ruleLabel(d), badgeStyle: self.badge(d.who), open: function () { self.openDuty(d); } };
+      .slice().sort(function (a, b) { return tOrd(a) - tOrd(b); }).map(function (d) {
+        return { time: hm(d.t), task: d.task, who: d.who, rule: ruleLabel(d), badgeStyle: self.badge(d.who), open: function () { self.openDuty(d); } };
       });
 
     /* 今週のごはん */
@@ -905,6 +950,20 @@
         ed.save = function () { self.saveTopic(); }; ed.del = function () { self.deleteTopic(); };
       }
       ed.close = function () { self.setState({ editor: null }); };
+      ed.noTimeOn = E.kind === 'duty' && !E.time;
+      ed.noTime = ed.noTimeOn ? 'true' : 'false';
+      ed.noTimeStyle = chip(ed.noTimeOn) + '; flex-shrink: 0; min-height: 48px';
+      ed.toggleNoTime = function () { var e2 = self.state.editor; self.editSet('time', e2.time ? '' : (e2.lastTime || pad(Math.min(23, new Date().getHours() + 1)) + ':00')); if (e2.time) self.editSet('lastTime', e2.time); };
+      /* 消すは2回押し：1回目で「本当に消す」に変わる */
+      var del0 = ed.del;
+      ed.delLabel = E.confirmDel ? '本当に消す（もう一度押す）' : '消す';
+      ed.delStyle = 'min-height: 48px; border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer; ' + (E.confirmDel ? 'border: none; background: #A3355D; color: #FFFFFF' : 'border: 1.5px solid #C9A1B0; background: transparent; color: #7A2645');
+      ed.del = function () {
+        if (self.state.editor && self.state.editor.confirmDel) { del0(); return; }
+        self.editSet('confirmDel', true);
+        clearTimeout(self.delTimer);
+        self.delTimer = setTimeout(function () { if (self.state.editor && self.state.editor.confirmDel) self.editSet('confirmDel', false); }, 4000);
+      };
     }
 
     var lazy = {};
@@ -989,10 +1048,10 @@
     return {
       sections: sections, title: title, planNote: '担当の色は、文字（' + names.concat(['家族']).join('・') + '）でも見分けられます。',
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
-      flowEditLabel: st.flowEdit ? '終わる' : '編集',
+      flowEditLabel: st.flowEdit ? '完了' : '直す',
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
       addDuty: function () { self.openDuty(null); },
-      shopEdit: !!st.shopEdit, shopEditLabel: st.shopEdit ? '終わる' : '編集',
+      shopEdit: !!st.shopEdit, shopEditLabel: st.shopEdit ? '完了' : '直す・消す',
       toggleShopEdit: function () { self.setState({ shopEdit: !self.state.shopEdit }); },
       shopDraft: st.shopDraft, shopQty: st.shopQty,
       setShopDraft: function (e) { self.setState({ shopDraft: e.target.value }); },
@@ -1001,7 +1060,7 @@
       addShop: function () { self.addShopFromForm(); },
       shopCatChips: shopCats.map(function (c) { var on = c === shopCatSel; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.setState({ shopCat: c }); } }; }),
       shopSuggest: shopSuggest, hasSuggest: shopSuggest.length > 0,
-      topics: topics, topicsEmpty: topics.length === 0, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '終わる' : '編集',
+      topics: topics, topicsEmpty: topics.length === 0, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '完了' : '直す',
       toggleTopicEdit: function () { self.setState({ topicEdit: !self.state.topicEdit }); },
       addTopic: function () { self.openTopic(null); },
       ed: ed, edBackdropStyle: backdrop(!!E), edSheetStyle: sheetStyle(!!E, 'max-height: 88vh; overflow-y: auto; '),
@@ -1245,7 +1304,11 @@
     if ('serviceWorker' in navigator && !DEMO && location.protocol === 'https:') {
       /* 新しい版に切り替わったら、1回だけ読み直して新しい画面にする */
       var hadCtrl = !!navigator.serviceWorker.controller, reloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadCtrl && !reloaded) { reloaded = true; location.reload(); } });
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadCtrl || reloaded) return;
+        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
+        if (!busy) { reloaded = true; location.reload(); }   /* 入力中なら読み直さない（次に開いた時に新しい版になる） */
+      });
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
   }
