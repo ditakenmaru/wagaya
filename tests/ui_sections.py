@@ -64,7 +64,7 @@ async def main():
         btn = page.get_by_role('button', name='材料を買い物リストへ')
         if await btn.count():
             await btn.click(); await page.wait_for_timeout(400)
-            toast = await page.locator('[role=status]').inner_text()
+            toast = await page.locator('[role=status][aria-live]').inner_text()
             print('menu to shop toast:', '買い物リストに足しました' in toast or 'もう全部リストにあります' in toast, toast.strip()[:40])
         else:
             print('menu to shop: no ingredients today (ok)')

@@ -43,7 +43,10 @@ function makeEnv(sheets) {
   const triggers = [];
   const env = {
     toasts: [], store, triggers, counts: { reads: 0, cal: 0, drive: 0 },
-    SpreadsheetApp: { getActive: () => ss, getUi: () => ({ createMenu: () => ({ addItem() { return this; }, addToUi() {} }), alert() {} }) },
+    SpreadsheetApp: { getActive: () => ss, getUi: () => ({ createMenu: () => ({ addItem() { return this; }, addSeparator() { return this; }, addToUi() {} }), alert() {},
+      prompt: () => ({ getSelectedButton: () => 'OK', getResponseText: () => env.promptAnswer || '' }), Button: { OK: 'OK' }, ButtonSet: { OK_CANCEL: 1, OK: 2 },
+      showModalDialog: (h) => { env.dialog = h.html; } }) },
+    HtmlService: { createHtmlOutput: html => ({ html, setWidth() { return this; }, setHeight() { return this; } }) },
     CacheService: { getScriptCache: () => cache },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: { createTextOutput: s => ({ s, setMimeType() { return JSON.parse(s); } }), MimeType: { JSON: 'json' } },
@@ -260,7 +263,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 9, 'boot に api の版');
+ok(b3.api === 10 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -365,6 +368,48 @@ ok(b3.api === 9, 'boot に api の版');
 {
   for (let i = 0; i < 10; i++) env.backupNow();
   ok(env.backups.filter(f => !f.trashed).length === 8, 'バックアップ：8つ残す');
+}
+
+
+// Muse：鍵で入って足す。読めるのは一覧だけ。取り消しは自分の鍵で24時間以内
+{
+  env.promptAnswer = 'まま';
+  env.museNewKey();
+  const KM = (env.dialog.match(/wgk_[0-9a-f]{64}/) || [])[0];
+  ok(KM && !JSON.stringify(env.ss.getSheetByName('_keys').data).includes(KM), 'Muse: 鍵を作る（シートにはハッシュだけ）');
+  const mpost = o => post(env, Object.assign({ action: 'muse', key: KM }, o));
+  ok(post(env, { action: 'muse', key: 'wgk_' + '0'.repeat(64), op: 'list' }).code === 'bad_key', 'Muse: 違う鍵は断る');
+  ok(post(env, { action: 'boot', key: KM, session: KM }).code === 'no_session', 'Muse: 鍵ではアプリのデータ（boot）は読めない');
+  ok(mpost({ op: 'addDiary' }).code === 'unknown_op', 'Muse: 決めた操作以外はできない');
+  const v0 = post(env, { action: 'ver', session: S }).v;
+  let m = mpost({ op: 'shop.add', items: [{ name: '牛乳' }, { name: '大根' }, { name: '豆腐', qty: '2丁' }] });
+  ok(m.ok && m.added.join() === '牛乳,豆腐' && m.skipped.join() === '大根', 'Muse: 買い物に足す（リストにある物は足さない） ' + JSON.stringify(m));
+  ok(post(env, { action: 'ver', session: S }).v !== v0, 'Muse: 書いたら版が変わる（アプリがすぐ読み直す）');
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.shop.groups.some(g => g.items.some(x => x[1] === '豆腐' && x[2] === '2丁')), 'Muse: アプリにすぐ出る');
+  m = mpost({ op: 'menu.add', dish: '鶏と大根の煮物', ingredients: [{ name: '鶏もも', qty: '300g' }, { name: 'しょうが', qty: '1片' }, { name: 'みりん' }], url: 'https://www.instagram.com/p/xyz/', hotcook: true, toShop: true, how: '全部入れて煮る' });
+  ok(m.ok && m.date === today && m.shopAdded.join() === 'しょうが,みりん' && m.shopSkipped.join() === '鶏もも', 'Muse: 献立に入れ、材料のうちリストに無い物を買い物へ ' + JSON.stringify(m));
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  const mm = bd.menu.find(x => x.date === today);
+  ok(mm && mm.dish === '鶏と大根の煮物' && mm.hotcook && mm.ingredients.length === 3 && mm.note.includes('instagram'), 'Muse: 献立がアプリに出る');
+  ok(mpost({ op: 'menu.add', date: today, dish: '別の料理' }).code === 'taken', 'Muse: 献立のある日は置きかえない（replaceが要る）');
+  const m2 = mpost({ op: 'menu.add', dish: 'カレー' });
+  ok(m2.ok && m2.date > today, 'Muse: 日を省くと次の空いている日');
+  m = mpost({ op: 'note.add', text: '牛乳を足しました' });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(m.ok && bd.notes.some(n => n.from === 'まま' && n.to === 'ケン' && n.text === '牛乳を足しました'), 'Muse: 申し送り（宛先を省くと相手）');
+  ok(mpost({ op: 'duty.add', task: '絵本を返す', time: '9:00', date: today }).ok, 'Muse: 担当（その日だけ）');
+  ok(mpost({ op: 'feedback.add', text: '文字が小さい' }).ok && env.ss.getSheetByName('要望').data.some(r => r.includes('文字が小さい') && r.includes('まま')), 'Muse: 要望');
+  ok(mpost({ op: 'deadline.add', what: '予防接種の予約', due: '2099-02-01' }).ok && mpost({ op: 'outing.add', name: '動物園' }).ok && mpost({ op: 'decision.add', q: '年末どこへ', options: ['実家', '家'] }).ok, 'Muse: 期限・お出かけ・相談');
+  ok(mpost({ op: 'topic.add', title: 'x', url: 'javascript:alert(1)' }).ok === false, 'Muse: https 以外のリンクは断る');
+  const L = mpost({ op: 'list' });
+  ok(L.ok && L.me === 'まま' && L.shop.items.some(x => x.name === '豆腐') && L.menu.some(x => x.dish === 'カレー') && !('diary' in L) && !('photos' in L) && !JSON.stringify(L).includes('@example.com'), 'Muse: 一覧（日記・写真・メールは出さない）');
+  const tofuId = env.ss.getSheetByName('Museの記録').data.find(r => r.includes('豆腐'))[4];
+  ok(mpost({ op: 'undo', id: tofuId }).ok && !env.ss.getSheetByName('買い物').data.some(r => r.includes('豆腐')), 'Muse: 取り消し');
+  ok(mpost({ op: 'undo', id: 'sq' }).code === 'not_found', 'Muse: 自分の鍵で足した物以外は消せない');
+  ok(mpost({ op: 'undo', id: 'menu:' + m2.date }).ok && !env.ss.getSheetByName('献立').data.some(r => r.includes('カレー')), 'Muse: 献立の取り消し');
+  const kh = env.ss.getSheetByName('_keys').data; kh[1][kh[0].indexOf('状態')] = '止める';
+  ok(mpost({ op: 'list' }).code === 'bad_key', 'Muse: 鍵を止めると使えない');
 }
 
 // ログアウト

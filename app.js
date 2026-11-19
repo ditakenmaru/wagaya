@@ -6,8 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '24';
-  var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '25';
+  var API_EXPECTED = 10;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
   var LSP = DEMO ? 'demo.' : '';
@@ -276,7 +276,9 @@
       if (upd) self.setState(upd);
     }, 1000);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.setState({ now: Date.now() }); self.refresh(true); checkUpdate(); } });
-    this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.refresh(true); }, 60000);
+    /* 開いている間は15秒ごとに「変わったか」だけ確かめ、変わった時だけ読み直す（Museや相手の書き込みがすぐ出る）。
+       予定（カレンダー）などシートの外のものもあるので、5分ごとには必ず読み直す */
+    this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.pollVer(); }, 15000);
     this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
     if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
     this.setupPull();
@@ -386,6 +388,17 @@
       return false;
     }).then(function (ok) { self.inflight = null; return ok; });
     return this.inflight;
+  };
+  App.prototype.pollVer = function () {
+    var self = this, D = this.state.data;
+    if (DEMO || this.state.needLogin || this.pending > 0 || this.inflight || this.verBusy) return;
+    if (!D || !D.v || Date.now() - (D._at || 0) > 5 * 60000) { if (!D || D.v || Date.now() - (D._at || 0) > 60000) this.refresh(true); return; }
+    this.verBusy = true;
+    fetch(CFG.gasUrl, { method: 'POST', body: JSON.stringify({ action: 'ver', session: LS.get('session') }), redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { if (res && res.ok && res.v && self.state.data && res.v !== self.state.data.v) self.refresh(true); })
+      .catch(function () {})
+      .then(function () { self.verBusy = false; });
   };
   /* 写真と動画：一覧はbootで受け取る。1コマ目（写真・動画のサムネイル）を1回の通信でまとめて取り、
    * 動画の中身はそのあと1本ずつ取る。どれも端末に保存し、2回目からはすぐ出る */

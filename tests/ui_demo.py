@@ -30,7 +30,7 @@ async def main():
         rt = await page.locator('section[aria-labelledby=ed-title]').inner_text()
         print('weekday rule 火・金:', '毎週 火・金' in rt)
         await page.get_by_role('button', name='保存する').click(); await page.wait_for_timeout(400)
-        toast = await page.locator('[role=status]').inner_text()
+        toast = await page.locator('[role=status][aria-live]').inner_text()
         print('toast shows rule:', '火・金' in toast)
         # 明日だけの担当
         await page.get_by_role('button', name='担当を足す').click(); await page.wait_for_timeout(300)

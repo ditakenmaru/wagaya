@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 9;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 10;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -42,7 +42,9 @@ var SHEETS = {
   '使われ方': ['日付', '誰', '項目', '回数'],
   'ふりかえり': ['週', '作成', '開いた回数', 'よく見たセクション', '見られていないセクション', 'よく使った操作', '未対応の要望', 'エラー', '気づき'],
   '改善ログ': ['日付', 'きっかけ', '仮説', '変えたこと', '結果', '状態'],
-  '_sessions': ['hash', 'email', '作成', '期限']
+  '_sessions': ['hash', 'email', '作成', '期限'],
+  '_keys': ['hash', '誰', '作成', '状態', '最後に使った', '回数'],
+  'Museの記録': ['日時', '誰', '操作', 'シート', 'id', '内容']
 };
 
 /* 設定シートの行（setupで、無い行だけ足す） */
@@ -101,10 +103,12 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents || '{}');
     var action = String(req.action || '');
     if (action === 'login') return out(login(req));
+    if (action === 'muse') return out(museCall(req));   // Muse（AIの手伝い）用の入口。ログインの代わりに「鍵」で入る。できることは足すことと一覧を見ることだけ
     var me = sessionUser(req.session);
     if (!me) return out({ ok: false, code: 'no_session' });
     switch (action) {
       case 'boot': return out({ ok: true, data: bootFor(req, me) });
+      case 'ver': return out({ ok: true, v: ver() });   // 変わったかだけ確かめる（軽い）。変わっていたら画面が boot で読み直す
       case 'photos': return out({ ok: true, photos: photoList() });
       case 'photosBatch': return out(photosBatch(req.ids));
       case 'video': return out(videoData(req.id));
@@ -163,6 +167,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('わが家')
     .addItem('アプリに反映', 'refreshApp')
     .addItem('シートを整える（足りない列・行を足す）', 'setup')
+    .addSeparator()
+    .addItem('Muse用の鍵を作る', 'museNewKey')
     .addToUi();
 }
 
@@ -286,7 +292,7 @@ function bootFor(req, me) {
   var v = ver();   // 組み立てる前の版で保存する（組み立て中に書き込みがあれば、その版のまとめは使われない）
   var data = req.fresh ? null : snapGet(today, v);
   if (!data) { data = buildBoot(today); snapPut(today, data, v); }
-  data.me = me; data.api = API_VERSION;
+  data.me = me; data.api = API_VERSION; data.v = v;
   return data;
 }
 
@@ -955,6 +961,211 @@ function addFeedback(f, me) {
   if (!body) return { ok: false, code: 'bad_request' };
   appendObj('要望', { id: 'f' + Date.now().toString(36), '日時': new Date(), '誰': me.who, '内容': body, '画面': String(f.screen || '').slice(0, 300), '状態': '未対応', 'メモ': '' });
   return { ok: true };
+}
+
+/* ================= Muse（AIの手伝い）からの書き込み =================
+ * 入口は doPost の action:'muse'。ログインの代わりに「鍵」で入る（鍵はメニュー「Muse用の鍵を作る」で人ごとに作り、
+ * シートにはハッシュだけ残す。止める時は「_keys」の状態を「止める」に）。
+ * できること：一覧を見る（list）と、足すこと（買い物・献立・担当・申し送り・要望・話題・相談・期限・お出かけ）、
+ * 自分の鍵で足したものを24時間以内に取り消すこと（undo）。日記・写真・設定は読めない・書けない。
+ * 書いたものは「Museの記録」に1行ずつ残す。 */
+
+var MUSE_LOG = 'Museの記録';
+
+function museCall(req) {
+  var cache = CacheService.getScriptCache();
+  var fk = 'mfail_' + Math.floor(Date.now() / 600000);
+  if (Number(cache.get(fk) || 0) >= 30) return { ok: false, code: 'busy' };   // 違う鍵が続いたら10分止める
+  var owner = keyOwner(String(req.key || ''));
+  if (!owner) { cache.put(fk, String(Number(cache.get(fk) || 0) + 1), 900); return { ok: false, code: 'bad_key' }; }
+  var rk = 'mrate_' + owner.hash.slice(0, 16) + '_' + Math.floor(Date.now() / 3600000);
+  var n = Number(cache.get(rk) || 0) + 1; cache.put(rk, String(n), 3700);
+  if (n > 200) return { ok: false, code: 'too_many', message: '1時間に200回までです' };
+  var me = { who: owner.who, email: '' };
+  var op = String(req.op || '');
+  if (op === 'help') return { ok: true, me: me.who, ops: MUSE_HELP };
+  if (op === 'list') return museList(me);
+  var fn = MUSE_OPS[op];
+  if (!fn) return { ok: false, code: 'unknown_op', ops: Object.keys(MUSE_HELP) };
+  return withLock(function () {
+    var r = fn(req, me) || { ok: true };
+    if (r.ok) {
+      appendRows(MUSE_LOG, (r.log || []).map(function (l) { return { '日時': new Date(), '誰': me.who, '操作': op, 'シート': l[0], 'id': l[1], '内容': String(l[2] || '').slice(0, 120) }; }));
+      setCells('_keys', owner.row, { '最後に使った': new Date(), '回数': Number(owner.count || 0) + 1 });
+      delete r.log;
+    }
+    return r;
+  });
+}
+
+function keyOwner(key) {
+  if (!/^wgk_[0-9a-f]{64}$/.test(key)) return null;
+  var h = sha(key), rows = rowsOf('_keys');
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].hash !== h) continue;
+    if (text(rows[i]['状態']) !== '使う') return null;
+    var who = whoOf(rows[i]['誰']);
+    return who === '家族' ? null : { who: who, hash: h, row: rows[i]._row, count: rows[i]['回数'] };
+  }
+  return null;
+}
+
+function museId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function otherOf(who) { var ps = people().list; return ps[0].name === who ? ps[1].name : ps[0].name; }
+
+/* 今の一覧（Museが重ならないように足したり、相談に使ったりする）。日記・写真・申し送りの他人宛ては出さない */
+function museList(me) {
+  var today = ymd(new Date()), v = ver();
+  var D = snapGet(today, v);
+  if (!D) { D = buildBoot(today); snapPut(today, D, v); }
+  var items = [];
+  (D.shop.groups || []).forEach(function (g) { g.items.forEach(function (it) { items.push({ name: it[1], qty: it[2], cat: g.label, bought: !!D.checked[it[0]] }); }); });
+  return { ok: true, today: today, me: me.who, partner: otherOf(me.who),
+    shop: { week: D.shop.week, categories: (D.shop.groups || []).map(function (g) { return g.label; }), items: items },
+    menu: (D.menu || []).map(function (m) { return { date: m.date, dish: m.dish, ingredients: m.ingredients.map(function (x) { return x[0] + (x[1] ? ' ' + x[1] : ''); }) }; }),
+    duties: (D.dutiesAll || []).map(function (d) { return { task: d.task, time: d.t == null ? '' : Math.floor(d.t / 60) + ':' + pad(d.t % 60), who: d.who, repeat: d.date ? '' : d.rule, date: d.date || '' }; }),
+    plans: (D.plans || []).filter(function (p) { return p.date >= today; }),
+    deadlines: (D.deadlines || []).filter(function (x) { return !x.done; }).map(function (x) { return { what: x.what, due: x.due, who: x.who }; }),
+    decisions: (D.decisions || []).filter(function (x) { return x.state !== '決まった'; }).map(function (x) { return { q: x.q, options: x.options, due: x.due }; }),
+    outings: (D.outings || []).map(function (x) { return { name: x.name, date: x.date, place: x.place, state: x.state, go: x.go }; }),
+    notesForMe: (D.notes || []).filter(function (x) { return x.to === me.who && !x.read; }).map(function (x) { return { from: x.from, text: x.text }; })
+  };
+}
+
+/* 今アプリに出ている買い物リストの週と、まだ買っていない品名 */
+function shopNow() {
+  var t = parseYmd(ymd(new Date()));
+  var shop = shopFor(new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay()));
+  var bought = {};
+  rowsOf('チェック').forEach(function (r) { if (r['種類'] === '買い物' && truthy(r['済']) && normDate(r['日付']) === shop.week) bought[String(r['対象ID'])] = true; });
+  var have = {};
+  shop.groups.forEach(function (g) { g.items.forEach(function (it) { if (!bought[it[0]]) have[normName(it[1])] = true; }); });
+  return { week: shop.week, firstCat: shop.groups[0] ? shop.groups[0].label : 'その他', have: have };
+}
+function addToShop(list, cat) {
+  var s = shopNow(), add = [], log = [], skipped = [];
+  (list || []).slice(0, 40).forEach(function (x) {
+    var name = String(x.name || '').slice(0, 60).trim();
+    if (!name) return;
+    if (s.have[normName(name)]) { skipped.push(name); return; }
+    s.have[normName(name)] = true;
+    var id = museId('s');
+    add.push({ id: id, '週': s.week, '分類': String(x.cat || cat || '').slice(0, 30).trim() || s.firstCat, '品名': name, '量': String(x.qty || '').slice(0, 30).trim() });
+    log.push(['買い物', id, name]);
+  });
+  appendRows('買い物', add);
+  return { added: add.map(function (a) { return a['品名']; }), skipped: skipped, log: log };
+}
+
+var MUSE_HELP = {
+  list: '今の一覧を見る（買い物・献立・担当・予定・期限・相談・お出かけ・自分宛ての申し送り）',
+  'shop.add': 'items:[{name, qty?, cat?}] 買い物リストに足す（まだ買っていない同じ品名は足さない）',
+  'menu.add': 'date?(yyyy-mm-dd。省くと今日から7日で献立が空いている最初の日), dish, ingredients:[{name, qty?}], how?, note?, url?(https), hotcook?(true/false), toShop?(true＝材料のうちリストに無い物を買い物に足す), replace?(true＝その日の献立を置きかえる)',
+  'duty.add': 'task, time?(H:mm), who?(呼び名・家族。省くと自分), date?(その日だけ) か repeat?(毎日・平日・土日・月水金 など。省くと毎日)',
+  'note.add': 'text, to?(省くと相手) 相手への申し送り',
+  'feedback.add': 'text, screen? アプリの要望・不具合（「ここ直しといて」）',
+  'topic.add': 'title, url?(https), note? いま話している資料へのリンク',
+  'decision.add': 'q, options?:[..], due?, note? ふたりで決めることに出す（答えと決定はアプリで2人がする）',
+  'deadline.add': 'what, due?, who?, url?, note? 期限があるもの',
+  'outing.add': 'name, kind?, date?, place?, url?, note? お出かけの候補',
+  undo: 'id（足した時に返ったid）自分の鍵で足したものを24時間以内なら取り消す'
+};
+
+var MUSE_OPS = {
+  'shop.add': function (q) {
+    var r = addToShop(q.items || (q.name ? [{ name: q.name, qty: q.qty, cat: q.cat }] : []), q.cat);
+    if (!r.added.length && !r.skipped.length) return { ok: false, code: 'bad_request' };
+    return { ok: true, added: r.added, skipped: r.skipped, ids: r.log.map(function (l) { return l[1]; }), log: r.log };
+  },
+  'menu.add': function (q) {
+    var dish = String(q.dish || '').slice(0, 80).trim();
+    if (!dish) return { ok: false, code: 'bad_request' };
+    var used = {};
+    rowsOf('献立').forEach(function (r) { var d = normDate(r['日付']); if (d && text(r['料理'])) used[d] = r; });
+    var date = normDate(q.date);
+    if (!date) {
+      for (var i = 0; i < 7 && !date; i++) { var d0 = new Date(); d0.setDate(d0.getDate() + i); if (!used[ymd(d0)]) date = ymd(d0); }
+      if (!date) return { ok: false, code: 'no_free_day', message: 'この7日は献立が埋まっています。date と replace:true で置きかえてください' };
+    }
+    if (used[date] && !q.replace) return { ok: false, code: 'taken', message: date + 'はすでに「' + text(used[date]['料理']) + '」です。置きかえるなら replace:true' };
+    var ings = (q.ingredients || []).slice(0, 40).map(function (x) { return { name: String(x.name || '').replace(/[:：\/／\n]/g, ' ').slice(0, 40).trim(), qty: String(x.qty || '').replace(/[:：\/／\n]/g, ' ').slice(0, 20).trim() }; }).filter(function (x) { return x.name; });
+    var url = safeUrl(q.url), note = String(q.note || '').slice(0, 200).trim();
+    var obj = { '日付': date, '料理': dish, 'ホットクック': !!q.hotcook, 'メモ': (note + (url ? (note ? ' ' : '') + url : '')).trim(),
+      '材料': ings.map(function (x) { return x.name + (x.qty ? ':' + x.qty : ''); }).join(' / '), '作り方': String(q.how || '').slice(0, 1500).trim() };
+    if (used[date]) setCells('献立', used[date]._row, obj); else appendObj('献立', obj);
+    var log = [['献立', 'menu:' + date, dish]], res = { ok: true, date: date, dish: dish, replaced: !!used[date] };
+    if (q.toShop && ings.length) { var s = addToShop(ings); res.shopAdded = s.added; res.shopSkipped = s.skipped; log = log.concat(s.log); }
+    res.ids = log.map(function (l) { return l[1]; }); res.log = log;
+    return res;
+  },
+  'duty.add': function (q, me) {
+    var id = museId('d');
+    var r = saveDuty({ id: id, task: q.task, time: q.time, who: q.who || me.who, date: q.date, rule: q.repeat || q.rule });
+    return r.ok ? { ok: true, id: id, log: [['担当', id, q.task]] } : r;
+  },
+  'note.add': function (q, me) {
+    var id = museId('n');
+    var r = addNote({ id: id, text: q.text, to: q.to || otherOf(me.who) }, me);
+    return r.ok ? { ok: true, id: id, log: [['申し送り', id, q.text]] } : r;
+  },
+  'feedback.add': function (q, me) {
+    var r = addFeedback({ text: q.text, screen: 'Museから' + (q.screen ? ' / ' + q.screen : '') }, me);
+    return r.ok ? { ok: true, log: [['要望', '', q.text]] } : r;
+  },
+  'topic.add': function (q) {
+    var id = museId('t');
+    var r = saveTopic({ id: id, title: q.title, url: q.url, note: q.note });
+    return r.ok ? { ok: true, id: id, log: [['話題', id, q.title]] } : r;
+  },
+  'decision.add': function (q) {
+    var id = museId('q');
+    var r = saveDecision({ id: id, q: q.q, options: q.options || [], due: q.due, note: q.note });
+    return r.ok ? { ok: true, id: id, log: [['相談', id, q.q]] } : r;
+  },
+  'deadline.add': function (q, me) {
+    var id = museId('k');
+    var r = saveDeadline({ id: id, what: q.what, due: q.due, who: q.who || me.who, url: q.url, note: q.note });
+    return r.ok ? { ok: true, id: id, log: [['期限', id, q.what]] } : r;
+  },
+  'outing.add': function (q) {
+    var id = museId('o');
+    var r = saveOuting({ id: id, name: q.name, kind: q.kind, date: q.date, place: q.place, url: q.url, note: q.note });
+    return r.ok ? { ok: true, id: id, log: [['お出かけ', id, q.name]] } : r;
+  },
+  undo: function (q, me) {
+    var id = String(q.id || ''), since = Date.now() - 864e5, hit = null;
+    if (!id) return { ok: false, code: 'bad_request' };
+    rowsOf(MUSE_LOG).forEach(function (r) { if (text(r.id) === id && whoOf(r['誰']) === me.who && new Date(r['日時']).getTime() >= since && text(r['操作']) !== 'undo') hit = r; });
+    if (!hit) return { ok: false, code: 'not_found', message: '自分の鍵で24時間以内に足したものだけ取り消せます' };
+    var name = text(hit['シート']), rows;
+    if (name === '献立') {
+      var date = id.replace(/^menu:/, '');
+      rows = rowsOf('献立');
+      for (var i = rows.length - 1; i >= 0; i--) if (normDate(rows[i]['日付']) === date && text(rows[i]['料理']) === text(hit['内容'])) { sheet('献立').deleteRow(rows[i]._row); delete _tables['献立']; return { ok: true, log: [[name, id, '取り消し']] }; }
+      return { ok: false, code: 'not_found' };
+    }
+    rows = rowsOf(name);
+    for (var j = rows.length - 1; j >= 0; j--) if (String(rows[j].id) === id) { sheet(name).deleteRow(rows[j]._row); delete _tables[name]; return { ok: true, log: [[name, id, '取り消し']] }; }
+    return { ok: false, code: 'not_found' };
+  }
+};
+
+/* メニュー「Muse用の鍵を作る」：鍵はこの画面で1回だけ見せる。シートにはハッシュだけ */
+function museNewKey() {
+  var ui = SpreadsheetApp.getUi(), ps = people().list;
+  var r = ui.prompt('Muse用の鍵を作る', 'だれのMuseに渡す鍵ですか？（' + ps[0].name + ' か ' + ps[1].name + '）', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var who = whoOf(r.getResponseText());
+  if (who === '家族') { ui.alert('呼び名が見つかりません。' + ps[0].name + ' か ' + ps[1].name + ' と入れてください。'); return; }
+  _tables = {};
+  if (!sheet('_keys')) setup();
+  var key = 'wgk_' + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  appendObj('_keys', { hash: sha(key), '誰': who, '作成': new Date(), '状態': '使う', '最後に使った': '', '回数': 0 });
+  var html = '<div style="font:14px sans-serif;line-height:1.6">' + who + 'のMuseに、この鍵を直接わたしてください。<b>この画面を閉じると二度と出ません。</b>メールやメモには残さないでください。' +
+    '<input id="k" readonly value="' + key + '" style="width:100%;margin:10px 0;padding:8px;font:13px monospace" onclick="this.select()">' +
+    '<button onclick="var k=document.getElementById(\'k\');k.select();document.execCommand(\'copy\');this.textContent=\'コピーしました\'">コピー</button>' +
+    '<p style="color:#666">止める時は「_keys」シートの状態を「止める」に。なくした時は止めて、作り直します。</p></div>';
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(560).setHeight(250), 'Muse用の鍵（' + who + '）');
 }
 
 /* 自分が書いたものだけ消せる（whoHead は「誰」の列の見出し） */
