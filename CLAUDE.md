@@ -8,6 +8,7 @@ Kenと妻の2人だけが使う、iPhoneのホーム画面アプリ（PWA）。�
   - `app.js`：自前の小さな描画の仕組み（差分更新）＋画面のロジック（`App.renderVals()`）＋通信。`?demo=1` で通信なしの見本モード
   - `config.js`：GASのURLとOAuthクライアントID（秘密ではない）
   - `sw.js`：画面のファイルだけキャッシュ（手元を先に出し、裏で更新。新しい版は次に開いた時）。写真は Cache Storage `wagaya-photos` に端末保存
+  - **画面を変えたら版を上げる**：index.html の `app.js?v=N`・`config.js?v=N` と sw.js の `VERSION` を同じ番号に上げる（上げ忘れると、新しい index.html と古い app.js が混ざって画面が空になる）
 - Google側：`gas/Code.gs` と `gas/appsscript.json` を、スプレッドシート「WAGAYA DB」（maru_app_create のアカウント）の Apps Script に貼って使う
   - ウェブアプリ（実行：自分、アクセス：全員）。中身はログインした2人だけに返す
   - GASに家族のデータや見本の行を書かない。中身はすべてシートから読む

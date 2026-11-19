@@ -973,7 +973,12 @@
     comp = new App();
     render();
     comp.componentDidMount();
-    if ('serviceWorker' in navigator && !DEMO && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function () {});
+    if ('serviceWorker' in navigator && !DEMO && location.protocol === 'https:') {
+      /* 新しい版に切り替わったら、1回だけ読み直して新しい画面にする */
+      var hadCtrl = !!navigator.serviceWorker.controller, reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadCtrl && !reloaded) { reloaded = true; location.reload(); } });
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
