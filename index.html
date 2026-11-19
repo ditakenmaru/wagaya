@@ -69,17 +69,39 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
   </sc-if>
 
-  <header style="padding: 20px 20px 12px; display: flex; flex-direction: column; gap: 14px">
-    <div style="display: flex; align-items: baseline; justify-content: space-between">
-      <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 0.02em">わが家の今日</h1>
+  <header style="{{hdr.style}}">
+    <svg aria-hidden="true" width="220" height="220" viewBox="0 0 220 220" style="position: absolute; right: -60px; top: -70px; opacity: .12; pointer-events: none"><circle cx="110" cy="110" r="100" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="70" fill="none" stroke="#FFFFFF" stroke-width="2"></circle><circle cx="110" cy="110" r="40" fill="#FFFFFF"></circle></svg>
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 13px; background: rgba(255,255,255,0.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28); display: flex; align-items: center; justify-content: center">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 5l8 6.5"></path><path d="M8 18a4 4 0 0 1 8 0"></path><path d="M4.5 18h15"></path><path d="M12 10.5v1.6M7.6 12.6l1 1M16.4 12.6l-1 1"></path></svg>
+        </span>
+        <span style="display: flex; flex-direction: column; line-height: 1.1">
+          <span style="font-size: 10px; font-weight: 700; letter-spacing: .32em; opacity: .78">WAGAYA</span>
+          <h1 style="margin: 2px 0 0; font-size: 19px; font-weight: 900; letter-spacing: .04em">わが家の今日</h1>
+        </span>
+      </div>
       <button type="button" onClick="{{openAccount}}" aria-label="{{accountAria}}" style="{{syncStyle}}"><span style="display: inline-flex; align-items: center; gap: 5px">{{syncLabel}}<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg></span></button>
     </div>
-    <div role="group" aria-label="誰の担当を見るか" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: #DDE3DA; border-radius: 14px; padding: 4px">
+    <div style="position: relative; display: flex; flex-direction: column; gap: 2px; animation: rise .5s cubic-bezier(.2,.8,.2,1) both">
+      <span style="font-size: 13px; font-weight: 700; opacity: .8">{{hdr.date}}</span>
+      <span style="font-size: 26px; font-weight: 900; line-height: 1.25; letter-spacing: .01em">{{hdr.greet}}</span>
+    </div>
+    <div style="position: relative; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -18px; padding: 0 18px">
+      <sc-for list="{{hdr.chips}}" as="c" hint-placeholder-count="3">
+        <button type="button" onClick="{{c.go}}" style="{{c.style}}">
+          <span style="font-size: 11px; font-weight: 700; opacity: .8">{{c.k}}</span>
+          <span style="font-size: 18px; font-weight: 900; line-height: 1.15">{{c.v}}</span>
+        </button>
+      </sc-for>
+    </div>
+    <div role="group" aria-label="誰の担当を見るか" style="position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: rgba(255,255,255,0.14); border-radius: 14px; padding: 4px">
       <sc-for list="{{whoTabs}}" as="t" hint-placeholder-count="3">
         <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
       </sc-for>
     </div>
   </header>
+  <div style="height: 14px"></div>
 
   <sc-if value="{{loading}}" hint-placeholder-val="{{ false }}">
     <div aria-hidden="true" style="display: flex; flex-direction: column; gap: 16px; padding: 4px 16px 0">
@@ -239,7 +261,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
                 </sc-if>
               </span>
               <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px">
-                <span style="{{r.taskStyle}}">{{r.task}}</span>
+                <span style="{{r.taskStyle}}">{{r.task}}</span><sc-if value="{{r.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
                 <sc-if value="{{r.once}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 700; color: #8A5A12; background: #F3E8D6; border-radius: 6px; padding: 2px 6px">今日だけ</span></sc-if>
               </span>
               <span style="{{r.badgeStyle}}">{{r.who}}</span>
@@ -277,7 +299,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <sc-for list="{{decisions}}" as="dc" hint-placeholder-count="1">
       <article style="{{dc.cardStyle}}">
         <div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start">
-          <button type="button" onClick="{{dc.edit}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.45; cursor: pointer">{{dc.q}}</button>
+          <button type="button" onClick="{{dc.edit}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.45; cursor: pointer">{{dc.q}}</button><sc-if value="{{dc.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <sc-if value="{{dc.hasDue}}" hint-placeholder-val="{{ true }}"><span style="flex-shrink: 0; font-size: 12px; font-weight: 700; color: #8A5A12">{{dc.due}}まで</span></sc-if>
         </div>
         <sc-if value="{{dc.hasNote}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #39433D; line-height: 1.6">{{dc.note}}</p></sc-if>
@@ -312,7 +334,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{deadlines}}" as="dl" hint-placeholder-count="2">
         <div style="display: flex; align-items: center; gap: 10px; min-height: 60px; border-bottom: 1px solid #ECEFE9">
           <button type="button" aria-pressed="{{dl.done}}" aria-label="済にする" onClick="{{dl.toggle}}" style="width: 44px; height: 44px; flex-shrink: 0; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0"><span style="{{dl.boxStyle}}"><sc-if value="{{dl.done}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if></span></button>
-          <button type="button" onClick="{{dl.edit}}" style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 0; border: none; background: transparent; text-align: left; color: inherit; cursor: pointer"><span style="{{dl.dueStyle}}">{{dl.due}}</span><span style="{{dl.textStyle}}">{{dl.what}}</span></button>
+          <button type="button" onClick="{{dl.edit}}" style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 0; border: none; background: transparent; text-align: left; color: inherit; cursor: pointer"><span style="{{dl.dueStyle}}">{{dl.due}}</span><span style="{{dl.textStyle}}">{{dl.what}}</span></button><sc-if value="{{dl.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <sc-if value="{{dl.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{dl.url}}" target="_blank" rel="noopener" style="flex-shrink: 0; display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; font-size: 13px; font-weight: 700">開く</a></sc-if>
           <span style="{{dl.badgeStyle}}">{{dl.who}}</span>
         </div>
@@ -338,7 +360,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{topics}}" as="tp" hint-placeholder-count="2">
         <article style="flex-shrink: 0; width: 250px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 18px; background: #FFFFFF">
           <span style="display: flex; justify-content: space-between; font-size: 12px; color: #55605A"><span style="font-weight: 700; color: #3046A6">{{tp.host}}</span><span>{{tp.date}}</span></span>
-          <span style="font-size: 16px; font-weight: 900; line-height: 1.4">{{tp.title}}</span>
+          <span style="font-size: 16px; font-weight: 900; line-height: 1.4">{{tp.title}}</span><sc-if value="{{tp.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{tp.note}}</span>
           <sc-if value="{{tp.editing}}" hint-placeholder-val="{{ false }}">
             <button type="button" onClick="{{tp.open}}" style="margin-top: auto; align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">直す・消す</button>
@@ -371,7 +393,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{diary}}" as="dy" hint-placeholder-count="3">
         <article style="{{dy.cardStyle}}">
           <span style="font-size: 12px; font-weight: 900; color: #6B5A33">{{dy.time}}</span>
-          <p style="margin: 0; font-size: 14px; line-height: 1.7">{{dy.text}}</p>
+          <sc-if value="{{dy.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: flex-start; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if><p style="margin: 0; font-size: 14px; line-height: 1.7">{{dy.text}}</p>
         </article>
       </sc-for>
       <sc-if value="{{diaryEmpty}}" hint-placeholder-val="{{ false }}">
@@ -472,7 +494,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
                 <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="animation: pop .28s ease-out"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
               </sc-if>
             </span>
-            <span style="{{it.nameStyle}}">{{it.name}}</span>
+            <span style="{{it.nameStyle}}">{{it.name}}</span><sc-if value="{{it.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
             <span style="margin-left: auto; font-size: 14px; color: #55605A">{{it.qty}}</span>
             <sc-if value="{{it.editing}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#8A928C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 10-10-3-3L5 16z"></path></svg></sc-if>
           </button>
@@ -500,7 +522,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{outings}}" as="ou" hint-placeholder-count="2">
         <article style="{{ou.cardStyle}}">
           <span style="font-size: 12px; font-weight: 700; color: #2C6B52">{{ou.kind}}</span>
-          <button type="button" onClick="{{ou.edit}}" style="min-height: 44px; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button>
+          <button type="button" onClick="{{ou.edit}}" style="min-height: 44px; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button><sc-if value="{{ou.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <span style="font-size: 12px; color: #55605A">{{ou.meta}}</span>
           <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{ou.note}}</span>
           <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 700">くわしく</a></sc-if>
@@ -860,7 +882,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
