@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '16';
+  var APP_VERSION = '17';
   var API_EXPECTED = 9;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
@@ -1716,7 +1716,7 @@
       login: function () { self.login(); },
       syncLabel: syncLabel,
       accountAria: 'アカウントと更新（' + syncLabel + '）',
-      syncStyle: 'min-height: 32px; padding: 0 12px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: #F5E2E9; color: #7A2645' : 'background: rgba(255,255,255,0.16); color: #FFFFFF'),
+      syncStyle: 'min-height: 32px; padding: 0 12px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: #F5E2E9; color: #7A2645' : 'background: #DDE3DA; color: #39433D'),
       openAccount: function () { self.setState({ accountOpen: true }); },
       closeAccount: function () { self.setState({ accountOpen: false }); },
       meLabel: D.me ? D.me.who + 'でログイン中' : 'ログイン中',
