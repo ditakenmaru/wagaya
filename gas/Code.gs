@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 8;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 9;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -64,7 +64,7 @@ var SETTING_ROWS = [
   ['カレンダーID', '', '家族の共有Googleカレンダーの「カレンダーID」。空なら「予定」シートを使う。予定名の頭に「とと:」「まま:」で担当の色'],
   ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
   ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）'],
-  ['旅行の期間', '', '例：2026-11-26〜2026-12-04。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
+  ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする']
 ];
 
@@ -130,8 +130,8 @@ function doPost(e) {
       case 'likeOuting': return out(withLock(function () { return likeOuting(req.id, !!req.like, me); }));
       case 'planOuting': return out(withLock(function () { return planOuting(req.id, req.date, me); }));
       case 'deleteOuting': return out(withLock(function () { return deleteById('お出かけ', req.id, ['名前']); }));
-      case 'addShopMany': return out(withLock(function () { (req.items || []).slice(0, 40).forEach(function (x) { saveShop(x); }); return { ok: true }; }));
-      case 'logUsage': return out(logUsage(req.counts, req.date, me));
+      case 'addShopMany': return out(withLock(function () { return addShopMany(req.items || []); }));
+      case 'logUsage': return out(logUsage(req.counts, req.date, me, req.batch));
       case 'addFeedback': return out(withLock(function () { return addFeedback(req.feedback || {}, me); }));
     }
     return out({ ok: false, code: 'unknown_action' });
@@ -335,23 +335,23 @@ function buildBoot(today) {
   /* ふたりで決めること：相談中のものと、決まって2週間以内のもの */
   var dsince = ymd(new Date(t.getTime() - 14 * 864e5));
   var decisions = rowsOf('相談').filter(function (r) { return text(r['問い']); }).map(function (r) {
-    return { id: idOf(r, ['問い']), q: text(r['問い']), options: splitList(r['選択肢']), due: normDate(r['期限']), state: text(r['状態']) || '相談中', decided: text(r['決まったこと']),
+    return { id: idOf(r, ['問い']), q: text(r['問い']), options: splitOptions(r['選択肢']), due: normDate(r['期限']), state: text(r['状態']) || '相談中', decided: text(r['決まったこと']),
       a1: text(r['人1の答え']), a2: text(r['人2の答え']), note: text(r['メモ']), created: normDate(r['作成']) };
   }).filter(function (x) { return x.state !== '決まった' || !x.created || x.created >= dsince || (x.due && x.due >= dsince); });
 
   /* 期限があるもの：済んでいないものと、済んで3日以内のもの */
   var deadlines = rowsOf('期限').filter(function (r) { return text(r['内容']); }).map(function (r) {
     return { id: idOf(r, ['内容', '期限']), what: text(r['内容']), due: normDate(r['期限']), who: whoOf(r['担当']), done: truthy(r['済']), url: safeUrl(r['URL']), note: text(r['メモ']) };
-  }).filter(function (x) { return !x.done || !x.due || x.due >= ymd(new Date(t.getTime() - 3 * 864e5)); })
+  }).filter(function (x) { return !x.done || (x.due && x.due >= ymd(new Date(t.getTime() - 3 * 864e5))); })
     .sort(function (a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
 
   /* お出かけ：行った・やめた以外 */
   var outings = rowsOf('お出かけ').filter(function (r) { return text(r['名前']); }).map(function (r) {
     return { id: idOf(r, ['名前']), name: text(r['名前']), kind: text(r['種類']), date: normDate(r['日付']), place: text(r['場所']), url: safeUrl(r['URL']), note: text(r['メモ']),
       like1: truthy(r['人1']), like2: truthy(r['人2']), state: text(r['状態']) || '候補', go: normDate(r['行く日']) };
-  }).filter(function (x) { return x.state !== '行った' && x.state !== 'やめた' && (!x.date || x.date >= today); });
+  }).filter(function (x) { return x.state !== '行った' && x.state !== 'やめた' && (!x.date || x.date >= today) && !(x.go && x.go < today); });
 
-  var trip = (s['旅行の期間'] || '').split(/\s*[〜~ー–-]{1,2}\s*(?=\d{4})/).map(normDate);
+  var trip = tripRange(s['旅行の期間']);
   var ps = people();
   return {
     topics: topics, decisions: decisions, deadlines: deadlines, outings: outings,
@@ -371,6 +371,17 @@ function buildBoot(today) {
 }
 
 /* 画面シート：見出し・表示・順番。行が無いキーは初期値 */
+/* 見る人：空・みんな・知らない名前なら2人とも。人1/人2/呼び名/パパ・ママならその人だけ */
+function viewerOf(v) {
+  v = text(v);
+  if (!v || v === 'みんな' || v === '2人') return '';
+  var ps = people().list;
+  if (v === '人1') return ps[0].name;
+  if (v === '人2') return ps[1].name;
+  for (var i = 0; i < ps.length; i++) if (ps[i].alias.indexOf(v) >= 0) return ps[i].name;
+  return '';
+}
+
 function screenRows() {
   var byKey = {};
   rowsOf('画面').forEach(function (r) { var k = text(r['キー']); if (k) byKey[k] = r; });
@@ -386,7 +397,7 @@ function screenRows() {
       person: has('人のタブ') ? truthy(r['人のタブ']) : d[3],
       order: num + i / 100, evening: eve + i / 100,
       travel: has('旅行中') ? truthy(r['旅行中']) : d[6],
-      viewer: viewer && viewer !== 'みんな' && viewer !== '2人' ? whoOf(viewer === '人1' ? people().list[0].name : viewer === '人2' ? people().list[1].name : viewer) : ''
+      viewer: viewerOf(viewer)
     };
   }).sort(function (a, b) { return a.order - b.order; });
 }
@@ -689,15 +700,21 @@ function saveShop(x) {
 function saveDecision(x) {
   var q = String(x.q || '').slice(0, 200).trim();
   if (!q || !x.id) return { ok: false, code: 'bad_request' };
-  var obj = { id: String(x.id), '問い': q, '選択肢': (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String).join(' / '), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 300) };
+  var opts = (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String);
+  var obj = { id: String(x.id), '問い': q, '選択肢': opts.join('\n'), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 300) };
   var r = findById('相談', x.id, ['問い']);
-  if (r) setCells('相談', r._row, obj); else { obj['状態'] = '相談中'; obj['作成'] = ymd(new Date()); appendObj('相談', obj); }
+  if (r) {
+    /* 問いか選択肢が変わったら、2人の答えを消して相談中に戻す（違う問いへの答えで決まりにならないように） */
+    if (text(r['問い']) !== q || splitOptions(r['選択肢']).join('\n') !== opts.join('\n')) { obj['人1の答え'] = ''; obj['人2の答え'] = ''; obj['状態'] = '相談中'; obj['決まったこと'] = ''; }
+    setCells('相談', r._row, obj);
+  } else { obj['状態'] = '相談中'; obj['作成'] = ymd(new Date()); appendObj('相談', obj); }
   return { ok: true };
 }
 function personCol(me) { return people().list[0].name === me.who ? '人1' : '人2'; }
 function answerDecision(id, answer, me) {
   var r = findById('相談', id, ['問い']);
   if (!r) return { ok: false, code: 'not_found' };
+  if (text(r['状態']) === '決まった') return { ok: false, code: 'already_decided' };   // 変えたい時は「相談に戻す」から
   var o = {}; o[personCol(me) + 'の答え'] = String(answer || '').slice(0, 60);
   setCells('相談', r._row, o);
   return { ok: true };
@@ -740,29 +757,49 @@ function likeOuting(id, like, me) {
 function planOuting(id, date, me) {
   var r = findById('お出かけ', id, ['名前']);
   if (!r) return { ok: false, code: 'not_found' };
-  var d = normDate(date);
+  var d = normDate(date), label = 'おでかけ：' + text(r['名前']);
+  if (d && !(truthy(r['人1']) && truthy(r['人2']))) return { ok: false, code: 'not_both' };   // 2人とも「行きたい」の時だけ決める
   setCells('お出かけ', r._row, { '状態': d ? '決めた' : '候補', '行く日': d });
-  if (d && !settings()['カレンダーID']) appendObj('予定', { '日付': d, '時刻': '', '内容': 'おでかけ：' + text(r['名前']), '誰': '家族' });
+  /* 前に入れた予定の行は消す（日を変えた時・やめた時に、予定が残ったり重なったりしないように） */
+  var plans = rowsOf('予定');
+  for (var i = plans.length - 1; i >= 0; i--) if (text(plans[i]['内容']) === label) sheet('予定').deleteRow(plans[i]._row);
+  delete _tables['予定'];
+  if (d && !settings()['カレンダーID']) appendObj('予定', { '日付': d, '時刻': '', '内容': label, '誰': '家族' });
   return { ok: true };
 }
 
 /* 使われ方：回数だけ（書いた文章は残さない）。日付×人×項目で足し込む */
-function logUsage(counts, date, me) {
+function logUsage(counts, date, me, batch) {
   var d = normDate(date) || ymd(new Date());
-  var keys = Object.keys(counts || {}).filter(function (k) { return /^[a-z]+:[\w\-ぁ-んァ-ン一-龥]{1,40}$/.test(k) && Number(counts[k]) > 0; }).slice(0, 80);
+  var keys = Object.keys(counts || {}).filter(function (k) { return /^[a-z]+:[A-Za-z0-9_\-]{1,40}$/.test(k) && Number(counts[k]) > 0; }).slice(0, 80);
   if (!keys.length) return { ok: true };
+  var cache = CacheService.getScriptCache(), bk = batch ? 'u_' + String(batch).replace(/[^\w]/g, '').slice(0, 40) : '';
+  if (bk && cache.get(bk)) return { ok: true, dup: true };   // 同じ送信が2回届いても1回だけ数える
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     _tables = {};
-    var rows = rowsOf('使われ方'), at = {};
-    rows.forEach(function (r) { if (normDate(r['日付']) === d && whoOf(r['誰']) === me.who) at[text(r['項目'])] = r; });
+    var t = ensureCols('使われ方', SHEETS['使われ方']), at = {};
+    t.rows.forEach(function (r) { if (normDate(r['日付']) === d && whoOf(r['誰']) === me.who) at[text(r['項目'])] = r; });
+    var add = [];
     keys.forEach(function (k) {
       var n = Math.min(500, Math.floor(Number(counts[k])));
-      if (at[k]) setCells('使われ方', at[k]._row, { '回数': Number(at[k]['回数'] || 0) + n });
-      else appendObj('使われ方', { '日付': d, '誰': me.who, '項目': k, '回数': n });
+      if (at[k]) t.sh.getRange(at[k]._row, t.col['回数'] + 1).setValue(Number(at[k]['回数'] || 0) + n);
+      else add.push({ '日付': d, '誰': me.who, '項目': k, '回数': n });
     });
+    appendRows('使われ方', add);
+    if (bk) cache.put(bk, '1', 21600);
   } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+/* 献立の材料をまとめて買い物リストへ（1回で書く） */
+function addShopMany(items) {
+  var add = items.slice(0, 40).map(function (x) {
+    var name = String(x.name || '').slice(0, 60).trim();
+    return name && x.id ? { id: String(x.id), '週': normDate(x.week) || ymd(new Date()), '分類': String(x.cat || '').slice(0, 30).trim() || 'その他', '品名': name, '量': String(x.qty || '').slice(0, 30).trim() } : null;
+  }).filter(Boolean);
+  appendRows('買い物', add);
   return { ok: true };
 }
 
@@ -785,25 +822,49 @@ function weeklyReview() {
   var open = rowsOf('要望').filter(function (r) { return text(r['状態']) !== '対応済み' && text(r['内容']); }).length;
   var secNamed = {}; Object.keys(secs).forEach(function (k) { secNamed[titles[k] || k] = secs[k]; });
   appendObj('ふりかえり', { '週': from + '〜' + to, '作成': new Date(), '開いた回数': Object.keys(opens).map(function (w) { return w + ' ' + opens[w]; }).join('、') || '0',
-    'よく見たセクション': top(secNamed, 5), '見られていないセクション': unseen, 'よく使った操作': top(acts, 6), '未対応の要望': open, 'エラー': errs, '気づき': '' });
+    'よく見たセクション': top(secNamed, 5), '見られていないセクション': unseen, 'よく使った操作': top(acts, 6), '未対応の要望': open, 'エラー': errs, '気づき': 'バックアップ：' + (PropertiesService.getScriptProperties().getProperty('backupLast') || 'まだ') });
 }
 
 /* 毎週日曜の朝（setupで予約）：シートを丸ごとコピーしてバックアップ。古いものは BACKUP_KEEP を超えたら消す */
 function backupNow() {
   var props = PropertiesService.getScriptProperties();
-  var folderId = props.getProperty('backupFolder');
-  if (folderId) { try { Drive.Files.get(folderId, { fields: 'id,trashed' }).trashed && (folderId = ''); } catch (e) { folderId = ''; } }
+  var folderId = props.getProperty('backupFolder'), how = '';
+  if (folderId) {
+    try { if (Drive.Files.get(folderId, { fields: 'id,trashed' }).trashed) folderId = ''; }
+    catch (e) { if (/not ?found|404/i.test(String(e && e.message))) folderId = ''; else throw e; }   // 見つからない時だけ作り直す
+  }
   if (!folderId) {
     folderId = Drive.Files.create({ name: 'WAGAYA DB バックアップ', mimeType: 'application/vnd.google-apps.folder' }, null, { fields: 'id' }).id;
     props.setProperty('backupFolder', folderId);
   }
-  var id = SpreadsheetApp.getActive().getId();
-  Drive.Files.copy({ name: 'WAGAYA DB ' + ymd(new Date()), parents: [folderId] }, id, { fields: 'id' });
+  var id = SpreadsheetApp.getActive().getId(), name = 'WAGAYA DB ' + ymd(new Date());
+  try {
+    Drive.Files.copy({ name: name, parents: [folderId] }, id, { fields: 'id' });
+    how = 'コピー';
+  } catch (e) {
+    /* コピーできない権限の時は、Excel形式に書き出して置く（読み取りの権限で足りる） */
+    var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=' + encodeURIComponent('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) { props.setProperty('backupLast', ymd(new Date()) + ' 失敗（' + res.getResponseCode() + '）'); throw e; }
+    Drive.Files.create({ name: name + '.xlsx', parents: [folderId] }, res.getBlob().setName(name + '.xlsx'), { fields: 'id' });
+    how = 'Excel形式';
+  }
   var files = Drive.Files.list({ q: "'" + folderId + "' in parents and trashed = false", orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 50 }).files || [];
   files.slice(BACKUP_KEEP).forEach(function (f) { try { Drive.Files.update({ trashed: true }, f.id); } catch (e) {} });
-  return files.length;
+  props.setProperty('backupLast', ymd(new Date()) + ' 成功（' + how + '）');
+  return how;
 }
 
+/* 旅行の期間：「2027-08-10〜2027-08-15」「8/10～8/15」「8/10から8/15」などを読む。年が無ければ今年（終わりが前なら翌年） */
+function tripRange(v) {
+  var parts = String(v || '').split(/\s*(?:〜|～|~|から|まで)\s*/).filter(String);
+  if (parts.length < 2) return ['', ''];
+  var a = normDate(parts[0]), b = normDate(parts[1]);
+  if (a && b && b < a && !/^\d{4}/.test(parts[1].trim())) b = String(Number(b.slice(0, 4)) + 1) + b.slice(4);
+  return [a, b];
+}
+
+/* 選択肢は1行に1つ（「、」や「12/29」の「/」では分けない）。前後に空白のある「 / 」も区切りとして読む */
+function splitOptions(v) { return String(v || '').split(/\n| [\/／] /).map(function (x) { return x.trim(); }).filter(String); }
 function splitList(v) { return String(v || '').split(/\s*[\/／、,\n]\s*/).map(function (x) { return x.trim(); }).filter(String); }
 
 /* 要望・不具合のメモ（Claudeがあとで読んで直す） */
@@ -862,6 +923,16 @@ function ensureCols(name, keys) {
 function setCells(name, rowNum, obj) {
   var t = ensureCols(name, Object.keys(obj));
   Object.keys(obj).forEach(function (k) { if (t.col[k] != null) t.sh.getRange(rowNum, t.col[k] + 1).setValue(asCell(obj[k])); });
+  delete _tables[name];
+}
+/* 何行かをまとめて下に足す（1回で書く） */
+function appendRows(name, objs) {
+  if (!objs || !objs.length) return;
+  var keys = {}; objs.forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = 1; }); });
+  var t = ensureCols(name, Object.keys(keys));
+  var head = t.head.length ? t.head : SHEETS[name];
+  var vals = objs.map(function (o) { return head.map(function (h) { return h in o ? asCell(o[h]) : ''; }); });
+  t.sh.getRange(t.sh.getLastRow() + 1, 1, vals.length, head.length).setValues(vals);
   delete _tables[name];
 }
 function appendObj(name, obj) {
@@ -983,7 +1054,7 @@ function setup() {
 
   var trig = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
   if (trig.indexOf('warmPhotos') < 0) ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
-  if (trig.indexOf('weeklyReview') < 0) ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(21).create();
+  if (trig.indexOf('weeklyReview') < 0) ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(23).create();
   if (trig.indexOf('backupNow') < 0) ScriptApp.newTrigger('backupNow').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
   var first = ss.getSheets()[0];
   if (first.getName() === 'シート1' && first.getLastRow() === 0) ss.deleteSheet(first);

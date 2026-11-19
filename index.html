@@ -92,6 +92,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 
   <sc-if value="{{ready}}" hint-placeholder-val="{{ true }}">
   <div style="display: flex; flex-direction: column">
+  <sc-if value="{{travelOn}}" hint-placeholder-val="{{ false }}"><p role="status" style="margin: 0 16px 12px; padding: 10px 14px; border-radius: 14px; background: #E3E7F6; color: #22337A; font-size: 13px; font-weight: 700; line-height: 1.6">{{travelText}}</p></sc-if>
   <sc-for list="{{sections}}" as="sec" hint-placeholder-count="8">
   <sc-if value="{{sec.is_photos}}" hint-placeholder-val="{{ true }}"><div data-sec="{{sec.key}}" style="{{sec.wrapStyle}}">
   <figure aria-label="{{title.photos}}" style="{{figStyle}}">
@@ -293,7 +294,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <div style="display: flex; align-items: center; gap: 10px; min-height: 60px; border-bottom: 1px solid #ECEFE9">
           <button type="button" aria-pressed="{{dl.done}}" aria-label="済にする" onClick="{{dl.toggle}}" style="width: 44px; height: 44px; flex-shrink: 0; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0"><span style="{{dl.boxStyle}}"><sc-if value="{{dl.done}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if></span></button>
           <button type="button" onClick="{{dl.edit}}" style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 0; border: none; background: transparent; text-align: left; color: inherit; cursor: pointer"><span style="{{dl.dueStyle}}">{{dl.due}}</span><span style="{{dl.textStyle}}">{{dl.what}}</span></button>
-          <sc-if value="{{dl.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{dl.url}}" target="_blank" rel="noopener" style="flex-shrink: 0; font-size: 13px; font-weight: 700">開く</a></sc-if>
+          <sc-if value="{{dl.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{dl.url}}" target="_blank" rel="noopener" style="flex-shrink: 0; display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; font-size: 13px; font-weight: 700">開く</a></sc-if>
           <span style="{{dl.badgeStyle}}">{{dl.who}}</span>
         </div>
       </sc-for>
@@ -430,8 +431,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       </sc-if>
     </div>
     <div style="display: flex; gap: 8px">
-      <button type="button" aria-pressed="{{hideBought}}" onClick="{{toggleHide}}" style="min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{hideLabel}}</button>
-      <button type="button" aria-pressed="{{shopEdit}}" onClick="{{toggleShopEdit}}" style="min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{shopEditLabel}}</button>
+      <button type="button" aria-pressed="{{hideBought}}" onClick="{{toggleHide}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{hideLabel}}</button>
+      <button type="button" aria-pressed="{{shopEdit}}" onClick="{{toggleShopEdit}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{shopEditLabel}}</button>
     </div>
     <sc-for list="{{shop}}" as="g" hint-placeholder-count="2">
       <div style="display: flex; flex-direction: column; margin-top: 8px">
@@ -468,7 +469,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{outings}}" as="ou" hint-placeholder-count="2">
         <article style="{{ou.cardStyle}}">
           <span style="font-size: 12px; font-weight: 700; color: #2C6B52">{{ou.kind}}</span>
-          <button type="button" onClick="{{ou.edit}}" style="padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button>
+          <button type="button" onClick="{{ou.edit}}" style="min-height: 44px; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button>
           <span style="font-size: 12px; color: #55605A">{{ou.meta}}</span>
           <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{ou.note}}</span>
           <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 700">くわしく</a></sc-if>
@@ -476,6 +477,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
             <button type="button" onClick="{{ou.like}}" style="{{ou.likeStyle}}">♡ {{ou.likeLabel}}</button>
             <sc-for list="{{ou.likes}}" as="lk" hint-placeholder-count="1"><span style="{{lk.style}}">{{lk.label}}</span></sc-for>
           </div>
+          <sc-if value="{{ou.needBoth}}" hint-placeholder-val="{{ false }}"><span style="margin-top: auto; font-size: 12px; color: #55605A; line-height: 1.6">{{ou.needText}}</span></sc-if>
           <sc-if value="{{ou.notPlanned}}" hint-placeholder-val="{{ true }}">
             <div style="display: flex; flex-direction: column; gap: 6px; margin-top: auto"><sc-for list="{{ou.days}}" as="wd" hint-placeholder-count="2"><button type="button" onClick="{{wd.pick}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{wd.label}}</button></sc-for></div>
           </sc-if>
@@ -743,7 +745,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-if value="{{ed.once}}" hint-placeholder-val="{{ true }}">
         <div style="display: flex; gap: 6px; align-items: center">
           <sc-for list="{{ed.dateChips}}" as="c" hint-placeholder-count="2"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for>
-          <input type="date" aria-label="日にち" value="{{ed.date}}" onInput="{{ed.set.date}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B; flex: 1; min-width: 0; width: auto">
+          <input type="date" aria-label="日にち" value="{{ed.date}}" onInput="{{ed.set.date}}" onCommit="{{ed.set.date}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B; flex: 1; min-width: 0; width: auto">
         </div>
       </sc-if>
       <sc-if value="{{ed.repeat}}" hint-placeholder-val="{{ false }}">
@@ -773,20 +775,20 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </sc-if>
     <sc-if value="{{ed.decide}}" hint-placeholder-val="{{ false }}">
       <label for="ed-q" style="font-size: 13px; font-weight: 700; color: #55605A">相談したいこと</label>
-      <input id="ed-q" type="text" value="{{ed.q}}" onInput="{{ed.set.q}}" placeholder="例：平日の朝と夜、どちらを担当する？" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
-      <label for="ed-opts" style="font-size: 13px; font-weight: 700; color: #55605A">選択肢（1行に1つ。空なら「賛成・反対」）</label>
-      <textarea id="ed-opts" rows="3" value="{{ed.options}}" onInput="{{ed.set.options}}" placeholder="A案：朝はとと&#10;B案：朝はまま" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B; padding: 10px 12px; line-height: 1.6; resize: none"></textarea>
+      <input id="ed-q" type="text" value="{{ed.q}}" onInput="{{ed.set.q}}" placeholder="例：週末の朝ごはん、どうする？" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <label for="ed-opts" style="font-size: 13px; font-weight: 700; color: #55605A">選択肢（改行で区切る。空なら「賛成・反対」）</label>
+      <textarea id="ed-opts" rows="3" value="{{ed.options}}" onInput="{{ed.set.options}}" placeholder="A案：〜&#10;B案：〜" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B; padding: 10px 12px; line-height: 1.6; resize: none"></textarea>
       <label for="ed-qdue" style="font-size: 13px; font-weight: 700; color: #55605A">いつまでに決めたいか</label>
-      <input id="ed-qdue" type="date" value="{{ed.due}}" onInput="{{ed.set.due}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <input id="ed-qdue" type="date" value="{{ed.due}}" onInput="{{ed.set.due}}" onCommit="{{ed.set.due}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <label for="ed-qnote" style="font-size: 13px; font-weight: 700; color: #55605A">ひとこと</label>
-      <input id="ed-qnote" type="text" value="{{ed.note}}" onInput="{{ed.set.note}}" placeholder="例：1月の復職から" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <input id="ed-qnote" type="text" value="{{ed.note}}" onInput="{{ed.set.note}}" placeholder="例：来月から" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <span style="font-size: 12px; color: #55605A; line-height: 1.6">2人の答えがそろった時だけ「決まり」にできます。「話したい」は決まりになりません。</span>
     </sc-if>
     <sc-if value="{{ed.deadline}}" hint-placeholder-val="{{ false }}">
       <label for="ed-what" style="font-size: 13px; font-weight: 700; color: #55605A">内容</label>
       <input id="ed-what" type="text" value="{{ed.what}}" onInput="{{ed.set.what}}" placeholder="例：保育園の書類を出す" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <label for="ed-due" style="font-size: 13px; font-weight: 700; color: #55605A">期限</label>
-      <input id="ed-due" type="date" value="{{ed.due}}" onInput="{{ed.set.due}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <input id="ed-due" type="date" value="{{ed.due}}" onInput="{{ed.set.due}}" onCommit="{{ed.set.due}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <span style="font-size: 13px; font-weight: 700; color: #55605A">担当</span>
       <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{ed.whoChips}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
       <label for="ed-durl" style="font-size: 13px; font-weight: 700; color: #55605A">リンク（あれば）</label>
@@ -796,11 +798,11 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </sc-if>
     <sc-if value="{{ed.outing}}" hint-placeholder-val="{{ false }}">
       <label for="ed-oname" style="font-size: 13px; font-weight: 700; color: #55605A">行き先</label>
-      <input id="ed-oname" type="text" value="{{ed.name}}" onInput="{{ed.set.name}}" placeholder="例：油山牧場" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <input id="ed-oname" type="text" value="{{ed.name}}" onInput="{{ed.set.name}}" placeholder="例：近くの牧場" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <span style="font-size: 13px; font-weight: 700; color: #55605A">種類</span>
       <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{ed.okindChips}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
       <label for="ed-odate" style="font-size: 13px; font-weight: 700; color: #55605A">イベントの日（あれば）</label>
-      <input id="ed-odate" type="date" value="{{ed.date}}" onInput="{{ed.set.date}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <input id="ed-odate" type="date" value="{{ed.date}}" onInput="{{ed.set.date}}" onCommit="{{ed.set.date}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <label for="ed-oplace" style="font-size: 13px; font-weight: 700; color: #55605A">場所</label>
       <input id="ed-oplace" type="text" value="{{ed.place}}" onInput="{{ed.set.place}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
       <label for="ed-ourl" style="font-size: 13px; font-weight: 700; color: #55605A">リンク（あれば）</label>
@@ -829,7 +831,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

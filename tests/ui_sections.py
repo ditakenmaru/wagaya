@@ -59,6 +59,9 @@ async def main():
         # 今週末
         we = page.locator('section[aria-labelledby=sec-weekend]')
         await we.scroll_into_view_if_needed(); await page.wait_for_timeout(500)
+        t0 = await we.inner_text()
+        print('outing needs both:', 'ととも「行きたい」を押すと' in t0 and 'に行く' not in t0)
+        await we.get_by_role('button', name='行きたい').first.click(); await page.wait_for_timeout(300)
         await we.get_by_role('button', name='に行く').first.click(); await page.wait_for_timeout(400)
         t = await we.inner_text()
         print('outing planned:', 'に行く' in t and 'やめる' in t)

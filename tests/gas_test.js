@@ -235,7 +235,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 8, 'boot に api の版');
+ok(b3.api === 9, 'boot に api の版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -267,6 +267,15 @@ ok(b3.api === 8, 'boot に api の版');
   r = post(env, { action: 'decide', session: S, id: 'q1' });
   let bd = post(env, { action: 'boot', session: S, today }).data;
   ok(r.ok && bd.decisions[0].state === '決まった' && bd.decisions[0].decided === 'A案（朝はとと）' && bd.decisions[0].options.length === 2, '決める：2人がそろうと決まった');
+  r = post(env, { action: 'answerDecision', session: S, id: 'q1', answer: 'B案（朝はまま）' });
+  ok(!r.ok && r.code === 'already_decided', '決まった相談には答えを変えられない');
+  post(env, { action: 'saveDecision', session: S, item: { id: 'q1', q: '別の問い', options: ['A案（朝はとと）', 'B案（朝はまま）'] } });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  const q1 = bd.decisions.find(x => x.id === 'q1');
+  ok(q1.state === '相談中' && !q1.a1 && !q1.a2, '問いを変えると答えが消えて相談中に戻る');
+  post(env, { action: 'saveDecision', session: S, item: { id: 'q2', q: '帰省', options: ['先にとと実家、あとでまま実家', '12/29から'] } });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.decisions.find(x => x.id === 'q2').options.length === 2, '選択肢は「、」や「/」で分かれない');
 }
 // 期限
 {
@@ -282,6 +291,16 @@ ok(b3.api === 8, 'boot に api の版');
 {
   post(env, { action: 'saveOuting', session: S, item: { id: 'o1', name: '油山牧場', kind: '公園' } });
   post(env, { action: 'likeOuting', session: S, id: 'o1', like: true });
+  let rr = post(env, { action: 'planOuting', session: S, id: 'o1', date: '2099-01-03' });
+  ok(!rr.ok && rr.code === 'not_both', 'お出かけ：片方だけでは行く日を決められない');
+  env.ss.getSheetByName('設定').data.find(r => r[0] === 'カレンダーID')[1] = '';
+  const orow = env.ss.getSheetByName('お出かけ').data.find(x => x.includes('o1')); orow[env.ss.getSheetByName('お出かけ').data[0].indexOf('人2')] = true; env.onEdit();
+  post(env, { action: 'planOuting', session: S, id: 'o1', date: '2099-01-03' });
+  post(env, { action: 'planOuting', session: S, id: 'o1', date: '2099-01-04' });
+  const prows = env.ss.getSheetByName('予定').data.filter(x => x.includes('おでかけ：油山牧場'));
+  ok(prows.length === 1 && prows[0].includes('2099-01-04'), 'お出かけ：日を変えても予定は1行だけ');
+  post(env, { action: 'planOuting', session: S, id: 'o1', date: '' });
+  ok(!env.ss.getSheetByName('予定').data.some(x => x.includes('おでかけ：油山牧場')), 'お出かけ：やめると予定からも消える');
   post(env, { action: 'planOuting', session: S, id: 'o1', date: '2099-01-03' });
   let bd = post(env, { action: 'boot', session: S, today }).data;
   const o = bd.outings.find(x => x.id === 'o1');
@@ -296,7 +315,8 @@ ok(b3.api === 8, 'boot に api の版');
 // 使われ方とふりかえり
 {
   post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 2, 'sec:flow': 3, 'act:setDone': 1, 'bad key!': 9 } });
-  post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 1, 'sec:shop': 1 } });
+  post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 1, 'sec:shop': 1 }, batch: 'bx1' });
+  post(env, { action: 'logUsage', session: S, date: today, counts: { 'open:app': 1, 'sec:shop': 1 }, batch: 'bx1' });
   const lg = env.ss.getSheetByName('使われ方').data;
   const n = lg.find(x => x[2] === 'open:app');
   ok(n && n[3] === 3 && !lg.some(x => x[2] === 'bad key!'), '使われ方：回数を足し込む・変な項目は捨てる');
@@ -309,9 +329,12 @@ ok(b3.api === 8, 'boot に api の版');
   let bd = post(env, { action: 'boot', session: S, today }).data;
   const news = bd.ui.sections.find(x => x.key === 'news');
   ok(news.viewer === 'ケン' && typeof news.evening === 'number' && news.travel === false, '画面：見る人・夜の順番・旅行中');
-  env.ss.getSheetByName('設定').data.push(['旅行の期間', '2026-11-26〜2026-12-04', '']); env.onEdit();
+  const trow = env.ss.getSheetByName('設定').data.find(x => x[0] === '旅行の期間'); trow[1] = '2026-12-28～2027-01-03'; env.onEdit();
   bd = post(env, { action: 'boot', session: S, today }).data;
-  ok(bd.ui.tripFrom === '2026-11-26' && bd.ui.tripTo === '2026-12-04', '旅行の期間を読む');
+  ok(bd.ui.tripFrom === '2026-12-28' && bd.ui.tripTo === '2027-01-03', '旅行の期間（全角の～）');
+  trow[1] = '12/28から1/3'; env.onEdit();
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.ui.tripFrom.slice(5) === '12-28' && bd.ui.tripTo.slice(5) === '01-03' && bd.ui.tripTo > bd.ui.tripFrom, '旅行の期間（年なし・年またぎ）');
 }
 // バックアップ：8週分を超えたら古いものを消す
 {
