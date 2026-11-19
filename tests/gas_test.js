@@ -229,12 +229,25 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 6, 'boot に api の版');
+ok(b3.api === 7, 'boot に api の版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
   env.bigPut('zz', big, 60);
   ok(env.bigGet('zz') === big, 'キャッシュ：日本語20万文字を分けて入れて戻せる');
+}
+
+// くり返しの担当を今日だけ休む（決まりは残る）
+{
+  env.onEdit();
+  let b4 = post(env, { action: 'boot', session: S, today }).data;
+  const rid = b4.duties[0].id;
+  post(env, { action: 'skipDuty', session: S, date: today, id: rid, skip: true });
+  b4 = post(env, { action: 'boot', session: S, today }).data;
+  ok(!b4.duties.some(d => d.id === rid) && b4.dutiesAll.some(d => d.id === rid) && b4.skipped[rid], '今日だけ休む：今日の流れから消え、くり返しは残る');
+  post(env, { action: 'skipDuty', session: S, date: today, id: rid, skip: false });
+  b4 = post(env, { action: 'boot', session: S, today }).data;
+  ok(b4.duties.some(d => d.id === rid), '休みをやめると戻る');
 }
 
 // ログアウト

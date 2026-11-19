@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;
-var API_VERSION = 6;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
+var API_VERSION = 7;      // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
@@ -99,6 +99,7 @@ function doPost(e) {
       case 'deleteNote': return out(withLock(function () { return deleteOwn('申し送り', req.id, 'from', me); }));
       case 'addDiary': return out(withLock(function () { return addDiary(req.entry, me); }));
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
+      case 'skipDuty': return out(withLock(function () { return setCheck(req.date, '休み', req.id, !!req.skip, me); }));
       case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
       case 'deleteDuty': return out(withLock(function () { return deleteById('担当', req.id, DUTY_KEYS); }));
       case 'saveShop': return out(withLock(function () { return saveShop(req.item || {}); }));
@@ -264,7 +265,9 @@ function buildBoot(today) {
   var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
     return { id: idOf(r, DUTY_KEYS), t: normTime(r['時刻']) ? minutes(r['時刻']) : null, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
   });
-  var duties = dutyRows.filter(function (d) { return d.date ? d.date === today : dayMatch(d.rule, dow); })
+  var skipped = {};
+  rowsOf('チェック').forEach(function (r) { if (r['種類'] === '休み' && truthy(r['済']) && normDate(r['日付']) === today) skipped[String(r['対象ID'])] = true; });
+  var duties = dutyRows.filter(function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; })
     .map(function (d) { return { id: d.id, t: d.t, task: d.task, who: d.who, once: !!d.date }; });
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
 
@@ -306,7 +309,7 @@ function buildBoot(today) {
   var ps = people();
   return {
     topics: topics,
-    today: today, duties: duties, dutiesAll: dutiesAll, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
+    today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, shop: shop, plans: plansFor(weekStart, weekEnd, s['カレンダーID']), goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,

@@ -6,8 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '6';
-  var API_EXPECTED = 6;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '7';
+  var API_EXPECTED = 7;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   var LS = {
     get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -119,6 +119,11 @@
   }
   function patchSlots(parent, newSlots) {
     var slots = parent.__slots, anchor = null;
+    /* 同じ種類の要素を別の中身に使い回した時、余った子要素を消す（残ると前の画面の部品が混ざる） */
+    for (var x = newSlots.length; x < slots.length; x++) {
+      (slots[x] || []).forEach(function (n) { if (n.parentNode === parent) parent.removeChild(n); });
+    }
+    slots.length = Math.min(slots.length, newSlots.length);
     for (var i = newSlots.length - 1; i >= 0; i--) {
       slots[i] = patchList(parent, slots[i] || [], newSlots[i], anchor);
       if (slots[i].length) anchor = slots[i][0];
@@ -185,7 +190,7 @@
     DCLogic.call(this);
     var cached = LS.get('boot');
     this.state = {
-      who: 'all', day: null, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, sheet: false,
+      who: LS.get('who') || 'all', day: null, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, sheet: false,
       loading: !cached, data: cached, photos: [],
       slideIdx: 0, slideAt: Date.now(), paused: false,
       noteOpen: false, noteMode: 'diary', noteTarget: '', noteTaskId: null, noteDraft: '', listening: false,
@@ -566,7 +571,8 @@
     var who = this.state.who !== 'all' && this.names().indexOf(this.state.who) >= 0 ? this.state.who : this.meWho();
     this.setState({ editor: {
       kind: 'duty', isNew: !d, id: d ? d.id : uid('d'), task: d ? d.task : '', time: d ? hhmm(d.t) : pad(Math.min(23, new Date().getHours() + 1)) + ':00',
-      who: d ? d.who : who, once: all ? !!all.date : true, rule: (all && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date())
+      who: d ? d.who : who, once: all ? !!all.date : true, rule: (all && !all.date && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date()),
+      routine: !!(all && !all.date), skipToday: !!(d && D.skipped && D.skipped[d.id])
     } });
   };
   App.prototype.editSet = function (k, v) { var e = Object.assign({}, this.state.editor); e[k] = v; this.setState({ editor: e }); };
@@ -587,7 +593,8 @@
     });
     this.setState({ editor: null });
     this.send('saveDuty', { duty: d }, revert);
-    this.showToast(e.isNew ? '「' + task + '」を足しました' : '「' + task + '」を直しました', null);
+    var when = d.date ? (d.date === (this.state.data || {}).today ? '今日' : parseYmd(d.date).getMonth() + 1 + '/' + parseYmd(d.date).getDate()) + 'だけ' : (rule === '毎日' || rule === '平日' || rule === '土日' ? rule : '毎週' + rule.split('').join('・'));
+    this.showToast('「' + task + '」を' + when + 'で' + (e.isNew ? '足しました' : '直しました'), null);
   };
   App.prototype.deleteDuty = function () {
     var self = this, e = this.state.editor;
@@ -602,6 +609,24 @@
     this.showToast('「' + e.task + '」を消しました', old ? function () {
       revert(); self.send('saveDuty', { duty: { id: old.id, task: old.task, time: hhmm(old.t), who: old.who, rule: old.date ? '' : old.rule, date: old.date } }); self.setState({ toast: null });
     } : null);
+  };
+
+  /* くり返しの担当を、今日だけ休む（決まりは消さない） */
+  App.prototype.skipToday = function (id, val) {
+    if (this.stale()) return;
+    var self = this, D = this.state.data || {}, row = (D.dutiesAll || []).filter(function (x) { return x.id === id; })[0];
+    this.mutate(function (d) {
+      d.skipped = d.skipped || {};
+      if (val) { d.skipped[id] = true; d.duties = (d.duties || []).filter(function (x) { return x.id !== id; }); }
+      else {
+        delete d.skipped[id];
+        var today = parseYmd(d.today || ymd(new Date()));
+        if (row && !row.date && dayMatch(row.rule, today.getDay()) && !(d.duties || []).some(function (x) { return x.id === id; })) d.duties.push({ id: id, t: row.t, task: row.task, who: row.who, once: false });
+      }
+    });
+    this.setState({ editor: null });
+    this.send('skipDuty', { date: D.today, id: id, skip: val }, this.snapshot());
+    if (row) this.showToast(val ? '「' + row.task + '」は今日はお休みにしました（くり返しはそのまま）' : '「' + row.task + '」を今日もやることに戻しました', val ? function () { self.skipToday(id, false); self.setState({ toast: null }); } : null);
   };
 
   App.prototype.addShopItem = function (name, qty, cat) {
@@ -689,6 +714,8 @@
   };
   App.prototype.saveTopic = function () {
     var e = this.state.editor, title = (e.title || '').trim(), url = (e.url || '').trim();
+    if (url && !/^https?:\/\//.test(url)) url = 'https://' + url;
+    if (/^http:\/\//.test(url)) url = url.replace(/^http:/, 'https:');
     if (!title) { this.showToast('見出しを入力してください', null); return; }
     if (url && !/^https:\/\/\S+$/.test(url)) { this.showToast('リンクは https:// から始まるものを入れてください', null); return; }
     var t = { id: e.id, title: title, url: url, note: (e.note || '').trim() };
@@ -776,7 +803,7 @@
       var on = whoSel === t[0];
       return {
         label: t[1], pressed: on ? 'true' : 'false',
-        pick: function () { self.setState({ who: t[0] }); },
+        pick: function () { LS.set('who', t[0]); self.setState({ who: t[0] }); },
         style: 'min-height: 40px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #FFFFFF; color: #17201B; box-shadow: 0 1px 2px rgba(23,32,27,0.12)' : 'background: transparent; color: #55605A')
       };
     });
@@ -914,7 +941,7 @@
     var shopCatSel = st.shopCat && shopCats.indexOf(st.shopCat) >= 0 ? st.shopCat : shopCats[0];
     function chip(on, ink) {
       ink = ink || '#17201B';
-      return 'flex-shrink: 0; min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer; border: 1.5px solid ' + ink + '; ' + (on ? 'background: ' + ink + '; color: #FFFFFF' : 'background: transparent; color: ' + ink);
+      return 'flex-shrink: 0; min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer; border: 1.5px solid ' + ink + '; ' + (on ? 'background: ' + ink + '; color: #FFFFFF' : 'background: transparent; color: ' + ink);
     }
     var shopSuggest = (D.shopSuggest || []).map(function (x) {
       return { name: x.name, note: x.note || '', due: !!x.due, add: function () { self.addShopItem(x.name, x.qty, x.cat && shopCats.indexOf(x.cat) >= 0 ? x.cat : (x.cat || shopCatSel)); },
@@ -935,12 +962,28 @@
       ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed[k] = E[k] || ''; });
       ed.set = {};
       ['task', 'time', 'name', 'qty', 'title', 'url', 'note'].forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
+      ed.cancel = function () { self.setState({ editor: null }); };
       if (E.kind === 'duty') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
-        ed.kindChips = [['once', '今日だけ'], ['repeat', 'くり返し']].map(function (k) { var on = (k[0] === 'once') === !!E.once; return { label: k[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('once', k[0] === 'once'); } }; });
+        ed.showKind = !E.routine || E.isNew;
+        ed.isRoutine = !!E.routine && !E.isNew;
+        ed.skipLabel = E.skipToday ? '今日もやる（休みをやめる）' : '今日だけ休む（くり返しはそのまま）';
+        ed.toggleSkip = function () { self.skipToday(E.id, !E.skipToday); };
+        ed.once = !!E.once;
+        ed.date = E.date || '';
+        ed.set.date = function (ev) { self.editSet('date', ev.target.value); };
+        var tdy = (self.state.data || {}).today || ymd(new Date()), tmr = (function () { var x = parseYmd(tdy); x.setDate(x.getDate() + 1); return ymd(x); })();
+        ed.dateChips = [[tdy, '今日'], [tmr, '明日']].map(function (x) { var on = E.date === x[0]; return { label: x[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('date', x[0]); } }; });
+        ed.kindChips = [['once', '日にちを決める'], ['repeat', 'くり返し']].map(function (k) { var on = (k[0] === 'once') === !!E.once; return { label: k[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('once', k[0] === 'once'); } }; });
         ed.repeat = !E.once;
         var days = ruleDays(E.rule || '毎日');
-        ed.dayChips = DOWS.map(function (dn, i) { return { label: dn, pressed: days[i] ? 'true' : 'false', style: chip(days[i]) + '; min-width: 40px; padding: 0', pick: function () { var on2 = ruleDays(self.state.editor.rule || '毎日'); on2[i] = !on2[i]; if (!on2.some(Boolean)) return; self.editSet('rule', daysRule(on2)); } }; });
+        ed.dayChips = DOWS.map(function (dn, i) { return { label: dn, pressed: days[i] ? 'true' : 'false', style: chip(days[i]) + '; flex: 1; min-width: 0; padding: 0', pick: function () {
+          var cur = self.state.editor.rule || '毎日', on2 = ruleDays(cur);
+          if (cur === '毎日') { on2 = DOWS.map(function (_, k) { return k === i; }); }   /* 「毎日」から曜日を押したら、その曜日だけにする */
+          else { on2[i] = !on2[i]; if (!on2.some(Boolean)) return; }
+          self.editSet('rule', daysRule(on2));
+        } }; });
+        ed.ruleText = (function (r) { return r === '毎日' || r === '平日' || r === '土日' ? r : '毎週 ' + r.split('').join('・'); })(E.rule || '毎日');
         ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('rule', r[0]); } }; });
         ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
       } else if (E.kind === 'shop') {
@@ -1046,7 +1089,7 @@
     });
 
     return {
-      sections: sections, title: title, planNote: '担当の色は、文字（' + names.concat(['家族']).join('・') + '）でも見分けられます。',
+      sections: sections, title: title, planNote: '',
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
       flowEditLabel: st.flowEdit ? '完了' : '直す',
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
@@ -1132,7 +1175,8 @@
       toggleHide: function () { self.setState({ hideBought: !self.state.hideBought }); },
       plans: plans,
       noPhotos: o.length === 0,
-      photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : (D.photosReady ? '写真フォルダに写真を入れると、ここに流れます。' : '写真の共有を設定すると、ここにふたりの写真が流れます。'),
+      figStyle: 'margin: 0 16px 12px; position: relative; height: ' + (o.length ? 448 : (D.photosReady ? 220 : 160)) + 'px; border-radius: 24px; overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
+      photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : 'ここに子どもたちの写真が流れます。',
       slides: o.map(function (m, i) {
         var on = i === cur;
         var base = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: ' + m.pos + '; transition: opacity 1.2s ease, transform ' + (on ? (m.dur + 1) + 's linear' : '1.2s ease') + '; ';
