@@ -1063,3 +1063,9 @@ function setup() {
   bump();
   try { ss.toast('シートを整えました。「設定」と「画面」で呼び名・見出し・表示を変えられます。', 'わが家', 6); } catch (e) {}
 }
+
+/* 権限の許可ページのURLを実行ログに出す（ポップアップでアカウントが切り替わらない時に、同じタブで開くため） */
+function authUrl() {
+  var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+  Logger.log(info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED ? info.getAuthorizationUrl() : '権限はそろっています');
+}
