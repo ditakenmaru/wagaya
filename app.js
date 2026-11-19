@@ -199,16 +199,57 @@
 
   App.prototype.componentDidMount = function () {
     var self = this;
+    /* 画面の描き直しは「分が変わった時」と「写真を送る時」だけ（毎秒は描かない） */
     this.timer = setInterval(function () {
-      var s = self.state, upd = { now: Date.now() };
+      var s = self.state, upd = null;
+      if (Math.floor(Date.now() / 60000) !== Math.floor(s.now / 60000)) upd = { now: Date.now() };
       var n = self.order().length;
-      if (n && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
-      self.setState(upd);
+      if (n && self.showPhotos() && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd = upd || {}; upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
+      if (upd) self.setState(upd);
     }, 1000);
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') self.refresh(); });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.setState({ now: Date.now() }); self.refresh(true); } });
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.refresh(true); }, 60000);
-    this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(); });
+    this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
     if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
+    this.setupPull();
+  };
+
+  /* 画面を下に引っぱって更新（いちばん上にいる時だけ） */
+  App.prototype.setupPull = function () {
+    var self = this, el = document.getElementById('ptr');
+    if (!el) return;
+    var label = el.querySelector('span'), y0 = null, dist = 0, TH = 70;
+    var show = function (d, txt, spin) {
+      el.style.transform = 'translate(-50%, ' + Math.min(d, 90) + 'px)';
+      el.style.opacity = d > 8 ? String(Math.min(1, d / TH)) : '0';
+      el.classList.toggle('spin', !!spin);
+      if (txt) label.textContent = txt;
+    };
+    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen; };
+    document.addEventListener('touchstart', function (e) {
+      y0 = (window.scrollY <= 0 && e.touches.length === 1 && !blocked() && !self.pulling) ? e.touches[0].clientY : null;
+      dist = 0; el.style.transition = 'none';
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (y0 === null) return;
+      if (window.scrollY > 0) { y0 = null; show(0); return; }
+      dist = Math.max(0, (e.touches[0].clientY - y0) * 0.5);
+      show(dist, dist >= TH ? '離すと更新' : '引っぱって更新');
+    }, { passive: true });
+    document.addEventListener('touchend', function () {
+      if (y0 === null) return;
+      y0 = null; el.style.transition = 'transform .25s, opacity .25s';
+      if (dist < TH) { show(0); return; }
+      self.pulling = true;
+      show(56, '更新しています…', true);
+      var t0 = Date.now();
+      self.refresh(false, true).then(function (ok) {
+        setTimeout(function () {
+          show(56, ok ? '新しくしました' : '更新できませんでした', false);
+          setTimeout(function () { self.pulling = false; show(0); }, 700);
+        }, Math.max(0, 400 - (Date.now() - t0)));
+      });
+    }, { passive: true });
   };
 
   /* ログイン：Googleの画面へ移動し、戻ってきたらGASで確かめる */
@@ -247,22 +288,27 @@
   };
 
   /* データの読み込み（キャッシュをすぐ出して、裏で新しくする） */
-  App.prototype.refresh = function (quiet) {
+  /* quiet：右上に「更新中」を出さない。fresh：GAS側のまとめを使わず、シートから読み直す */
+  App.prototype.refresh = function (quiet, fresh) {
     var self = this;
-    if (this.state.needLogin || this.state.syncing || this.pending > 0) return;
-    this.setState({ syncing: !quiet });
-    api('boot', { today: ymd(new Date()) }).then(function (res) {
+    if (this.state.needLogin || this.pending > 0) return Promise.resolve(false);
+    if (this.inflight) return fresh ? this.inflight.then(function () { return self.refresh(quiet, true); }) : this.inflight;
+    if (!quiet) this.setState({ syncing: true });
+    this.inflight = api('boot', { today: ymd(new Date()), fresh: !!fresh }).then(function (res) {
       var data = res.data; data._at = Date.now();
       LS.set('boot', data);
       var first = !self.state.data;
       self.setState({ data: data, loading: false, syncing: false, lastSync: data._at, offline: false });
       if (first) setTimeout(function () { self.attachLazy(); }, 60);
       self.loadPhotos(data.photos);
+      return true;
     }).catch(function (err) {
-      if (err && (err.code === 'no_session' || err.code === 'not_allowed')) { LS.del('session'); self.setState({ needLogin: true, syncing: false }); return; }
+      if (err && (err.code === 'no_session' || err.code === 'not_allowed')) { LS.del('session'); self.setState({ needLogin: true, syncing: false }); return false; }
       self.setState({ syncing: false, offline: true });
       if (!quiet) self.showToast(err && err.code === 'not_configured' ? 'つなぎ先（GASのURL）の設定がまだです' : '新しいデータを取れませんでした。通信を確かめてください', null);
-    });
+      return false;
+    }).then(function (ok) { self.inflight = null; return ok; });
+    return this.inflight;
   };
   /* 写真：一覧はbootで受け取り、1枚ずつ取りに行って端末に保存する（2回目からはすぐ出る） */
   App.prototype.loadPhotos = function (list) {
@@ -359,8 +405,19 @@
     this.toastTimer = setTimeout(function () { self.setState({ toast: null }); }, 3500);
   };
 
-  App.prototype.meWho = function () { var d = this.state.data; return d && d.me ? d.me.who : 'パパ'; };
-  App.prototype.otherWho = function () { return this.meWho() === 'パパ' ? 'ママ' : 'パパ'; };
+  /* 2人の呼び名と色は、スプレッドシートの「設定」から届く */
+  var DEFAULT_PEOPLE = [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }];
+  App.prototype.people = function () { var d = this.state.data; return (d && d.people && d.people.length) ? d.people : DEFAULT_PEOPLE; };
+  App.prototype.names = function () { return this.people().map(function (p) { return p.name; }); };
+  App.prototype.ui = function () { var d = this.state.data; return (d && d.ui) || {}; };
+  App.prototype.meWho = function () { var d = this.state.data; return d && d.me ? d.me.who : this.names()[0]; };
+  App.prototype.otherWho = function () { var me = this.meWho(), n = this.names(); return n[0] === me ? n[1] : n[0]; };
+  App.prototype.showPhotos = function () {
+    var secs = this.ui().sections, all = this.state.who === 'all';
+    if (!secs) return all;
+    var p = secs.filter(function (s) { return s.key === 'photos'; })[0];
+    return p ? (all ? p.all : p.person) : all;
+  };
   App.prototype.openNoteFor = function (target, taskId, mode, to) {
     var upd = { noteOpen: true, noteMode: mode || 'diary', noteTarget: target, noteTaskId: taskId, noteDraft: '' };
     if (mode === 'handover') upd.draftTo = to && to !== this.meWho() && to !== '家族' ? to : this.otherWho();
@@ -443,10 +500,20 @@
     return m.map(function (_, i) { return m[(start + i) % m.length]; });
   };
   App.prototype.slideDur = function (idx) { var o = this.order(); return o.length ? o[idx % o.length].dur : 5; };
+  /* 色コードから、薄い背景色を作る（白に88%寄せる） */
+  function tintOf(hex) {
+    var m = String(hex || '').match(/^#?([0-9a-f]{6})$/i);
+    if (!m) return '#E0EEE7';
+    var n = parseInt(m[1], 16), r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
+    var mix = function (c) { return Math.round(c + (255 - c) * 0.86); };
+    return 'rgb(' + mix(r) + ',' + mix(g) + ',' + mix(b) + ')';
+  }
   App.prototype.person = function (who) {
-    if (who === 'パパ') return { ink: '#3046A6', tint: '#E3E7F6' };
-    if (who === 'ママ') return { ink: '#A3355D', tint: '#F5E2E9' };
-    return { ink: '#2C6B52', tint: '#E0EEE7' };
+    var p = this.people().filter(function (x) { return x.name === who; })[0];
+    var d = this.state.data;
+    var ink = p ? p.ink : ((d && d.family && d.family.ink) || '#2C6B52');
+    if (!/^#[0-9a-f]{6}$/i.test(ink)) ink = p ? (p === this.people()[0] ? '#3046A6' : '#A3355D') : '#2C6B52';
+    return { ink: ink, tint: tintOf(ink) };
   };
   App.prototype.badge = function (who) {
     var c = this.person(who);
@@ -471,9 +538,11 @@
     var dayIdx = st.day === null ? todayIdx : st.day;
     var done = D.done || {}, checked = D.checked || {}, notesAll = D.notes || [], diaryAll = (D.diary || []).filter(function (k) { return k.date === ymd(now); });
     var meWho = this.meWho();
+    var names = this.names(), ui = this.ui();
+    var whoSel = st.who === 'all' || names.indexOf(st.who) >= 0 ? st.who : 'all';
 
-    var whoTabs = [['all', 'みんな'], ['パパ', 'パパ'], ['ママ', 'ママ']].map(function (t) {
-      var on = st.who === t[0];
+    var whoTabs = [['all', 'みんな']].concat(names.map(function (n) { return [n, n]; })).map(function (t) {
+      var on = whoSel === t[0];
       return {
         label: t[1], pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ who: t[0] }); },
@@ -482,25 +551,26 @@
     });
 
     var duties = (D.duties || []).slice().sort(function (a, b) { return a.t - b.t; });
-    function pct(m) { return Math.max(0, Math.min(100, (m - 360) / 900 * 100)); }
-    var mine = duties.filter(function (d) { return st.who === 'all' || d.who === st.who || d.who === '家族'; });
+    var tS = ui.timeStart || 360, tE = ui.timeEnd > tS ? ui.timeEnd : 1260;
+    function pct(m) { return Math.max(0, Math.min(100, (m - tS) / (tE - tS) * 100)); }
+    var mine = duties.filter(function (d) { return whoSel === 'all' || d.who === whoSel || d.who === '家族'; });
 
     var next = null;
     for (var i = 0; i < mine.length; i++) { if (!done[mine[i].id] && mine[i].t >= nowMin) { next = mine[i]; break; } }
     var hero;
     if (next) {
-      var left = next.t * 60 - (nowMin * 60 + now.getSeconds());
-      var diff = Math.max(0, Math.floor(left / 60));
-      var cd = left <= 0 ? 'いまから' : 'あと' + (diff >= 60 ? Math.floor(diff / 60) + '時間' : '') + ((diff % 60) + '分');
+      var diff = Math.max(0, next.t - nowMin);
+      var cd = diff <= 0 ? 'いまから' : 'あと' + (diff >= 60 ? Math.floor(diff / 60) + '時間' : '') + (diff % 60 ? (diff % 60) + '分' : '');
       hero = { kicker: 'つぎの担当', time: hm(next.t), countdown: cd, task: next.task, who: next.who, color: this.person(next.who).ink };
     } else {
       var first = mine[0];
-      hero = { kicker: '今日の担当はおしまい', time: first ? hm(first.t) : '--:--', countdown: '明日の最初', task: first ? first.task : '担当はありません', who: first ? first.who : '—', color: '#2C6B52' };
+      hero = { kicker: '今日の担当はおしまい', time: first ? hm(first.t) : '--:--', countdown: '明日の最初', task: first ? first.task : '担当はありません', who: first ? first.who : '—', color: this.person('家族').ink };
     }
     hero.bandStyle = 'margin: 4px 16px 0; padding: 22px 20px 16px; border-radius: 24px; background: ' + hero.color + '; color: #FFFFFF; display: flex; flex-direction: column; gap: 6px; transition: background .5s; animation: heroIn .6s cubic-bezier(.2,.8,.2,1) both';
-    var secNow = (60 - now.getSeconds()) % 60;
-    hero.sec = pad(secNow);
-    hero.secStyle = 'display: inline-block; font-weight: 700; animation: ' + (secNow % 2 ? 'tickA' : 'tickB') + ' .35s ease-out';
+    hero.marks = [tS, 720, 1080, tE].filter(function (m, k, a) { return (k === 0 || k === a.length - 1 || (m > tS + 90 && m < tE - 90)); }).map(function (m, k, a) {
+      var p0 = pct(m);
+      return { label: hm(m), style: 'position: absolute; top: 0; ' + (k === 0 ? 'left: 0' : (k === a.length - 1 ? 'right: 0' : 'left: ' + p0 + '%; transform: translateX(-50%)')) };
+    });
     hero.passedStyle = 'position: absolute; left: 0; top: 13px; height: 2px; width: ' + pct(nowMin) + '%; background: #FFFFFF; border-radius: 2px';
     hero.nowStyle = 'position: absolute; top: 4px; left: calc(' + pct(nowMin) + '% - 1px); width: 2px; height: 20px; background: #FFFFFF; border-radius: 2px; animation: breathe 2.4s ease-in-out infinite';
     var timeline = mine.map(function (d) {
@@ -547,7 +617,7 @@
     (D.menu || []).forEach(function (m) { menuMap[m.date] = m; });
     var menuByDow = dows.map(function (_, i) {
       var dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-      return menuMap[ymd(dt)] || { dish: 'まだ決まっていません', hotcook: false, note: '日曜の15分で決めます。', ingredients: [], how: '', photo: '' };
+      return menuMap[ymd(dt)] || { dish: ui.noMenuDish || 'まだ決まっていません', hotcook: false, note: ui.noMenuNote || '', ingredients: [], how: '', photo: '' };
     });
     var week = dows.map(function (d, i) {
       var dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
@@ -634,7 +704,7 @@
     });
 
     /* 今週の予定 */
-    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: Math.round((parseYmd(p.date) - start) / 864e5) }); }).filter(function (p) { return p.d >= 0 && p.d < 7; });
+    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: Math.round((parseYmd(p.date) - start) / 864e5) }); }).filter(function (p) { return p.d >= 0 && p.d < 7 && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
     var planIdx = st.planDay === null ? todayIdx : st.planDay;
     var plans = plansRaw.filter(function (p) { return p.d === planIdx; }).sort(function (a, b) { return (a.time || '') < (b.time || '') ? -1 : 1; }).map(function (p) {
       return { time: p.time || '終日', what: p.what, who: p.who, badgeStyle: self.badge(p.who) };
@@ -659,9 +729,23 @@
     var o = this.order();
     var cur = o.length ? st.slideIdx % o.length : 0;
     var syncLabel = st.syncing ? '更新中…' : (st.offline ? 'オフライン' : meWho);
-    var nb = new Date(2024, 6, 9);
+    var nb = /^\d{4}-\d{2}-\d{2}$/.test(ui.kidsBirth || '') ? parseYmd(ui.kidsBirth) : null;
+
+    /* セクションの見出し・表示・順番（スプレッドシートの「画面」） */
+    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
+    var secCfg = ui.sections && ui.sections.length ? ui.sections : SEC_DEF.map(function (x, k) { return { key: x[0], title: x[1], all: true, person: x[0] !== 'photos', order: k }; });
+    var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
+    var title = {}, sections = [];
+    SEC_DEF.forEach(function (x) { title[x[0]] = (secByKey[x[0]] && secByKey[x[0]].title) || x[1]; });
+    secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x) { return { key: x[0], title: x[1], all: true, person: true }; })).forEach(function (c) {
+      var vis = whoSel === 'all' ? c.all !== false : c.person !== false;
+      var o2 = { key: c.key, wrapStyle: vis ? '' : 'display: none' };
+      SEC_DEF.forEach(function (x) { o2['is_' + x[0]] = x[0] === c.key; });
+      sections.push(o2);
+    });
 
     return {
+      sections: sections, title: title, planNote: '担当の色は、文字（' + names.concat(['家族']).join('・') + '）でも見分けられます。',
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
       goalCardStyle: 'margin: 0 20px; padding: 12px 16px; border-radius: 16px; background: #E0EEE7; display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
@@ -674,9 +758,9 @@
         var dn = mine.filter(function (d) { return done[d.id]; }).length;
         var p = tot ? Math.round(dn / tot * 100) : 0;
         var circ = 2 * Math.PI * 44;
-        var ring = st.who === 'all' ? '#2C6B52' : self.person(st.who).ink;
+        var ring = self.person(whoSel === 'all' ? '家族' : whoSel).ink;
         var msg = tot === 0 ? '今日の担当はありません' : (dn === 0 ? '今日もはじめよう' : (dn === tot ? '今日もおつかれさま' : (tot - dn === 1 ? 'あと1つ' : (p >= 50 ? 'いい調子。あと' + (tot - dn) + 'つ' : 'あと' + (tot - dn) + 'つ'))));
-        var people = ['パパ', 'ママ'].map(function (nm) {
+        var people = names.filter(function (nm) { return whoSel === 'all' || nm === whoSel; }).map(function (nm) {
           var list = duties.filter(function (d) { return d.who === nm; });
           var c = list.filter(function (d) { return done[d.id]; }).length;
           var col = self.person(nm).ink;
@@ -738,10 +822,12 @@
       capMonth: (now.getMonth() + 1) + '月',
       capDow: dows[now.getDay()] + '曜日',
       capAge: (function () {
+        if (!nb) return '';
         var y = now.getFullYear() - nb.getFullYear(), m = now.getMonth() - nb.getMonth(), dd = now.getDate() - nb.getDate();
         if (dd < 0) { m -= 1; dd += new Date(now.getFullYear(), now.getMonth(), 0).getDate(); }
         if (m < 0) { y -= 1; m += 12; }
-        return 'ふたり ' + y + '歳' + m + 'か月' + (dd ? dd + '日' : '');
+        if (y < 0) return '';
+        return (ui.kidsLabel ? ui.kidsLabel + ' ' : '') + y + '歳' + m + 'か月' + (dd ? dd + '日' : '');
       })(),
       capStyle: 'position: absolute; left: 20px; bottom: 18px; display: flex; flex-direction: column; gap: 2px; color: #FFFFFF; pointer-events: none; animation: ' + (st.slideIdx % 2 ? 'capIn' : 'capIn2') + ' .8s cubic-bezier(.2,.8,.2,1) .2s both',
       nextSlide: function () { if (o.length) self.setState({ slideIdx: self.state.slideIdx + 1, slideAt: Date.now() }); },
@@ -768,7 +854,7 @@
           }
         };
       }),
-      toChoices: ['パパ', 'ママ'].map(function (p) {
+      toChoices: names.map(function (p) {
         var on = (st.draftTo || self.otherWho()) === p;
         var c = self.person(p);
         return {
@@ -843,17 +929,19 @@
         ['鍋', false, '食卓で家族みんなで。', [['鶏肉・豆腐・白菜', '適量']], '卓上で。', 35132136]
       ];
       demoDB = {
-        me: { email: 'demo@example.com', who: 'パパ' }, today: ymd(t),
-        duties: [[390, '起こして朝ごはん', 'パパ'], [435, '犬の散歩', 'パパ'], [480, '保育園の送り', 'ママ'], [1020, '保育園のお迎え', 'ママ'], [1080, '夕ごはん（ホットクック）', 'パパ'], [1140, 'お風呂', 'パパ'], [1200, '寝かしつけ', 'ママ']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
+        me: { email: 'demo@example.com', who: 'とと' }, today: ymd(t),
+        duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
         done: {}, checked: {},
-        notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'ママ', to: 'パパ', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
-        diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'ママ', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
+        notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
+        diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { return { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; }),
         shop: { week: dd(0), groups: [{ label: 'お店で買う', items: [['e', '大根', '1本'], ['f', 'じゃがいも', '4個']] }, { label: 'WEBで頼む（冷凍・重いもの）', items: [['a', '鶏もも肉', '600g'], ['c', '冷凍ブロッコリー', '1袋']] }] },
-        plans: [{ date: dd(3), time: '10:00', what: '保育園の面談', who: 'ママ' }, { date: dd(6), time: '10:00', what: '公園へおでかけ', who: '家族' }],
+        plans: [{ date: dd(3), time: '10:00', what: '保育園の面談', who: 'まま' }, { date: dd(6), time: '10:00', what: '公園へおでかけ', who: '家族' }],
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
-        photosReady: false
+        photosReady: false,
+        people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },
+        ui: { timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }
       };
     }
     var db = demoDB;
