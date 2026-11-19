@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '25';
+  var APP_VERSION = '26';
   var API_EXPECTED = 10;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -245,7 +245,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
+      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -295,7 +295,7 @@
       el.classList.toggle('spin', !!spin);
       if (txt) label.textContent = txt;
     };
-    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen || s.editor || s.fbOpen; };
+    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen || s.editor || s.fbOpen || s.museOpen; };
     document.addEventListener('touchstart', function (e) {
       y0 = (window.scrollY <= 0 && e.touches.length === 1 && !blocked() && !self.pulling) ? e.touches[0].clientY : null;
       dist = 0; el.style.transition = 'none';
@@ -841,6 +841,47 @@
     });
   };
 
+  /* Museに相談：その項目の文だけを下書きにして見せる。送るのは本人（Museへ自動では送らない）。
+     写真・日記・メール・他の項目は入れない。WhatsAppの番号はこの端末だけに覚える */
+  App.prototype.openMuse = function (kind, x) {
+    var D = this.state.data || {}, me = (D.me && D.me.who) || '';
+    var L = ['わが家アプリ（わが家の今日）のことで相談です。私は「' + me + '」です。', ''];
+    if (kind === 'decide') {
+      L.push('【ふたりで決めること】' + x.q);
+      if (x.options && x.options.length) L.push('選択肢：' + x.options.join(' / '));
+      if (x.due) L.push('期限：' + x.due);
+      if (x.note) L.push('メモ：' + x.note);
+      L.push('', 'どう考えるとよいか、材料や別の案を出してください。');
+    } else if (kind === 'outing') {
+      L.push('【お出かけの候補】' + x.name);
+      [['種類', x.kind], ['日付', x.date], ['場所', x.place], ['リンク', x.url], ['メモ', x.note]].forEach(function (a) { if (a[1]) L.push(a[0] + '：' + a[1]); });
+      L.push('', '行くかどうか・いつ行くかを考えたいです。子連れでの注意や、ほかの候補もあれば教えてください。');
+    } else if (kind === 'menu') {
+      L.push('【今週の献立】');
+      (D.menu || []).forEach(function (m) { if (m.dish) L.push(m.date.slice(5).replace('-', '/') + '：' + m.dish); });
+      var have = [];
+      ((D.shop && D.shop.groups) || []).forEach(function (g) { g.items.forEach(function (it) { if (!(D.checked || {})[it[0]]) have.push(it[1]); }); });
+      if (have.length) L.push('', '【買い物リストにある物】' + have.slice(0, 40).join('、'));
+      L.push('', 'このあとの献立を一緒に考えてください。決まったら、献立（menu.add）と買い物に入れる案を出してください。');
+    } else {
+      L.push('（ここに相談したいことを書いてください）');
+    }
+    L.push('', 'アプリに入れる時は、入れる前に私に確認してください。決めるのは夫婦2人なので、決定扱いにはしないでください。');
+    USAGE.add('act:muse_' + kind);
+    this.setState({ museOpen: true, museDraft: L.join('\n'), accountOpen: false });
+  };
+  App.prototype.museSend = function (how) {
+    var text = String(this.state.museDraft || '').trim();
+    if (!text) { this.showToast('送る文が空です', null); return; }
+    var num = String(LS.get('museWa') || '').replace(/[^\d]/g, '');
+    try { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {}); } catch (e) {}
+    if (how === 'wa' && num) window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(text), '_blank', 'noopener');
+    else window.open('https://muse.ai/', '_blank', 'noopener');
+    USAGE.add('act:muse_' + (how === 'wa' && num ? 'wa' : 'copy'));
+    this.setState({ museOpen: false });
+    if (!(how === 'wa' && num)) this.showToast('文をコピーしました。Museに貼って送ってください', null);
+  };
+
   /* 話題（旅のしおりなどのリンク） */
   App.prototype.openTopic = function (t) {
     this.setState({ editor: { kind: 'topic', isNew: !t, id: t ? t.id : uid('t'), title: t ? t.title : '', url: t ? t.url : '', note: t ? t.note : '' } });
@@ -1259,7 +1300,7 @@
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
       return { isNew: !!marks['decide:' + x.id], q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
-        canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
+        muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
     });
 
@@ -1290,7 +1331,7 @@
         needText: (x.like1 || x.like2) ? (x.like1 ? names[1] : names[0]) + 'も「行きたい」を押すと、行く日を決められます' : '2人とも「行きたい」を押すと、行く日を決められます',
         goLabel: planned ? (gd.getMonth() + 1) + '/' + gd.getDate() + '（' + DOWS[gd.getDay()] + '）に行く' : '',
         days: wkDays.map(function (w) { return { label: w.label + 'に行く', pick: function () { self.planOuting(x, w.ymd); } }; }),
-        unplan: function () { self.planOuting(x, ''); }, edit: function () { self.openOuting(x); },
+        unplan: function () { self.planOuting(x, ''); }, edit: function () { self.openOuting(x); }, muse: function () { self.openMuse('outing', x); },
         likeStyle: 'min-height: 44px; padding: 0 14px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #A3355D; ' + (mineLike ? 'background: #A3355D; color: #FFFFFF' : 'background: transparent; color: #A3355D'),
         cardStyle: 'flex-shrink: 0; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (planned ? '#E0EEE7' : '#FFFFFF') };
     });
@@ -1605,6 +1646,13 @@
       closeFb: function () { self.setState({ fbOpen: false }); },
       sendFb: function () { self.sendFeedback(); },
       fbBackdropStyle: backdrop(st.fbOpen), fbSheetStyle: sheetStyle(st.fbOpen, ''),
+      museDraft: st.museDraft, setMuseDraft: function (e) { self.setState({ museDraft: e.target.value }); },
+      closeMuse: function () { self.setState({ museOpen: false }); },
+      museCopy: function () { self.museSend('copy'); }, museWa: function () { self.museSend('wa'); },
+      hasMuseWa: !!String(LS.get('museWa') || '').replace(/[^\d]/g, ''), museWaNum: LS.get('museWa') || '',
+      setMuseWaNum: function (e) { LS.set('museWa', e.target.value); self.setState({ museWaAt: Date.now() }); },
+      openMuseAny: function () { self.openMuse('any'); }, openMuseMenu: function () { self.openMuse('menu'); },
+      museBackdropStyle: backdrop(st.museOpen), museSheetStyle: sheetStyle(st.museOpen, 'max-height: 90vh; overflow-y: auto; '),
       appVersion: 'v' + APP_VERSION,
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
@@ -1944,7 +1992,7 @@
       navigator.serviceWorker.addEventListener('controllerchange', function () {
         if (!hadCtrl || reloaded) return;
         var go = function () { reloaded = true; comp.reloading = true; location.reload(); };
-        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.accountOpen || s.flowEdit || s.shopEdit || s.topicEdit || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
+        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.museOpen || s.accountOpen || s.flowEdit || s.shopEdit || s.topicEdit || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
         /* 使っている最中（入力中・編集中・ホーム以外のタブ）は読み直さず、次にアプリに戻った時に読み直す */
         if (busy || (s.nav && s.nav !== '今日')) { document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && !reloaded) go(); }); return; }
         go();

@@ -434,6 +434,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <sc-if value="{{dc.hasDue}}" hint-placeholder-val="{{ true }}"><span style="flex-shrink: 0; font-size: 12px; font-weight: 700; color: #8A5A12">{{dc.due}}まで</span></sc-if>
         </div>
         <sc-if value="{{dc.hasNote}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #39433D; line-height: 1.6">{{dc.note}}</p></sc-if>
+        <button type="button" data-muse="1" onClick="{{dc.muse}}" style="align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに相談</button>
         <sc-if value="{{dc.open}}" hint-placeholder-val="{{ true }}">
           <div role="group" aria-label="答える" style="display: flex; flex-direction: column; gap: 6px">
             <sc-for list="{{dc.opts}}" as="op" hint-placeholder-count="3">
@@ -544,7 +545,10 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <sc-if value="{{lazy.week.off}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="{{lazy.week.skelStyle}}"></div></sc-if>
   <sc-if value="{{lazy.week.on}}" hint-placeholder-val="{{ true }}">
   <section aria-labelledby="sec-week" style="padding: 24px 0 8px; display: flex; flex-direction: column; gap: 12px">
-    <h2 id="sec-week" style="margin: 0; padding: 0 20px; font-size: 18px; font-weight: 900">{{title.week}}</h2>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 20px">
+      <h2 id="sec-week" style="margin: 0; font-size: 18px; font-weight: 900">{{title.week}}</h2>
+      <button type="button" data-muse="1" onClick="{{openMuseMenu}}" style="min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに献立を相談</button>
+    </div>
     <div class="strip" role="group" aria-label="曜日を選ぶ" style="display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 4px; scrollbar-width: none">
       <sc-for list="{{week}}" as="w" hint-placeholder-count="7">
         <button type="button" aria-pressed="{{w.pressed}}" onClick="{{w.pick}}" style="{{w.style}}">
@@ -659,6 +663,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 700">くわしく</a></sc-if>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
             <button type="button" onClick="{{ou.like}}" style="{{ou.likeStyle}}">♡ {{ou.likeLabel}}</button>
+            <button type="button" data-muse="1" onClick="{{ou.muse}}" style="min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに相談</button>
             <sc-for list="{{ou.likes}}" as="lk" hint-placeholder-count="1"><span style="{{lk.style}}">{{lk.label}}</span></sc-for>
           </div>
           <sc-if value="{{ou.needBoth}}" hint-placeholder-val="{{ false }}"><span style="margin-top: auto; font-size: 12px; color: #55605A; line-height: 1.6">{{ou.needText}}</span></sc-if>
@@ -904,6 +909,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <div role="group" aria-label="ホームの見た目" style="display: flex; gap: 8px"><button type="button" aria-pressed="{{homeStyleA}}" onClick="{{pickHomeA}}" style="{{homeAStyle}}">写真が主役</button><button type="button" aria-pressed="{{homeStyleB}}" onClick="{{pickHomeB}}" style="{{homeBStyle}}">タイル</button><button type="button" aria-pressed="{{homeStyleC}}" onClick="{{pickHomeC}}" style="{{homeCStyle}}">Apple風</button></div>
     </div>
     <button type="button" onClick="{{refreshNow}}" style="min-height: 48px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">いま更新する</button>
+    <button type="button" data-muse="1" onClick="{{openMuseAny}}" style="min-height: 48px; border: 1.5px solid #2EC28A; border-radius: 14px; background: transparent; color: #0E6B4E; font-size: 15px; font-weight: 700; cursor: pointer">Museに相談する</button>
     <button type="button" onClick="{{openFb}}" style="min-height: 48px; border: 1.5px solid #3046A6; border-radius: 14px; background: transparent; color: #3046A6; font-size: 15px; font-weight: 700; cursor: pointer">要望・不具合を書く</button>
     <button type="button" onClick="{{logout}}" style="min-height: 48px; border: 1.5px solid #C9D0C6; border-radius: 14px; background: transparent; color: #17201B; font-size: 15px; font-weight: 700; cursor: pointer">ログアウト</button>
   </section>
@@ -1014,9 +1020,22 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <button type="button" onClick="{{closeFb}}" style="min-height: 48px; border: 1.5px solid #C9D0C6; border-radius: 14px; background: transparent; color: #17201B; font-size: 15px; font-weight: 700; cursor: pointer">やめる</button>
     <button type="button" onClick="{{sendFb}}" style="min-height: 50px; border: none; border-radius: 14px; background: #3046A6; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送る</button>
   </section>
+
+  <button type="button" aria-label="Museへの相談を閉じる" onClick="{{closeMuse}}" style="{{museBackdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="muse-title" style="{{museSheetStyle}}">
+    <button type="button" aria-label="閉じる" onClick="{{closeMuse}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <h2 id="muse-title" style="margin: 0; font-size: 20px; font-weight: 900">Museに相談</h2>
+    <p style="margin: 0; font-size: 13px; color: #55605A; line-height: 1.6">Museに渡すのは、下の文だけです（写真・日記・メールは入りません）。消したいところは消してから送ってください。送るのは自分で、アプリからは自動で送りません。</p>
+    <textarea id="muse-input" aria-label="Museに送る文" rows="10" value="{{museDraft}}" onInput="{{setMuseDraft}}" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 15px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+    <sc-if value="{{hasMuseWa}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{museWa}}" style="min-height: 50px; border: none; border-radius: 14px; background: #0E6B4E; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">WhatsAppのMuseで開く（文を入れた状態）</button></sc-if>
+    <button type="button" onClick="{{museCopy}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">文をコピーしてMuseを開く</button>
+    <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #55605A">MuseのWhatsApp番号（任意・この端末だけに保存）<input type="tel" inputmode="tel" value="{{museWaNum}}" onInput="{{setMuseWaNum}}" placeholder="例：1 650 555 0100" style="box-sizing: border-box; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-size: 16px; background: #FAFBF9; color: #17201B"></label>
+    <button type="button" onClick="{{closeMuse}}" style="min-height: 48px; border: 1.5px solid #C9D0C6; border-radius: 14px; background: transparent; color: #17201B; font-size: 15px; font-weight: 700; cursor: pointer">やめる</button>
+  </section>
 </div>
 </template>
-<script src="config.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="config.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
