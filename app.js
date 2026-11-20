@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '50';
+  var APP_VERSION = '51';
   var API_EXPECTED = 14;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -546,7 +546,9 @@
   function sigsOf(D) {
     var m = {};
     if (!D) return m;
-    var rc = {}; (D.replies || []).forEach(function (r) { rc[r.target] = (rc[r.target] || 0) + 1; });
+    /* 返信は相手が書いた物だけ数える（自分の返信では「新着」「新しい返信」にしない） */
+    var me = D.me && D.me.who;
+    var rc = {}; (D.replies || []).forEach(function (r) { if (me && r.who === me) return; rc[r.target] = (rc[r.target] || 0) + 1; });
     var withR = function (k, v) { m[k] = v + (rc[k] ? '#r' + rc[k] : ''); };
     (D.dutiesAll || []).forEach(function (x) { m['flow:' + x.id] = [x.task, x.t, x.who, x.rule, x.date].join('|'); });
     (D.decisions || []).forEach(function (x) { withR('decide:' + x.id, [x.q, x.a1, x.a2, x.state, x.note, x.due].join('|')); });
@@ -562,7 +564,7 @@
   App.prototype.trackMarks = function (data) {
     this.commitSeen(false);
     var cur = sigsOf(data), seen = LS.get('seen'), own = this.ownKeys || {};
-    if (!seen) { LS.set('seen', cur); return; }
+    if (!seen || LS.get('seenV') !== 2) { LS.set('seen', cur); LS.set('seenV', 2); return; }   /* 数え方を変えた時は一度だけそろえ直す（自分の返信を数えなくした） */
     var marks = Object.assign({}, this.state.marks || {});
     Object.keys(cur).forEach(function (k) {
       if (cur[k] === seen[k]) return;
