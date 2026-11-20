@@ -454,13 +454,31 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         </sc-if>
         <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid #ECEFE9">
           <sc-for list="{{dc.comments}}" as="cm" hint-placeholder-count="0">
-            <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: #F4F6F2">
-              <div style="display: flex; align-items: center; gap: 8px"><span style="{{cm.badgeStyle}}">{{cm.who}}</span><span style="font-size: 12px; color: #55605A">{{cm.time}}</span></div>
-              <p style="{{cm.textStyle}}">{{cm.text}}</p>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div style="{{cm.style}}">
+                <div style="display: flex; align-items: center; gap: 8px"><span style="{{cm.badgeStyle}}">{{cm.who}}</span><span style="font-size: 12px; color: #55605A">{{cm.time}}</span>
+                  <sc-if value="{{cm.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cm.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+                </div>
+                <p style="{{cm.textStyle}}">{{cm.text}}</p>
+                <div style="display: flex; gap: 4px">
+                  <sc-if value="{{cm.long}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cm.toggle}}" style="min-height: 36px; padding: 0 8px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{cm.expandLabel}}</button></sc-if>
+                  <button type="button" onClick="{{cm.reply}}" style="min-height: 36px; padding: 0 8px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">返信</button>
+                </div>
+              </div>
+              <sc-for list="{{cm.replies}}" as="cr" hint-placeholder-count="0">
+                <div style="{{cr.style}}">
+                  <div style="display: flex; align-items: center; gap: 8px"><span style="{{cr.badgeStyle}}">{{cr.who}}</span><span style="font-size: 12px; color: #55605A">{{cr.time}}</span>
+                    <sc-if value="{{cr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cr.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+                  </div>
+                  <p style="{{cr.textStyle}}">{{cr.text}}</p>
+                  <sc-if value="{{cr.long}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cr.toggle}}" style="align-self: flex-start; min-height: 36px; padding: 0 8px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{cr.expandLabel}}</button></sc-if>
+                </div>
+              </sc-for>
             </div>
           </sc-for>
           <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.openAll}}" style="align-self: flex-start; min-height: 36px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
           <sc-if value="{{dc.commentOpen}}" hint-placeholder-val="{{ false }}">
+            <sc-if value="{{dc.replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{dc.replyToLabel}}</span><button type="button" onClick="{{dc.cancelReplyTo}}" aria-label="返信をやめてコメントにする" style="min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
             <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
             <button type="button" onClick="{{dc.sendComment}}" style="min-height: 44px; border: none; border-radius: 12px; background: #3046A6; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">送信</button>
           </sc-if>
@@ -1110,12 +1128,17 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <sc-if value="{{dt.empty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #55605A">まだコメントはありません。</p></sc-if>
     <sc-for list="{{dt.replies}}" as="rp" hint-placeholder-count="0">
       <div style="{{rp.style}}">
+        <sc-if value="{{rp.isChild}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 700; color: #55605A">{{rp.reLabel}}</span></sc-if>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="{{rp.badgeStyle}}">{{rp.who}}</span><span style="font-size: 12px; color: #55605A">{{rp.time}}</span></div>
         <p style="margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere">{{rp.text}}</p>
-        <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="align-self: flex-end; min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+        <div style="display: flex; justify-content: flex-end; gap: 4px">
+          <sc-if value="{{rp.canReply}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.reply}}" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">返信</button></sc-if>
+          <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+        </div>
       </div>
     </sc-for>
     <sc-if value="{{dt.canReply}}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{replyToLabel}}</span><button type="button" onClick="{{cancelReplyTo}}" style="min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
       <textarea id="reply-input" aria-label="コメント" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="コメントを書く" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
       <button type="button" onClick="{{sendReply}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送信</button>
     </sc-if>
@@ -1135,7 +1158,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=40"></script>
-<script src="app.js?v=40"></script>
+<script src="config.js?v=41"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>

@@ -462,6 +462,8 @@ ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版'
   bd = post(env, { action: 'boot', session: S, today }).data;
   ok(r.ok && bd.replies.some(x => x.id === 'rp1' && x.target === 'topics:t1' && x.text === '返信です' && x.who), 'addReply: 返信がbootに出る');
   ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp2', target: 'evil', text: 'x' } }).code === 'bad_request', 'addReply: 対象の形がおかしいと断る');
+  ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp4', target: 'decide:q1', text: 'そうしよう', parent: 'rp1' } }).ok && post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp4' && x.parent === 'rp1'), 'addReply: コメントへの返信（返信先）');
+  ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp5', target: 'decide:q1', text: 'x', parent: 'a b<' } }).ok && post(env, { action: 'boot', session: S, today }).data.replies.find(x => x.id === 'rp5').parent === '', 'addReply: 返信先の形がおかしい時は空');
   ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp3', target: 'notes:n1', text: '了解' } }).ok && post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp3' && x.target === 'notes:n1'), 'addReply: 申し送りへの返信');
   ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp3', target: 'decide:q1', text: '  ' } }).code === 'bad_request', 'addReply: 空は断る');
   ok(post(env, { action: 'deleteReply', session: S, id: 'rp1' }).ok && !post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp1'), 'deleteReply: 自分の返信を消す');

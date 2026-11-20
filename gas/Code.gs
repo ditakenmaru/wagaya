@@ -43,7 +43,7 @@ var SHEETS = {
   'ふりかえり': ['週', '作成', '開いた回数', 'よく見たセクション', '見られていないセクション', 'よく使った操作', '未対応の要望', 'エラー', '気づき'],
   '改善ログ': ['日付', 'きっかけ', '仮説', '変えたこと', '結果', '状態'],
   '_sessions': ['hash', 'email', '作成', '期限'],
-  '返信': ['id', '対象', '誰', '日時', '本文'],
+  '返信': ['id', '対象', '誰', '日時', '本文', '返信先'],
   '_keys': ['hash', '誰', '作成', '状態', '最後に使った', '回数'],
   'Museの記録': ['日時', '誰', '操作', 'シート', 'id', '内容']
 };
@@ -356,7 +356,7 @@ function buildBoot(today) {
   } catch (err) { console.error(err); }
 
   var replies = rowsOf('返信').filter(function (r) { return r.id && text(r['本文']); }).slice(-400).map(function (r) {
-    return { id: String(r.id), target: text(r['対象']), who: whoOf(r['誰']), at: new Date(r['日時']).getTime() || 0, text: text(r['本文']) };
+    return { id: String(r.id), target: text(r['対象']), who: whoOf(r['誰']), at: new Date(r['日時']).getTime() || 0, text: text(r['本文']), parent: text(r['返信先']) };
   });
 
   var goals = rowsOf('中期').filter(function (r) { return text(r['名前']); }).map(function (r) {
@@ -855,7 +855,8 @@ function deleteMenu(date) {
 function addReply(r, me) {
   var body = String(r.text || '').slice(0, 1000).trim(), target = String(r.target || '').slice(0, 80);
   if (!body || !r.id || !/^(topics|decide|diary|weekend|deadline|news|notes):\S{1,60}$/.test(target)) return { ok: false, code: 'bad_request' };
-  appendObj('返信', { id: String(r.id), '対象': target, '誰': me.who, '日時': new Date(), '本文': body });
+  var parent = /^[\w-]{1,40}$/.test(String(r.parent || '')) ? String(r.parent) : '';   /* コメントへの返信なら、そのコメントのid */
+  appendObj('返信', { id: String(r.id), '対象': target, '誰': me.who, '日時': new Date(), '本文': body, '返信先': parent });
   return { ok: true };
 }
 

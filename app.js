@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '40';
+  var APP_VERSION = '41';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -950,14 +950,32 @@
   App.prototype.sendReply = function () {
     var dt = this.state.detail, text = String(this.state.replyDraft || '').trim();
     if (!dt || !text) return;
-    if (this.addReplyTo(dt.kind, dt.id, text)) this.setState({ replyDraft: '' });
+    if (this.addReplyTo(dt.kind, dt.id, text, this.state.replyTo && this.state.replyTo.id)) this.setState({ replyDraft: '', replyTo: null });
   };
-  App.prototype.addReplyTo = function (kind, id, text) {
+  App.prototype.addReplyTo = function (kind, id, text, parent) {
     if (this.stale()) return false;
-    var r = { id: uid('r'), target: kind + ':' + id, text: text }, me = this.meWho(), revert = this.snapshot();
-    this.mutate(function (d) { d.replies = (d.replies || []).concat([{ id: r.id, target: r.target, who: me, at: Date.now(), text: text }]); });
+    var r = { id: uid('r'), target: kind + ':' + id, text: text, parent: parent || '' }, me = this.meWho(), revert = this.snapshot();
+    this.mutate(function (d) { d.replies = (d.replies || []).concat([{ id: r.id, target: r.target, who: me, at: Date.now(), text: text, parent: r.parent }]); });
     this.send('addReply', { reply: r }, revert);
     return true;
+  };
+  /* 相談のカードのコメント1件ぶんの表示。長い文は3行で切り「続きを読む」で全文。返信（1段だけ）を下に並べる */
+  App.prototype.commentVM = function (r, children, qid) {
+    var self = this, st = this.state;
+    var base = 'margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; ';
+    var one = function (c, isChild) {
+      var o = !!(st.cmOpen || {})[c.id], lg = String(c.text).length > 60 || String(c.text).split('\n').length > 3;
+      return { who: c.who, time: whenLabel(c.at), text: c.text, badgeStyle: self.badge(c.who), long: lg,
+        textStyle: base + (lg && !o ? 'display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden' : ''),
+        expandLabel: o ? '閉じる' : '続きを読む',
+        toggle: function () { var m = Object.assign({}, self.state.cmOpen || {}); if (m[c.id]) delete m[c.id]; else m[c.id] = true; self.setState({ cmOpen: m }); },
+        mine: c.who === self.meWho(), del: function () { self.deleteReply(c.id); },
+        style: 'display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: ' + (isChild ? '#FFFFFF; margin-left: 20px; border-left: 3px solid #C9D0C6' : '#F4F6F2') };
+    };
+    var vm = one(r, false);
+    vm.replies = children.map(function (c) { return one(c, true); });
+    vm.reply = function () { self.setState({ decCommentId: qid, decCommentDraft: '', decReplyTo: { id: r.id, who: r.who } }); setTimeout(function () { var el = document.getElementById('dec-comment-input'); if (el) el.focus(); }, 60); };
+    return vm;
   };
   /* 申し送りへの返信。自分宛てで未確認なら、返信した時に確認済みにもする */
   App.prototype.replyNote = function (n) {
@@ -1453,16 +1471,19 @@
       return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: 16px; font-weight: 900; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: 13px; color: #39433D; line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
         comments: (function () {
           var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
-          return all.slice(-2).map(function (r) { return { who: r.who, text: r.text, time: whenLabel(r.at), badgeStyle: self.badge(r.who), textStyle: clamp(3, 'margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap') }; });
+          var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); });
+          return tops.slice(-2).map(function (r) { return self.commentVM(r, all.filter(function (c) { return c.parent === r.id; }), x.id); });
         })(),
         moreComments: (function () { var n = rCount['decide:' + x.id] || 0; return n > 2 ? 'コメントをすべて見る（' + n + '件）' : ''; })(),
         commentOpen: st.decCommentId === x.id, commentLabel: st.decCommentId === x.id ? 'やめる' : 'コメントする',
         commentExpanded: st.decCommentId === x.id ? 'true' : 'false',
-        toggleComment: function () { self.setState({ decCommentId: self.state.decCommentId === x.id ? null : x.id, decCommentDraft: '' }); setTimeout(function () { var el = document.getElementById('dec-comment-input'); if (el) el.focus(); }, 60); },
+        replyToLabel: st.decCommentId === x.id && st.decReplyTo ? st.decReplyTo.who + 'のコメントへの返信' : '',
+        cancelReplyTo: function () { self.setState({ decReplyTo: null }); },
+        toggleComment: function () { self.setState({ decCommentId: self.state.decCommentId === x.id ? null : x.id, decCommentDraft: '', decReplyTo: null }); setTimeout(function () { var el = document.getElementById('dec-comment-input'); if (el) el.focus(); }, 60); },
         sendComment: function () {
           var text = String(self.state.decCommentDraft || '').trim();
           if (!text) { self.showToast('コメントを入力してください', null); return; }
-          if (self.addReplyTo('decide', x.id, text)) { USAGE.add('act:decide_comment'); self.setState({ decCommentId: null, decCommentDraft: '' }); }
+          if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null }); }
         },
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
@@ -1912,17 +1933,24 @@
         if (x.kind === 'weekend' && (it = find(D.outings))) { title = it.name; body = it.note; url = it.url; meta = [it.kind, it.date, it.place].filter(String).join('・'); cta = ['直す・消す', function () { self.setState({ detail: null }); self.openOuting(it); }]; }
         if (x.kind === 'news' && (it = find(D.news))) { title = it.title; body = [it.why, it.body].filter(String).join('\n\n'); url = it.url; meta = it.from + (it.date ? '（' + it.date + '）' : ''); }
         var tgt = x.kind + ':' + x.id;
-        var rs = (D.replies || []).filter(function (r) { return r.target === tgt; }).sort(function (a, b) { return a.at - b.at; }).map(function (r) {
-          var d0 = new Date(r.at || 0), mine = r.who === meWho;
+        var all0 = (D.replies || []).filter(function (r) { return r.target === tgt; }).sort(function (a, b) { return a.at - b.at; });
+        var tops0 = all0.filter(function (r) { return !r.parent || !all0.some(function (p) { return p.id === r.parent; }); });
+        var ordered = []; tops0.forEach(function (t0) { ordered.push(t0); all0.forEach(function (c) { if (c.parent === t0.id) ordered.push(c); }); });
+        var rs = ordered.map(function (r) {
+          var d0 = new Date(r.at || 0), mine = r.who === meWho, child = !!(r.parent && all0.some(function (p) { return p.id === r.parent; }));
+          var parentWho = child ? all0.filter(function (p) { return p.id === r.parent; })[0].who : '';
           return { who: r.who, text: r.text, time: r.at ? (d0.getMonth() + 1) + '/' + d0.getDate() + ' ' + d0.getHours() + ':' + pad(d0.getMinutes()) : '', badgeStyle: self.badge(r.who), mine: mine, del: function () { self.deleteReply(r.id); },
-            style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 16px; ' + (mine ? 'background: #EEF1EC; margin-left: 28px' : 'background: #FFF6E8; margin-right: 28px') };
+            isChild: child, reLabel: child ? '↳ ' + parentWho + 'への返信' : '', canReply: !child,
+            reply: function () { self.setState({ replyTo: { id: r.id, who: r.who } }); setTimeout(function () { var el = document.getElementById('reply-input'); if (el) { el.focus(); el.scrollIntoView({ block: 'center' }); } }, 60); },
+            style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 16px; ' + (child ? 'margin-left: 28px; border-left: 3px solid #C9D0C6; ' : '') + (mine ? 'background: #EEF1EC' : 'background: #FFF6E8') };
         });
         return { open: true, kindLabel: KL[x.kind] || '', title: it ? title : '（見つかりません。消されたかもしれません）', body: body || '', hasBody: !!body, meta: meta, hasMeta: !!meta, url: url || '', hasUrl: !!url,
           lines: lines.map(function (l) { return { text: l }; }), hasLines: lines.length > 0, replies: rs, empty: rs.length === 0, canReply: !!it,
           hasCta: !!cta, ctaLabel: cta ? cta[0] : '', cta: cta ? cta[1] : function () {} };
       })(),
       replyDraft: st.replyDraft, setReplyDraft: function (e) { self.setState({ replyDraft: e.target.value }); },
-      sendReply: function () { self.sendReply(); }, closeDetail: function () { self.setState({ detail: null, replyDraft: '' }); },
+      replyToLabel: st.replyTo ? st.replyTo.who + 'のコメントへの返信' : '', cancelReplyTo: function () { self.setState({ replyTo: null }); },
+      sendReply: function () { self.sendReply(); }, closeDetail: function () { self.setState({ detail: null, replyDraft: '', replyTo: null }); },
       detailBackdropStyle: backdrop(!!st.detail), detailSheetStyle: sheetStyle(!!st.detail, 'max-height: 88vh; overflow-y: auto; '),
       museDraft: st.museDraft, setMuseDraft: function (e) { self.setState({ museDraft: e.target.value }); },
       closeMuse: function () { self.setState({ museOpen: false }); },
