@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '34';
+  var APP_VERSION = '35';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -242,6 +242,11 @@
     return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + t;
   }
   function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  /* ウィキペディアの写真の表示：作者 / ライセンス / Wikimedia Commons（ライセンスの条件どおり） */
+  function creditText(c) {
+    c = c || {};
+    return ['写真：' + (c.artist || '作者不明'), c.license || '', 'Wikimedia Commons'].filter(function (x) { return x; }).join(' / ');
+  }
   function pexels(id, w) { return 'https://images.pexels.com/photos/' + id + '/pexels-photo-' + id + '.jpeg?auto=compress&cs=tinysrgb&w=' + (w || 900); }
   var MOOD = [5728162, 4262172, 29144275, 6646360];
 
@@ -1338,7 +1343,10 @@
       ingredients: (dm.ingredients || []).map(function (x) { return { name: x[0], qty: x[1] }; }), how: dm.how || '',
       photo: dm.photo || pexels(MOOD[((dayOfYear % MOOD.length) + MOOD.length) % MOOD.length]),
       photoAlt: dm.photo ? (dm.photoBy === 'wiki' ? dm.dish + 'に近い料理の写真（ウィキペディア「' + (dm.photoTitle || '') + '」）' : dm.dish + 'の写真') : '食卓を囲むイメージ写真',
-      photoCredit: dm.photo ? (dm.photoBy === 'wiki' ? '写真：ウィキペディア「' + (dm.photoTitle || '') + '」' : '') : 'イメージ写真（Pexels）',
+      photoCredit: dm.photo ? (dm.photoBy === 'wiki' ? creditText(dm.photoCredit) : '') : 'イメージ写真（Pexels）',
+      photoLink: dm.photo ? (dm.photoBy === 'wiki' && dm.photoCredit && /^https:\/\/commons\.wikimedia\.org\//.test(dm.photoCredit.page || '') ? dm.photoCredit.page : '') : 'https://www.pexels.com/',
+      hasPhotoLink: !!(dm.photo ? (dm.photoBy === 'wiki' && dm.photoCredit && dm.photoCredit.page) : true),
+      photoLicenseLink: dm.photoBy === 'wiki' && dm.photoCredit && /^https:\/\//.test(dm.photoCredit.licenseUrl || '') ? dm.photoCredit.licenseUrl : '',
       photoStyle: 'display: block; width: 100%; height: 100%; object-fit: cover; animation: ' + (st.dayAnim % 2 ? 'slideA' : 'slideB') + ' .5s cubic-bezier(.2,.8,.2,1) both'
     };
 
@@ -2181,7 +2189,7 @@
         dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
         notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
-        menu: dishes.map(function (x, i) { return { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; }),
+        menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; }),
         shop: { week: dd(0), groups: [{ label: 'お店で買う', items: [['e', '大根', '1本'], ['f', 'じゃがいも', '4個']] }, { label: 'WEBで頼む（冷凍・重いもの）', items: [['a', '鶏もも肉', '600g'], ['c', '冷凍ブロッコリー', '1袋']] }] },
         plans: (function () {
           var t0 = new Date(), td = function (n) { return ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + n)); };

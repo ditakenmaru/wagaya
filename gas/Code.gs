@@ -348,7 +348,11 @@ function buildBoot(today) {
   /* 写真URLが空の献立は、料理名に合うウィキペディアの写真を付ける（見つからなければ空のまま） */
   try {
     var auto = dishPhotos(menu.filter(function (m) { return !m.photo && m.dish; }).map(function (m) { return m.dish; }));
-    menu.forEach(function (m) { if (!m.photo && auto[m.dish]) { m.photo = auto[m.dish].url; m.photoBy = 'wiki'; m.photoTitle = auto[m.dish].title; } });
+    menu.forEach(function (m) {
+      var h = auto[m.dish]; if (m.photo || !h) return;
+      m.photo = h.url; m.photoBy = 'wiki'; m.photoTitle = h.title;
+      m.photoCredit = { artist: h.artist, license: h.license, licenseUrl: h.licenseUrl, page: 'https://commons.wikimedia.org/wiki/File:' + encodeURIComponent(String(h.file).replace(/ /g, '_')) };
+    });
   } catch (err) { console.error(err); }
 
   var replies = rowsOf('返信').filter(function (r) { return r.id && text(r['本文']); }).slice(-400).map(function (r) {
@@ -569,40 +573,67 @@ function dishCandidates(name) {
 }
 function dishPhotos(names) {
   var props = PropertiesService.getScriptProperties(), now = Date.now(), res = {}, need = [];
+  var hitOf = function (c) { return { url: c.u, title: c.ti || '', file: c.f || '', artist: c.a || '', license: c.l || '', licenseUrl: c.lu || '' }; };
   names.forEach(function (n) {
     if (res[n] || need.indexOf(n) >= 0) return;
     var c = null; try { c = JSON.parse(props.getProperty('dishimg:' + n) || 'null'); } catch (e) { c = null; }
-    if (c && now - c.t < (c.u ? 60 : 7) * 864e5) { if (c.u) res[n] = { url: c.u, title: c.ti || '' }; return; }
+    /* 作者・ライセンスを覚えていない古い物（f が無い）は取り直す */
+    if (c && (c.u ? c.f : true) && now - c.t < (c.u ? 60 : 7) * 864e5) { if (c.u) res[n] = hitOf(c); return; }
     need.push(n);
   });
   if (!need.length) return res;
   need = need.slice(0, 10);
   var cands = {}, all = [];
   need.forEach(function (n) { cands[n] = dishCandidates(n); cands[n].forEach(function (t) { if (all.indexOf(t) < 0) all.push(t); }); });
-  var found = {};   /* 書いた名前 → { url, title } */
+  var UA = { 'Api-User-Agent': 'wagaya-family-app/1.0 (private use)' };
+  var found = {};   /* 書いた名前 → { url, title, file } */
   for (var i = 0; i < all.length; i += 50) {
     var chunk = all.slice(i, i + 50);
-    var r = UrlFetchApp.fetch('https://ja.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=thumbnail&pithumbsize=800&pilicense=free&titles=' + encodeURIComponent(chunk.join('|')), { muteHttpExceptions: true, headers: { 'Api-User-Agent': 'wagaya-family-app/1.0 (private use)' } });
+    var r = UrlFetchApp.fetch('https://ja.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=thumbnail|name&pithumbsize=800&pilicense=free&titles=' + encodeURIComponent(chunk.join('|')), { muteHttpExceptions: true, headers: UA });
     if (r.getResponseCode() !== 200) return res;
     var q = (JSON.parse(r.getContentText()) || {}).query || {};
     var to = {};
     (q.normalized || []).forEach(function (x) { to[x.from] = x.to; });
     (q.redirects || []).forEach(function (x) { to[x.from] = x.to; });
     var byTitle = {};
-    Object.keys(q.pages || {}).forEach(function (k) { var pg = q.pages[k]; if (pg.thumbnail && pg.thumbnail.source) byTitle[pg.title] = pg.thumbnail.source.split('?')[0]; });
+    Object.keys(q.pages || {}).forEach(function (k) { var pg = q.pages[k]; if (pg.thumbnail && pg.thumbnail.source && pg.pageimage) byTitle[pg.title] = { url: pg.thumbnail.source.split('?')[0], file: String(pg.pageimage) }; });
     chunk.forEach(function (t) {
       var tt = t, hop = 0; while (to[tt] && hop++ < 3) tt = to[tt];
-      var u = byTitle[tt];
-      if (u && /^https:\/\/(upload|thumb)\.wikimedia\.org\/[^\s"'<>]+$/.test(u)) found[t] = { url: u, title: tt };
+      var h = byTitle[tt];
+      if (h && /^https:\/\/(upload|thumb)\.wikimedia\.org\/[^\s"'<>]+$/.test(h.url)) found[t] = { url: h.url, title: tt, file: h.file };
+    });
+  }
+  /* 使う写真の作者とライセンスを Commons から取る（表示の条件を守るため。取れない写真は使わない） */
+  var pick = {}, files = [];
+  need.forEach(function (n) {
+    for (var j = 0; j < cands[n].length; j++) { var h = found[cands[n][j]]; if (h) { pick[n] = h; if (files.indexOf(h.file) < 0) files.push(h.file); return; } }
+  });
+  var meta = {};
+  for (var k2 = 0; k2 < files.length; k2 += 40) {
+    var fc = files.slice(k2, k2 + 40);
+    var r2 = UrlFetchApp.fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&iiextmetadatafilter=Artist|Credit|LicenseShortName|LicenseUrl&iiextmetadatalanguage=ja&titles=' + encodeURIComponent(fc.map(function (f) { return 'File:' + f; }).join('|')), { muteHttpExceptions: true, headers: UA });
+    if (r2.getResponseCode() !== 200) return res;
+    var q2 = (JSON.parse(r2.getContentText()) || {}).query || {};
+    var back = {};
+    (q2.normalized || []).forEach(function (x) { back[x.to] = x.from; });
+    Object.keys(q2.pages || {}).forEach(function (k) {
+      var pg = q2.pages[k], em = pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].extmetadata; if (!em) return;
+      var v = function (key) { return em[key] && em[key].value ? plainText(em[key].value) : ''; };
+      var name = String(back[pg.title] || pg.title).replace(/^File:/, '');
+      meta[name] = { artist: (v('Artist') || v('Credit')).slice(0, 60), license: v('LicenseShortName').slice(0, 40), licenseUrl: safeUrl(em.LicenseUrl && em.LicenseUrl.value) };
     });
   }
   need.forEach(function (n) {
-    var hit = null;
-    for (var j = 0; j < cands[n].length && !hit; j++) hit = found[cands[n][j]] || null;
-    try { props.setProperty('dishimg:' + n, JSON.stringify(hit ? { u: hit.url, ti: hit.title, t: now } : { u: '', t: now })); } catch (e) { /* いっぱいの時は覚えない */ }
+    var h = pick[n], m = h && (meta[h.file] || meta[h.file.replace(/_/g, ' ')]);
+    var hit = h && m && m.license ? { url: h.url, title: h.title, file: h.file, artist: m.artist, license: m.license, licenseUrl: m.licenseUrl } : null;
+    try { props.setProperty('dishimg:' + n, JSON.stringify(hit ? { u: hit.url, ti: hit.title, f: hit.file, a: hit.artist, l: hit.license, lu: hit.licenseUrl, t: now } : { u: '', t: now })); } catch (e) { /* いっぱいの時は覚えない */ }
     if (hit) res[n] = hit;
   });
   return res;
+}
+/* HTMLの断片から文字だけを取る（作者名は <a> で来ることがある） */
+function plainText(html) {
+  return String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 /* 買うかも：これまでの買い物リストから、くり返し買っている物を出す。

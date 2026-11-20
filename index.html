@@ -576,7 +576,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="{{dayMenu.photoStyle}}">
         <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,14,12,0.6), rgba(10,14,12,0) 60%)"></div>
         <span style="position: absolute; left: 16px; bottom: 14px; color: #FFFFFF; font-size: 15px; font-weight: 700; letter-spacing: 0.04em">{{dayMenu.label}}の食卓</span>
-        <sc-if value="{{dayMenu.photoCredit}}" hint-placeholder-val="{{ true }}"><span style="position: absolute; right: 8px; bottom: 8px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 8px; border-radius: 999px; background: rgba(23,32,27,0.55); color: #FFFFFF; font-size: 10px; font-weight: 500">{{dayMenu.photoCredit}}</span></sc-if>
+        <sc-if value="{{dayMenu.hasPhotoLink}}" hint-placeholder-val="{{ true }}"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" aria-label="写真の出どころ：{{dayMenu.photoCredit}}" style="position: absolute; right: 8px; bottom: 8px; max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 8px; border-radius: 999px; background: rgba(23,32,27,0.55); color: #FFFFFF; font-size: 10px; font-weight: 500; text-decoration: none">{{dayMenu.photoCredit}}</a></sc-if>
       </div>
       <p style="margin: 0; font-size: 26px; font-weight: 900; line-height: 1.3">{{dayMenu.dish}}</p>
       <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.6">{{dayMenu.note}}</p>
@@ -912,6 +912,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <span style="font-size: 13px; color: #55605A">{{dayMenu.label}}{{dayMenu.servingsLabel}}</span>
     </div>
     <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="display: block; width: 100%; height: 170px; object-fit: cover; border-radius: 16px; background: #F7F1DF">
+    <sc-if value="{{dayMenu.hasPhotoLink}}" hint-placeholder-val="{{ false }}">
+      <p style="margin: -4px 0 0; font-size: 11px; color: #55605A; line-height: 1.5"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" style="color: #55605A">{{dayMenu.photoCredit}}</a><sc-if value="{{dayMenu.photoLicenseLink}}" hint-placeholder-val="{{ false }}">（<a href="{{dayMenu.photoLicenseLink}}" target="_blank" rel="noopener noreferrer" style="color: #55605A">ライセンス</a>）</sc-if></p>
+    </sc-if>
     <p style="margin: 0; font-size: 13px; font-weight: 700; color: #55605A">材料</p>
     <sc-for list="{{dayMenu.ingredients}}" as="ing" hint-placeholder-count="4">
       <div style="display: flex; justify-content: space-between; min-height: 40px; align-items: center; border-bottom: 1px solid #ECEFE9; font-size: 15px">
@@ -1101,7 +1104,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=34"></script>
-<script src="app.js?v=34"></script>
+<script src="config.js?v=35"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>
