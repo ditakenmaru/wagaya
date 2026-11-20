@@ -589,7 +589,7 @@ function dishPhotos(names) {
   var found = {};   /* 書いた名前 → { url, title, file } */
   for (var i = 0; i < all.length; i += 50) {
     var chunk = all.slice(i, i + 50);
-    var r = UrlFetchApp.fetch('https://ja.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=thumbnail|name&pithumbsize=800&pilicense=free&titles=' + encodeURIComponent(chunk.join('|')), { muteHttpExceptions: true, headers: UA });
+    var r = UrlFetchApp.fetch('https://ja.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=thumbnail%7Cname&pithumbsize=800&pilicense=free&titles=' + encodeURIComponent(chunk.join('|')), { muteHttpExceptions: true, headers: UA });
     if (r.getResponseCode() !== 200) return res;
     var q = (JSON.parse(r.getContentText()) || {}).query || {};
     var to = {};
@@ -611,7 +611,7 @@ function dishPhotos(names) {
   var meta = {};
   for (var k2 = 0; k2 < files.length; k2 += 40) {
     var fc = files.slice(k2, k2 + 40);
-    var r2 = UrlFetchApp.fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&iiextmetadatafilter=Artist|Credit|LicenseShortName|LicenseUrl&iiextmetadatalanguage=ja&titles=' + encodeURIComponent(fc.map(function (f) { return 'File:' + f; }).join('|')), { muteHttpExceptions: true, headers: UA });
+    var r2 = UrlFetchApp.fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&iiextmetadatafilter=Artist%7CCredit%7CLicenseShortName%7CLicenseUrl&iiextmetadatalanguage=ja&titles=' + encodeURIComponent(fc.map(function (f) { return 'File:' + f; }).join('|')), { muteHttpExceptions: true, headers: UA });
     if (r2.getResponseCode() !== 200) return res;
     var q2 = (JSON.parse(r2.getContentText()) || {}).query || {};
     var back = {};
