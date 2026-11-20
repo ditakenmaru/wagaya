@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '38';
+  var APP_VERSION = '39';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -646,7 +646,7 @@
 
   /* 下のタブ（画面を切り替える）。どのセクションをどのタブに出すかは「画面」シートの「下のタブ」で変えられる */
   var TAB_ORDER = ['今日', 'ふたりで', 'ごはん', '予定', 'ニュース'];
-  var TAB_LABEL = { '今日': 'ホーム' };   /* 最初のタブはホーム（全部を少しずつ） */
+  var TAB_LABEL = { '今日': 'ホーム', 'ふたりで': '相談・連絡' };   /* 最初のタブはホーム（全部を少しずつ）。「ふたりで」は中身（相談・申し送り・期限）が分かる名前で出す。シート上の名前はそのまま */
   var TAB_ID = { '今日': 'today', 'ふたりで': 'two', 'ごはん': 'food', '予定': 'plan', 'ニュース': 'news' };
   /* ホーム以外のタブでは、そのタブの主役から決まった順で並べる（時刻の並びはホームだけ） */
   var TAB_SEQ = { two: ['decide', 'deadline'], food: ['week', 'shop'], plan: ['plan', 'weekend', 'topics'], news: ['news'] };
@@ -2140,7 +2140,7 @@
       goFlow: function () { goHome('[data-sec="flow"]'); },
       next: { kicker: hero.kicker + (hero.countdown ? '・' + hero.countdown : ''), time: hero.time, task: hero.task, who: hero.who === '—' ? '' : '担当：' + hero.who,
         style: 'grid-column: span 2; border: none; cursor: pointer; text-align: left; font-family: inherit; padding: 14px 16px; border-radius: 22px; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; min-height: 112px; box-sizing: border-box; background: ' + hero.color },
-      turn: H.turn ? H.turn + '件' : 'なし', turnSub: H.turn ? '押すと「ふたりで」へ' : '答える番はありません',
+      turn: H.turn ? H.turn + '件' : 'なし', turnSub: H.turn ? '押すと「相談・連絡」へ' : '答える番はありません',
       goTurn: function () { self.setState({ nav: H.twoTab }); window.scrollTo(0, 0); },
       last: last
     };
