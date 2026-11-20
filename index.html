@@ -226,6 +226,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <span aria-hidden="true" style="font-size: 20px; color: #55605A">›</span>
     </button>
   </sc-if>
+  <div id="secs" style="display: flex; flex-direction: column">
   <sc-for list="{{sections}}" as="sec" hint-placeholder-count="8">
   <sc-if value="{{sec.is_photos}}" hint-placeholder-val="{{ true }}"><div data-sec="{{sec.key}}" style="{{sec.wrapStyle}}">
   <figure aria-label="{{title.photos}}" style="{{figStyle}}">
@@ -433,11 +434,12 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <sc-for list="{{decisions}}" as="dc" hint-placeholder-count="1">
       <article style="{{dc.cardStyle}}">
         <div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start">
-          <button type="button" onClick="{{dc.edit}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.45; cursor: pointer">{{dc.q}}</button><sc-if value="{{dc.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
+          <button type="button" onClick="{{dc.edit}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; color: inherit; cursor: pointer"><span style="{{dc.qStyle}}">{{dc.q}}</span></button><sc-if value="{{dc.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <sc-if value="{{dc.hasDue}}" hint-placeholder-val="{{ true }}"><span style="flex-shrink: 0; font-size: 12px; font-weight: 700; color: #8A5A12">{{dc.due}}まで</span></sc-if>
         </div>
-        <sc-if value="{{dc.hasNote}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #39433D; line-height: 1.6">{{dc.note}}</p></sc-if>
-        <button type="button" data-muse="1" onClick="{{dc.muse}}" style="align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに相談</button>
+        <sc-if value="{{dc.hasNote}}" hint-placeholder-val="{{ false }}"><p style="{{dc.noteStyle}}">{{dc.note}}</p></sc-if>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><button type="button" onClick="{{dc.more.go}}" style="{{dc.more.style}}">{{dc.more.label}}</button>
+        <button type="button" data-muse="1" onClick="{{dc.muse}}" style="align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに相談</button></div>
         <sc-if value="{{dc.open}}" hint-placeholder-val="{{ true }}">
           <div role="group" aria-label="答える" style="display: flex; flex-direction: column; gap: 6px">
             <sc-for list="{{dc.opts}}" as="op" hint-placeholder-count="3">
@@ -495,8 +497,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{topics}}" as="tp" hint-placeholder-count="2">
         <article style="flex-shrink: 0; width: 250px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 18px; background: #FFFFFF">
           <span style="display: flex; justify-content: space-between; font-size: 12px; color: #55605A"><span style="font-weight: 700; color: #3046A6">{{tp.host}}</span><span>{{tp.date}}</span></span>
-          <span style="font-size: 16px; font-weight: 900; line-height: 1.4">{{tp.title}}</span><sc-if value="{{tp.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
-          <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{tp.note}}</span>
+          <span style="{{tp.titleStyle}}">{{tp.title}}</span><sc-if value="{{tp.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
+          <span style="{{tp.noteStyle}}">{{tp.note}}</span>
+          <button type="button" onClick="{{tp.more.go}}" style="{{tp.more.style}}">{{tp.more.label}}</button>
           <sc-if value="{{tp.editing}}" hint-placeholder-val="{{ false }}">
             <button type="button" onClick="{{tp.open}}" style="margin-top: auto; align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">直す・消す</button>
           </sc-if>
@@ -528,7 +531,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-for list="{{diary}}" as="dy" hint-placeholder-count="3">
         <article style="{{dy.cardStyle}}">
           <span style="font-size: 12px; font-weight: 900; color: #6B5A33">{{dy.time}}</span>
-          <sc-if value="{{dy.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: flex-start; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if><p style="margin: 0; font-size: 14px; line-height: 1.7">{{dy.text}}</p>
+          <sc-if value="{{dy.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: flex-start; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if><p style="{{dy.textStyle}}">{{dy.text}}</p>
+          <button type="button" onClick="{{dy.more.go}}" style="{{dy.more.style}}">{{dy.more.label}}</button>
         </article>
       </sc-for>
       <sc-if value="{{diaryEmpty}}" hint-placeholder-val="{{ false }}">
@@ -577,7 +581,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <p style="margin: 0; font-size: 26px; font-weight: 900; line-height: 1.3">{{dayMenu.dish}}</p>
       <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.6">{{dayMenu.note}}</p>
       <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px">
-        <button type="button" onClick="{{openSheet}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: none; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">材料と作り方を見る</button>
+        <sc-if value="{{hasMenu}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{openSheet}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: none; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">材料と作り方を見る</button></sc-if>
+        <button type="button" onClick="{{editMenu}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{editMenuLabel}}</button>
         <sc-if value="{{hasIngredients}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{menuToShop}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid #2C6B52; background: transparent; color: #2C6B52; font-size: 14px; font-weight: 700; cursor: pointer">材料を買い物リストへ</button></sc-if>
       </div>
     </div>
@@ -662,7 +667,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <span style="font-size: 12px; font-weight: 700; color: #2C6B52">{{ou.kind}}</span>
           <button type="button" onClick="{{ou.edit}}" style="min-height: 44px; padding: 0; border: none; background: transparent; text-align: left; color: inherit; font-size: 16px; font-weight: 900; line-height: 1.4; cursor: pointer">{{ou.name}}</button><sc-if value="{{ou.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
           <span style="font-size: 12px; color: #55605A">{{ou.meta}}</span>
-          <span style="font-size: 13px; color: #39433D; line-height: 1.6">{{ou.note}}</span>
+          <span style="{{ou.noteStyle}}">{{ou.note}}</span>
+          <button type="button" onClick="{{ou.more.go}}" style="{{ou.more.style}}">{{ou.more.label}}</button>
           <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 700">くわしく</a></sc-if>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
             <button type="button" onClick="{{ou.like}}" style="{{ou.likeStyle}}">♡ {{ou.likeLabel}}</button>
@@ -777,6 +783,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </div>
   </div></sc-if>
   </sc-for>
+  </div>
   <button type="button" onClick="{{openFb}}" style="margin: 8px 20px 0; min-height: 48px; border-radius: 14px; border: 1.5px dashed #B9C3B5; background: transparent; color: #39433D; font-size: 14px; font-weight: 700; cursor: pointer">アプリへの要望・不具合を書く</button>
   </div>
   </sc-if>
@@ -990,6 +997,17 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <label for="ed-dnote" style="font-size: 13px; font-weight: 700; color: #55605A">メモ</label>
       <input id="ed-dnote" type="text" value="{{ed.note}}" onInput="{{ed.set.note}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
     </sc-if>
+    <sc-if value="{{ed.menu}}" hint-placeholder-val="{{ false }}">
+      <label for="ed-dish" style="font-size: 13px; font-weight: 700; color: #55605A">料理</label>
+      <input id="ed-dish" type="text" value="{{ed.dish}}" onInput="{{ed.set.dish}}" placeholder="例：鶏と大根の煮物" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <button type="button" aria-pressed="{{ed.hotcookPressed}}" onClick="{{ed.toggleHotcook}}" style="{{ed.hotcookStyle}}">ホットクックで作る</button>
+      <label for="ed-mnote" style="font-size: 13px; font-weight: 700; color: #55605A">ひとこと（リンクも可）</label>
+      <input id="ed-mnote" type="text" value="{{ed.note}}" onInput="{{ed.set.note}}" placeholder="例：朝に予約／Instagramのリンク" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <label for="ed-ings" style="font-size: 13px; font-weight: 700; color: #55605A">材料（1行に1つ。「品名 量」）</label>
+      <textarea id="ed-ings" rows="5" value="{{ed.ings}}" onInput="{{ed.set.ings}}" placeholder="鶏もも 300g&#10;大根 1/3本&#10;しょうゆ 大さじ2" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; line-height: 1.6; color: #17201B; resize: vertical"></textarea>
+      <label for="ed-how" style="font-size: 13px; font-weight: 700; color: #55605A">作り方</label>
+      <textarea id="ed-how" rows="4" value="{{ed.how}}" onInput="{{ed.set.how}}" placeholder="例：全部入れて、ホットクックの「煮物」で40分" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; line-height: 1.6; color: #17201B; resize: vertical"></textarea>
+    </sc-if>
     <sc-if value="{{ed.outing}}" hint-placeholder-val="{{ false }}">
       <label for="ed-oname" style="font-size: 13px; font-weight: 700; color: #55605A">行き先</label>
       <input id="ed-oname" type="text" value="{{ed.name}}" onInput="{{ed.set.name}}" placeholder="例：近くの牧場" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
@@ -1024,6 +1042,34 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <button type="button" onClick="{{sendFb}}" style="min-height: 50px; border: none; border-radius: 14px; background: #3046A6; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送る</button>
   </section>
 
+  <button type="button" aria-label="くわしくを閉じる" onClick="{{closeDetail}}" style="{{detailBackdropStyle}}"></button>
+  <section role="dialog" aria-modal="true" aria-labelledby="dt-title" style="{{detailSheetStyle}}">
+    <button type="button" aria-label="閉じる" onClick="{{closeDetail}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
+    <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
+    <span style="font-size: 12px; font-weight: 900; color: #2C6B52">{{dt.kindLabel}}</span>
+    <h2 id="dt-title" style="margin: 0 44px 0 0; font-size: 20px; font-weight: 900; line-height: 1.45; overflow-wrap: anywhere">{{dt.title}}</h2>
+    <sc-if value="{{dt.hasMeta}}" hint-placeholder-val="{{ false }}"><span style="font-size: 13px; color: #55605A">{{dt.meta}}</span></sc-if>
+    <sc-if value="{{dt.hasBody}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 15px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere">{{dt.body}}</p></sc-if>
+    <sc-if value="{{dt.hasLines}}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 4px"><sc-for list="{{dt.lines}}" as="ln" hint-placeholder-count="2"><span style="padding: 10px 12px; border-radius: 12px; background: #F4F6F2; font-size: 14px; font-weight: 700">{{ln.text}}</span></sc-for></div></sc-if>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <sc-if value="{{dt.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{dt.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 12px; background: #EEF1EC; color: #17201B; font-size: 14px; font-weight: 700; text-decoration: none">リンクを開く</a></sc-if>
+      <sc-if value="{{dt.hasCta}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dt.cta}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{dt.ctaLabel}}</button></sc-if>
+    </div>
+    <h3 style="margin: 10px 0 0; font-size: 15px; font-weight: 900">ふたりのやりとり</h3>
+    <sc-if value="{{dt.empty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #55605A">まだ返信はありません。</p></sc-if>
+    <sc-for list="{{dt.replies}}" as="rp" hint-placeholder-count="0">
+      <div style="{{rp.style}}">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="{{rp.badgeStyle}}">{{rp.who}}</span><span style="font-size: 12px; color: #55605A">{{rp.time}}</span></div>
+        <p style="margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere">{{rp.text}}</p>
+        <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="align-self: flex-end; min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">消す</button></sc-if>
+      </div>
+    </sc-for>
+    <sc-if value="{{dt.canReply}}" hint-placeholder-val="{{ false }}">
+      <textarea id="reply-input" aria-label="返信" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="返信を書く" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+      <button type="button" onClick="{{sendReply}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">返信する</button>
+    </sc-if>
+  </section>
+
   <button type="button" aria-label="Museへの相談を閉じる" onClick="{{closeMuse}}" style="{{museBackdropStyle}}"></button>
   <section role="dialog" aria-modal="true" aria-labelledby="muse-title" style="{{museSheetStyle}}">
     <button type="button" aria-label="閉じる" onClick="{{closeMuse}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
@@ -1038,7 +1084,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=28"></script>
-<script src="app.js?v=28"></script>
+<script src="config.js?v=29"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

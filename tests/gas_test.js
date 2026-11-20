@@ -263,7 +263,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 10 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -410,6 +410,26 @@ ok(b3.api === 10 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(mpost({ op: 'undo', id: 'menu:' + m2.date }).ok && !env.ss.getSheetByName('献立').data.some(r => r.includes('カレー')), 'Muse: 献立の取り消し');
   const kh = env.ss.getSheetByName('_keys').data; kh[1][kh[0].indexOf('状態')] = '止める';
   ok(mpost({ op: 'list' }).code === 'bad_key', 'Muse: 鍵を止めると使えない');
+}
+
+
+// 献立をアプリから入れる・直す・消す、返信
+{
+  let r = post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'テスト丼', hotcook: true, note: 'メモ', ingredients: [{ name: '米', qty: '2合' }, { name: 'た/まご', qty: '2' }], how: '炊く' } });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  let mm = bd.menu.filter(x => x.date === today);
+  ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼' && mm[0].hotcook && mm[0].ingredients.length === 2 && mm[0].ingredients[1][0] === 'た まご', 'saveMenu: 入れる（その日を置きかえ、材料の区切り文字は消す）');
+  r = post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'テスト丼2', ingredients: [] } });
+  bd = post(env, { action: 'boot', session: S, today }).data; mm = bd.menu.filter(x => x.date === today);
+  ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼2', 'saveMenu: 直す（同じ日は1つ）');
+  ok(post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: '' } }).code === 'bad_request', 'saveMenu: 料理名が空は断る');
+  ok(post(env, { action: 'deleteMenu', session: S, date: today }).ok && !post(env, { action: 'boot', session: S, today }).data.menu.some(x => x.date === today), 'deleteMenu');
+  r = post(env, { action: 'addReply', session: S, reply: { id: 'rp1', target: 'topics:t1', text: '返信です' } });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(r.ok && bd.replies.some(x => x.id === 'rp1' && x.target === 'topics:t1' && x.text === '返信です' && x.who), 'addReply: 返信がbootに出る');
+  ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp2', target: 'evil', text: 'x' } }).code === 'bad_request', 'addReply: 対象の形がおかしいと断る');
+  ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp3', target: 'decide:q1', text: '  ' } }).code === 'bad_request', 'addReply: 空は断る');
+  ok(post(env, { action: 'deleteReply', session: S, id: 'rp1' }).ok && !post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp1'), 'deleteReply: 自分の返信を消す');
 }
 
 // ログアウト

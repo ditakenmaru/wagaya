@@ -6,8 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '28';
-  var API_EXPECTED = 10;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '29';
+  var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
   var LSP = DEMO ? 'demo.' : '';
@@ -260,7 +260,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
+      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -310,7 +310,7 @@
       el.classList.toggle('spin', !!spin);
       if (txt) label.textContent = txt;
     };
-    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen || s.editor || s.fbOpen || s.museOpen; };
+    var blocked = function () { var s = self.state; return s.needLogin || s.noteOpen || s.notesOpen || s.sheet || s.accountOpen || s.editor || s.fbOpen || s.museOpen || s.detail; };
     document.addEventListener('touchstart', function (e) {
       y0 = (window.scrollY <= 0 && e.touches.length === 1 && !blocked() && !self.pulling) ? e.touches[0].clientY : null;
       dist = 0; el.style.transition = 'none';
@@ -515,12 +515,14 @@
   function sigsOf(D) {
     var m = {};
     if (!D) return m;
+    var rc = {}; (D.replies || []).forEach(function (r) { rc[r.target] = (rc[r.target] || 0) + 1; });
+    var withR = function (k, v) { m[k] = v + (rc[k] ? '#r' + rc[k] : ''); };
     (D.dutiesAll || []).forEach(function (x) { m['flow:' + x.id] = [x.task, x.t, x.who, x.rule, x.date].join('|'); });
-    (D.decisions || []).forEach(function (x) { m['decide:' + x.id] = [x.q, x.a1, x.a2, x.state, x.note, x.due].join('|'); });
+    (D.decisions || []).forEach(function (x) { withR('decide:' + x.id, [x.q, x.a1, x.a2, x.state, x.note, x.due].join('|')); });
     (D.deadlines || []).forEach(function (x) { m['deadline:' + x.id] = [x.what, x.due, x.who, x.note].join('|'); });
-    (D.topics || []).forEach(function (x) { m['topics:' + x.id] = [x.title, x.url, x.note].join('|'); });
-    (D.diary || []).forEach(function (x) { m['diary:' + x.id] = x.text; });
-    (D.outings || []).forEach(function (x) { m['weekend:' + x.id] = [x.name, x.like1, x.like2, x.state, x.go].join('|'); });
+    (D.topics || []).forEach(function (x) { withR('topics:' + x.id, [x.title, x.url, x.note].join('|')); });
+    (D.diary || []).forEach(function (x) { withR('diary:' + x.id, x.text); });
+    (D.outings || []).forEach(function (x) { withR('weekend:' + x.id, [x.name, x.like1, x.like2, x.state, x.go].join('|')); });
     ((D.shop && D.shop.groups) || []).forEach(function (g) { (g.items || []).forEach(function (it) { m['shop:' + it[0]] = [it[1], it[2]].join('|'); }); });
     return m;
   }
@@ -640,6 +642,8 @@
   var TAB_ORDER = ['今日', 'ふたりで', 'ごはん', '予定', 'ニュース'];
   var TAB_LABEL = { '今日': 'ホーム' };   /* 最初のタブはホーム（全部を少しずつ） */
   var TAB_ID = { '今日': 'today', 'ふたりで': 'two', 'ごはん': 'food', '予定': 'plan', 'ニュース': 'news' };
+  /* ホーム以外のタブでは、そのタブの主役から決まった順で並べる（時刻の並びはホームだけ） */
+  var TAB_SEQ = { two: ['decide', 'deadline'], food: ['week', 'shop'], plan: ['plan', 'weekend', 'topics'], news: ['news'] };
   var DEF_TAB = { photos: '今日', hero: '今日', flow: '今日', diary: '今日', decide: 'ふたりで', deadline: 'ふたりで', week: 'ごはん', shop: 'ごはん', topics: '予定', weekend: '予定', plan: '予定', news: 'ニュース' };
 
   /* 2人の呼び名と色は、スプレッドシートの「設定」から届く */
@@ -932,6 +936,27 @@
     if (!(how === 'wa' && num)) this.showToast('文をコピーしました。Museに貼って送ってください', null);
   };
 
+  /* くわしく見る・返信：話題・相談・日記・お出かけ・ニュースの全文と、ふたりのやりとり */
+  App.prototype.openDetail = function (kind, id) {
+    USAGE.add('act:detail_' + kind);
+    this.setState({ detail: { kind: kind, id: id }, replyDraft: '' });
+  };
+  App.prototype.sendReply = function () {
+    var dt = this.state.detail, text = String(this.state.replyDraft || '').trim();
+    if (!dt || !text) return;
+    if (this.stale()) return;
+    var r = { id: uid('r'), target: dt.kind + ':' + dt.id, text: text }, me = this.meWho(), revert = this.snapshot();
+    this.mutate(function (d) { d.replies = (d.replies || []).concat([{ id: r.id, target: r.target, who: me, at: Date.now(), text: text }]); });
+    this.setState({ replyDraft: '' });
+    this.send('addReply', { reply: r }, revert);
+  };
+  App.prototype.deleteReply = function (id) {
+    var revert = this.snapshot();
+    this.mutate(function (d) { d.replies = (d.replies || []).filter(function (x) { return x.id !== id; }); });
+    this.send('deleteReply', { id: id }, revert);
+    this.showToast('返信を消しました', null);
+  };
+
   /* 話題（旅のしおりなどのリンク） */
   App.prototype.openTopic = function (t) {
     this.setState({ editor: { kind: 'topic', isNew: !t, id: t ? t.id : uid('t'), title: t ? t.title : '', url: t ? t.url : '', note: t ? t.note : '' } });
@@ -1091,6 +1116,43 @@
   };
 
   /* ---------- 献立の材料を買い物リストへ ---------- */
+  /* ---------- 献立（アプリから入れる・直す） ---------- */
+  function ingLines(list) { return (list || []).map(function (x) { return x[0] + (x[1] ? ' ' + x[1] : ''); }).join('\n'); }
+  function parseIngLines(t) {
+    return String(t || '').split(/\n+/).map(function (l) { return l.trim(); }).filter(String).map(function (l) {
+      var m = l.match(/^(.+?)\s*[:：]\s*(.*)$/) || l.match(/^(.+?)[\s　]+(\S.*)$/);
+      return m ? { name: m[1].trim(), qty: m[2].trim() } : { name: l, qty: '' };
+    });
+  }
+  App.prototype.openMenu = function (date, m) {
+    var d = parseYmd(date), lbl = (d.getMonth() + 1) + '/' + d.getDate() + '（' + DOWS[d.getDay()] + '）';
+    this.setState({ editor: { kind: 'menu', isNew: !m, id: date, date: date, dateLabel: lbl, dish: m ? m.dish : '', hotcook: m ? !!m.hotcook : false, note: m ? m.note || '' : '', ings: m ? ingLines(m.ingredients) : '', how: m ? m.how || '' : '' } });
+  };
+  App.prototype.saveMenu = function () {
+    if (this.stale()) return;
+    var e = this.state.editor, dish = (e.dish || '').trim();
+    if (!dish) { this.showToast('料理の名前を入れてください', null); return; }
+    var ings = parseIngLines(e.ings);
+    var m = { date: e.date, dish: dish, hotcook: !!e.hotcook, note: (e.note || '').trim(), ingredients: ings, how: (e.how || '').trim() };
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      var row = { date: m.date, dish: m.dish, hotcook: m.hotcook, note: m.note, ingredients: ings.map(function (x) { return [x.name, x.qty]; }), how: m.how, photo: '' };
+      var old = (d.menu || []).filter(function (x) { return x.date === m.date; })[0];
+      if (old) row.photo = old.photo || '';
+      d.menu = (d.menu || []).filter(function (x) { return x.date !== m.date; }).concat([row]);
+    });
+    this.setState({ editor: null });
+    this.send('saveMenu', { menu: m }, revert);
+    this.showToast(e.dateLabel + 'の献立を' + (e.isNew ? '入れました' : '直しました'), null);
+  };
+  App.prototype.deleteMenu = function () {
+    if (this.stale()) return;
+    var e = this.state.editor, revert = this.snapshot();
+    this.mutate(function (d) { d.menu = (d.menu || []).filter(function (x) { return x.date !== e.date; }); });
+    this.setState({ editor: null });
+    this.send('deleteMenu', { date: e.date }, revert);
+    this.showToast(e.dateLabel + 'の献立を消しました', null);
+  };
   App.prototype.menuToShop = function (dm) {
     if (this.stale()) return;
     var D = this.state.data || {}, groups = (D.shop && D.shop.groups) || [], week = (D.shop && D.shop.week) || ymd(new Date());
@@ -1270,6 +1332,7 @@
       };
     });
     var dm = menuByDow[dayIdx];
+    var dmDate = ymd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx)), dmReal = menuMap[dmDate] || null;
     var dayOfYear = Math.floor((new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx) - new Date(now.getFullYear(), 0, 1)) / 86400000);
     var dayMenu = {
       label: dayIdx === todayIdx ? '今日' : dows[dayIdx] + '曜', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
@@ -1317,8 +1380,16 @@
     });
 
     /* 話題 */
+    /* 長い文は5行まで。続きと返信は「くわしく」の画面で */
+    var rCount = {}; (D.replies || []).forEach(function (r) { rCount[r.target] = (rCount[r.target] || 0) + 1; });
+    var clamp = function (n, extra) { return 'display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: ' + n + '; overflow: hidden; overflow-wrap: anywhere; ' + (extra || ''); };
+    var moreOf = function (kind, id) {
+      var n = rCount[kind + ':' + id] || 0;
+      return { label: n ? 'くわしく・返信 ' + n + '件' : 'くわしく・返信', go: function () { self.openDetail(kind, id); },
+        style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: none; background: ' + (n ? '#E3E7F6' : '#EEF1EC') + '; color: ' + (n ? '#22337A' : '#17201B') + '; font-size: 13px; font-weight: 700; cursor: pointer' };
+    };
     var topics = (D.topics || []).map(function (t) {
-      return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
+      return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, more: moreOf('topics', t.id), titleStyle: clamp(2, 'font-size: 16px; font-weight: 900; line-height: 1.4'), noteStyle: clamp(5, 'font-size: 13px; color: #39433D; line-height: 1.6'), url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
@@ -1349,7 +1420,7 @@
         : !other ? otherName + 'の答え待ち'
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
-      return { isNew: !!marks['decide:' + x.id], q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+      return { isNew: !!marks['decide:' + x.id], more: moreOf('decide', x.id), qStyle: clamp(3, 'font-size: 16px; font-weight: 900; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: 13px; color: #39433D; line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
     });
@@ -1375,7 +1446,7 @@
       if (x.like2) likes.push({ label: names[1], style: self.badge(names[1]) });
       var planned = x.state === '決めた' && x.go;
       var gd = planned ? parseYmd(x.go) : null;
-      return { isNew: !!marks['weekend:' + x.id], name: x.name, kind: x.kind, meta: [x.date ? dueLabel(x.date).replace(/（.*）/, '') + 'のイベント' : '', x.place].filter(String).join('・'), note: x.note, url: x.url, hasUrl: !!x.url,
+      return { isNew: !!marks['weekend:' + x.id], more: moreOf('weekend', x.id), noteStyle: clamp(5, 'font-size: 13px; color: #39433D; line-height: 1.6'), name: x.name, kind: x.kind, meta: [x.date ? dueLabel(x.date).replace(/（.*）/, '') + 'のイベント' : '', x.place].filter(String).join('・'), note: x.note, url: x.url, hasUrl: !!x.url,
         likes: likes, likeLabel: mineLike ? '行きたい（取り消す）' : '行きたい', like: function () { self.likeOuting(x); },
         planned: !!planned, notPlanned: !planned && x.like1 && x.like2, needBoth: !planned && !(x.like1 && x.like2),
         needText: (x.like1 || x.like2) ? (x.like1 ? names[1] : names[0]) + 'も「行きたい」を押すと、行く日を決められます' : '2人とも「行きたい」を押すと、行く日を決められます',
@@ -1388,11 +1459,11 @@
 
     /* 編集シート（担当・買い物・話題） */
     var E = st.editor;
-    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
+    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', menu: !!E && E.kind === 'menu', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
     if (E) {
-      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'] };
+      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'] };
       ed.heading = HEAD[E.kind][E.isNew ? 0 : 1];
-      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date'];
+      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how'];
       FIELDS.forEach(function (k) { ed[k] = E[k] || ''; });
       ed.set = {};
       FIELDS.forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
@@ -1428,6 +1499,12 @@
       } else if (E.kind === 'deadline') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
         ed.save = function () { self.saveDeadline(); }; ed.del = function () { self.deleteDeadline(); };
+      } else if (E.kind === 'menu') {
+        ed.heading += '　' + E.dateLabel;
+        ed.hotcookPressed = E.hotcook ? 'true' : 'false';
+        ed.hotcookStyle = chip(!!E.hotcook, '#8A6A0E') + '; align-self: flex-start';
+        ed.toggleHotcook = function () { self.editSet('hotcook', !self.state.editor.hotcook); };
+        ed.save = function () { self.saveMenu(); }; ed.del = function () { self.deleteMenu(); };
       } else if (E.kind === 'outing') {
         ed.okindChips = ['公園', '行くところ', 'イベント'].map(function (k) { var on = E.okind === k; return { label: k, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('okind', k); } }; });
         ed.save = function () { self.saveOuting(); }; ed.del = function () { self.deleteOuting(); };
@@ -1482,8 +1559,8 @@
       var web = n.src === 'Web';
       return {
         title: n.title, why: n.why, body: n.body, url: n.url, src: n.src, meta: n.from + (n.date ? '（' + n.date + '）' : ''),
-        open: open, expanded: open ? 'true' : 'false', more: open ? '閉じる' : 'くわしく',
-        toggle: function () { var o = Object.assign({}, self.state.newsOpen); o[n.id] = !o[n.id]; self.setState({ newsOpen: o }); },
+        open: false, expanded: 'false', more: (rCount['news:' + n.id] ? 'くわしく・返信 ' + rCount['news:' + n.id] + '件' : 'くわしく'),
+        toggle: function () { self.openDetail('news', n.id); },
         srcStyle: 'padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 900; ' + (web ? 'background: #E3E7F6; color: #3046A6' : 'background: #F3E8D6; color: #8A5A12'),
         cardStyle: 'flex-shrink: 0; width: 290px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: 20px; background: #FFFFFF; animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
       };
@@ -1579,12 +1656,22 @@
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
     var tileMode = st.homeStyle === 'b' && isHome;   /* ホームの見た目 B：タイル（写真と「つぎの担当」はタイルの中に出す） */
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
-    shown.forEach(function (x) {
-      var vis = x.vis && (isHome || tabOf(x.c) === curTab) && !(tileMode && (x.c.key === 'photos' || x.c.key === 'hero'));
-      var o2 = { key: x.c.key, wrapStyle: vis ? '' : 'display: none' };
-      SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === x.c.key; });
+    /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
+    var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
+    var rankOf = {};
+    shown.map(function (x, i) { return [x.c.key, i]; }).sort(function (a, b) {
+      var ra = seq0 ? (seq0.indexOf(a[0]) < 0 ? 50 : seq0.indexOf(a[0])) : 0, rb = seq0 ? (seq0.indexOf(b[0]) < 0 ? 50 : seq0.indexOf(b[0])) : 0;
+      return (ra - rb) || (a[1] - b[1]);
+    }).forEach(function (a, i) { rankOf[a[0]] = i; });
+    var visOf = {}; shown.forEach(function (x) { visOf[x.c.key] = x.vis && (isHome || tabOf(x.c) === curTab) && !(tileMode && (x.c.key === 'photos' || x.c.key === 'hero')); });
+    SEC_DEF.map(function (d) { return d[0]; }).concat(shown.map(function (x) { return x.c.key; }).filter(function (k) { return !SEC_DEF.some(function (d) { return d[0] === k; }); })).forEach(function (k) {
+      if (!(k in visOf)) return;
+      var o2 = { key: k, wrapStyle: visOf[k] ? 'order: ' + rankOf[k] : 'display: none' };
+      SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === k; });
       sections.push(o2);
     });
+    /* ホーム以外のタブは短いので、遅れて出す仕組みを使わずにすぐ出す（並べ替えで見張りが外れても空白にならない） */
+    if (!isHome) Object.keys(lazy).forEach(function (id) { lazy[id].on = true; lazy[id].off = false; lazy[id].wrapStyle = 'opacity: 1; transform: none'; });
     /* 自分の番：自分宛ての未確認の申し送りと、まだ答えていない相談 */
     var myTurnDecide = (D.decisions || []).filter(function (x) { return x.state !== '決まった' && !(me1 ? x.a1 : x.a2); }).length;
     var twoTab = tabOf(secByKey.decide || { key: 'decide' });
@@ -1673,7 +1760,8 @@
       decisions: decisions, decisionsEmpty: decisions.length === 0, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
       outings: outings, outingsEmpty: outings.length === 0, addOuting: function () { self.openOuting(null); },
-      menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, ingredients: dayMenu.ingredients }); }, hasIngredients: dayMenu.ingredients.length > 0,
+      menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, ingredients: dayMenu.ingredients }); },
+      editMenu: function () { self.openMenu(dmDate, dmReal); }, editMenuLabel: dmReal ? '献立を直す' : '献立を入れる', hasMenu: !!dmReal, hasIngredients: dayMenu.ingredients.length > 0,
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
       flowEditLabel: st.flowEdit ? '完了' : '直す',
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
@@ -1696,6 +1784,35 @@
       closeFb: function () { self.setState({ fbOpen: false }); },
       sendFb: function () { self.sendFeedback(); },
       fbBackdropStyle: backdrop(st.fbOpen), fbSheetStyle: sheetStyle(st.fbOpen, ''),
+      dt: (function () {
+        var x = st.detail;
+        if (!x) return { open: false, title: '', body: '', meta: '', kindLabel: '', hasUrl: false, url: '', lines: [], replies: [], empty: true, canReply: false, ctaLabel: '', hasCta: false, cta: function () {} };
+        var KL = { topics: '話題', decide: 'ふたりで決めること', diary: '今日の日記', weekend: 'お出かけの候補', news: 'ニュース', deadline: '期限があるもの' };
+        var find = function (list) { return (list || []).filter(function (y) { return String(y.id) === String(x.id); })[0]; };
+        var it = null, title = '', body = '', meta = '', url = '', lines = [], cta = null;
+        if (x.kind === 'topics' && (it = find(D.topics))) { title = it.title; body = it.note; url = it.url; meta = it.date || ''; cta = ['直す・消す', function () { self.setState({ detail: null }); self.openTopic(it); }]; }
+        if (x.kind === 'decide' && (it = find(D.decisions))) {
+          title = it.q; body = it.note; meta = it.due ? dueLabel(it.due) + 'まで' : '';
+          lines = (it.options && it.options.length ? it.options : ['賛成', '反対']).map(function (o) { var w = []; if (it.a1 === o) w.push(names[0]); if (it.a2 === o) w.push(names[1]); return o + (w.length ? '　← ' + w.join('・') : ''); });
+          if (it.state === '決まった') lines.push('決まった：' + it.decided);
+          cta = ['閉じて、カードで答える', function () { self.setState({ detail: null }); }];
+        }
+        if (x.kind === 'diary' && (it = find(D.diary))) { title = (it.by || '') + 'の日記'; body = it.text; meta = it.time || ''; }
+        if (x.kind === 'weekend' && (it = find(D.outings))) { title = it.name; body = it.note; url = it.url; meta = [it.kind, it.date, it.place].filter(String).join('・'); cta = ['直す・消す', function () { self.setState({ detail: null }); self.openOuting(it); }]; }
+        if (x.kind === 'news' && (it = find(D.news))) { title = it.title; body = [it.why, it.body].filter(String).join('\n\n'); url = it.url; meta = it.from + (it.date ? '（' + it.date + '）' : ''); }
+        var tgt = x.kind + ':' + x.id;
+        var rs = (D.replies || []).filter(function (r) { return r.target === tgt; }).sort(function (a, b) { return a.at - b.at; }).map(function (r) {
+          var d0 = new Date(r.at || 0), mine = r.who === meWho;
+          return { who: r.who, text: r.text, time: r.at ? (d0.getMonth() + 1) + '/' + d0.getDate() + ' ' + d0.getHours() + ':' + pad(d0.getMinutes()) : '', badgeStyle: self.badge(r.who), mine: mine, del: function () { self.deleteReply(r.id); },
+            style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 16px; ' + (mine ? 'background: #EEF1EC; margin-left: 28px' : 'background: #FFF6E8; margin-right: 28px') };
+        });
+        return { open: true, kindLabel: KL[x.kind] || '', title: it ? title : '（見つかりません。消されたかもしれません）', body: body || '', hasBody: !!body, meta: meta, hasMeta: !!meta, url: url || '', hasUrl: !!url,
+          lines: lines.map(function (l) { return { text: l }; }), hasLines: lines.length > 0, replies: rs, empty: rs.length === 0, canReply: !!it,
+          hasCta: !!cta, ctaLabel: cta ? cta[0] : '', cta: cta ? cta[1] : function () {} };
+      })(),
+      replyDraft: st.replyDraft, setReplyDraft: function (e) { self.setState({ replyDraft: e.target.value }); },
+      sendReply: function () { self.sendReply(); }, closeDetail: function () { self.setState({ detail: null, replyDraft: '' }); },
+      detailBackdropStyle: backdrop(!!st.detail), detailSheetStyle: sheetStyle(!!st.detail, 'max-height: 88vh; overflow-y: auto; '),
       museDraft: st.museDraft, setMuseDraft: function (e) { self.setState({ museDraft: e.target.value }); },
       closeMuse: function () { self.setState({ museOpen: false }); },
       museCopy: function () { self.museSend('copy'); }, museWa: function () { self.museSend('wa'); },
@@ -1735,7 +1852,7 @@
         };
       })(),
       diary: diaryAll.slice().reverse().map(function (k, i) {
-        return { isNew: !!marks['diary:' + k.id], time: k.time + (k.by ? '　' + k.by : ''), text: k.text, cardStyle: 'flex-shrink: 0; width: 240px; box-sizing: border-box; background: #FFF6E8; border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; animation: rise .45s cubic-bezier(.2,.8,.2,1) ' + (i * 60) + 'ms both' };
+        return { isNew: !!marks['diary:' + k.id], time: k.time + (k.by ? '　' + k.by : ''), text: k.text, more: moreOf('diary', k.id), textStyle: clamp(5, 'margin: 0; font-size: 14px; line-height: 1.7'), cardStyle: 'flex-shrink: 0; width: 240px; box-sizing: border-box; background: #FFF6E8; border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; animation: rise .45s cubic-bezier(.2,.8,.2,1) ' + (i * 60) + 'ms both' };
       }),
       diaryCount: diaryAll.length ? diaryAll.length + '件' : '',
       diaryEmpty: diaryAll.length === 0,
@@ -2001,7 +2118,8 @@
         deadlines: [{ id: 'k1', what: '見本：保育園の書類を出す', due: ymd(t), who: 'まま', done: false, url: '', note: '' }, { id: 'k2', what: '見本：ペットホテルの予約', due: dd(9), who: 'とと', done: false, url: '', note: '' }],
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
         weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
-        topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }],
+        topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }, { id: 't2', title: '見本：年末の帰省の相談', url: '', note: '見本の長い文です。12/28の夕方に出て、実家に2泊する案。新幹線は混むので、車で行くなら途中で1回休む。おみやげは前の日に買う。ふたりの昼寝の時間に合わせて出発したい。帰りは12/30の午前。大掃除は帰ってからにするか、出る前に半分だけ済ませるか、決めたい。年賀状は今年は写真入りにする？', date: '11/20' }],
+        replies: [{ id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本の返信：出る前に半分だけ大掃除がいいと思う。' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,
         people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },
@@ -2022,6 +2140,10 @@
         if (a === 'ackNote') db.notes.forEach(function (x) { if (x.id === p.id) x.read = p.read; });
         if (a === 'addDiary') db.diary.push(p.entry);
         if (a === 'deleteDiary') db.diary = db.diary.filter(function (x) { return x.id !== p.id; });
+        if (a === 'saveMenu') { db.menu = db.menu.filter(function (x) { return x.date !== p.menu.date; }).concat([{ date: p.menu.date, dish: p.menu.dish, hotcook: p.menu.hotcook, note: p.menu.note, ingredients: p.menu.ingredients.map(function (x) { return [x.name, x.qty]; }), how: p.menu.how, photo: '' }]); }
+        if (a === 'deleteMenu') db.menu = db.menu.filter(function (x) { return x.date !== p.date; });
+        if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text });
+        if (a === 'deleteReply') db.replies = db.replies.filter(function (x) { return x.id !== p.id; });
         res({ ok: true });
       }, 250);
     });
@@ -2043,7 +2165,7 @@
       navigator.serviceWorker.addEventListener('controllerchange', function () {
         if (!hadCtrl || reloaded) return;
         var go = function () { reloaded = true; comp.reloading = true; location.reload(); };
-        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.museOpen || s.accountOpen || s.flowEdit || s.shopEdit || s.topicEdit || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
+        var s = comp.state, busy = comp.pending > 0 || s.editor || s.noteOpen || s.notesOpen || s.fbOpen || s.museOpen || s.replyDraft || s.accountOpen || s.flowEdit || s.shopEdit || s.topicEdit || s.noteDraft || s.draft || s.fbDraft || s.shopDraft;
         /* 使っている最中（入力中・編集中・ホーム以外のタブ）は読み直さず、次にアプリに戻った時に読み直す */
         if (busy || (s.nav && s.nav !== '今日')) { document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && !reloaded) go(); }); return; }
         go();
