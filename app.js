@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '41';
+  var APP_VERSION = '42';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -967,7 +967,7 @@
       var o = !!(st.cmOpen || {})[c.id], lg = String(c.text).length > 60 || String(c.text).split('\n').length > 3;
       return { who: c.who, time: whenLabel(c.at), text: c.text, badgeStyle: self.badge(c.who), long: lg,
         textStyle: base + (lg && !o ? 'display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden' : ''),
-        expandLabel: o ? '閉じる' : '続きを読む',
+        expandLabel: o ? '閉じる ⌃' : 'さらに見る ⌄',
         toggle: function () { var m = Object.assign({}, self.state.cmOpen || {}); if (m[c.id]) delete m[c.id]; else m[c.id] = true; self.setState({ cmOpen: m }); },
         mine: c.who === self.meWho(), del: function () { self.deleteReply(c.id); },
         style: 'display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: ' + (isChild ? '#FFFFFF; margin-left: 20px; border-left: 3px solid #C9D0C6' : '#F4F6F2') };
@@ -1472,9 +1472,16 @@
         comments: (function () {
           var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
           var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); });
-          return tops.slice(-2).map(function (r) { return self.commentVM(r, all.filter(function (c) { return c.parent === r.id; }), x.id); });
+          var showAll = !!(st.decAllOpen || {})[x.id];
+          return (showAll ? tops : tops.slice(-2)).map(function (r) { return self.commentVM(r, all.filter(function (c) { return c.parent === r.id; }), x.id); });
         })(),
-        moreComments: (function () { var n = rCount['decide:' + x.id] || 0; return n > 2 ? 'コメントをすべて見る（' + n + '件）' : ''; })(),
+        moreComments: (function () {
+          var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; });
+          var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); }).length;
+          if (tops <= 2) return '';
+          return (st.decAllOpen || {})[x.id] ? '前のコメントを閉じる ⌃' : '前のコメントをさらに見る（' + (tops - 2) + '件）⌄';
+        })(),
+        toggleAll: function () { var m = Object.assign({}, self.state.decAllOpen || {}); if (m[x.id]) delete m[x.id]; else m[x.id] = true; self.setState({ decAllOpen: m }); },
         commentOpen: st.decCommentId === x.id, commentLabel: st.decCommentId === x.id ? 'やめる' : 'コメントする',
         commentExpanded: st.decCommentId === x.id ? 'true' : 'false',
         replyToLabel: st.decCommentId === x.id && st.decReplyTo ? st.decReplyTo.who + 'のコメントへの返信' : '',

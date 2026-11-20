@@ -453,6 +453,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="font-size: 15px; font-weight: 700; color: #2C6B52">決まった：{{dc.decidedText}}</span><button type="button" onClick="{{dc.reopen}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">相談に戻す</button></div>
         </sc-if>
         <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid #ECEFE9">
+          <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.toggleAll}}" style="align-self: flex-start; min-height: 36px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
           <sc-for list="{{dc.comments}}" as="cm" hint-placeholder-count="0">
             <div style="display: flex; flex-direction: column; gap: 6px">
               <div style="{{cm.style}}">
@@ -476,7 +477,6 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
               </sc-for>
             </div>
           </sc-for>
-          <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.openAll}}" style="align-self: flex-start; min-height: 36px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
           <sc-if value="{{dc.commentOpen}}" hint-placeholder-val="{{ false }}">
             <sc-if value="{{dc.replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{dc.replyToLabel}}</span><button type="button" onClick="{{dc.cancelReplyTo}}" aria-label="返信をやめてコメントにする" style="min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
             <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
@@ -1158,7 +1158,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="config.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>
