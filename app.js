@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '27';
+  var APP_VERSION = '28';
   var API_EXPECTED = 10;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1856,6 +1856,7 @@
       /* ログインとアカウント */
       needLogin: st.needLogin,
       loginError: st.loginError,
+      inBrowser: !DEMO && !(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)),
       loginLabel: st.loggingIn ? 'ログインしています…' : 'Googleでログイン',
       login: function () { self.login(); },
       syncLabel: syncLabel,
