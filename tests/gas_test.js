@@ -53,13 +53,13 @@ function makeEnv(sheets) {
     Utilities: {
       formatDate: fmt, getUuid: () => crypto.randomUUID(),
       computeDigest: (a, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map(b => b > 127 ? b - 256 : b),
-      DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64')
+      DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64'), base64Decode: s => Array.from(Buffer.from(s, 'base64')), newBlob: (b, m, n) => ({ bytes: b, mime: m, name: n })
     },
     UrlFetchApp: { fetch: (u) => { if (/[|\s]/.test(u.split('?')[1] || '')) throw new Error('Invalid argument: ' + u); return ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/commons\.wikimedia/.test(u) ? (env.commons || {}) : /wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }); }, fetchAll: () => [] },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
     Drive: { Files: {
       list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
-      create: (r) => ({ id: 'folder1' }), get: (id) => ({ id, trashed: false }),
+      create: (r, blob) => { env.created = env.created || []; env.created.push({ r, blob }); return { id: blob ? 'file' + env.created.length : 'folder1' }; }, get: (id) => ({ id, trashed: false }),
       copy: (r, id) => { env.backups = env.backups || []; env.backups.push({ id: 'b' + env.backups.length, name: r.name }); return { id: 'c' }; },
       update: (r, id) => { const f = (env.backups || []).find(x => x.id === id); if (f) f.trashed = true; return {}; }
     } },
@@ -215,6 +215,16 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   ok(b2.data.plans[0].who === 'ケン' && b2.data.plans[0].what === '病院' && b2.data.plans[1].who === '家族', '予定: 別名（人1の別名）で担当 ' + JSON.stringify(b2.data.plans.map(p => p.who)));
 }
 
+// 写真：アプリから足す
+{
+  const small = Buffer.from('jpegdata').toString('base64');
+  let r = post(env, { action: 'addPhoto', session: S, mime: 'image/jpeg', data: small });
+  const up = (env.created || []).filter(c => c.blob);
+  ok(r.ok && up.length === 1 && up[0].r.parents[0] === 'folder1' && up[0].blob.mime === 'image/jpeg' && /\.jpg$/.test(up[0].r.name) && env.props.uploadFolder === 'folder1', 'addPhoto: アプリの置き場に入れる');
+  ok(post(env, { action: 'addPhoto', session: S, mime: 'text/html', data: small }).code === 'bad_request', 'addPhoto: 写真・動画以外は断る');
+  ok(post(env, { action: 'addPhoto', session: S, mime: 'image/jpeg', data: Buffer.alloc(9 * 1048576).toString('base64') }).code === 'too_big', 'addPhoto: 大きすぎる写真は断る');
+  ok(post(env, { action: 'addPhoto', mime: 'image/jpeg', data: small }).ok === false, 'addPhoto: ログインなしは断る');
+}
 // 担当：アプリから足す（今日だけ・くり返し）、直す、消す
 env.onEdit();
 let r2 = post(env, { action: 'saveDuty', session: S, duty: { id: 'dx1', task: '病院', time: '10:00', who: 'まま', date: today } });

@@ -115,6 +115,7 @@ function doPost(e) {
       case 'photos': return out({ ok: true, photos: photoList() });
       case 'photosBatch': return out(photosBatch(req.ids));
       case 'video': return out(videoData(req.id));
+      case 'addPhoto': return out(addPhoto(req, me));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
@@ -398,7 +399,7 @@ function buildBoot(today) {
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
-    photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
+    photosReady: photoFolders().length > 0, photos: photoList(),
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
     ui: {
       sections: screenRows(),
@@ -711,9 +712,44 @@ function bigPut(key, str, seconds) {
 
 /* ================= 写真 ================= */
 
+/* 写真のフォルダ：設定の「写真フォルダID」と、アプリから足した写真の置き場（GASが作る。drive.file の権限で書ける） */
+function photoFolders() {
+  var ids = [], a = String(settings()['写真フォルダID'] || '').trim(), b = PropertiesService.getScriptProperties().getProperty('uploadFolder') || '';
+  if (a) ids.push(a);
+  if (b && ids.indexOf(b) < 0) ids.push(b);
+  return ids;
+}
 function photoQuery() {
-  var folderId = settings()['写真フォルダID'];
-  return folderId ? "'" + folderId.replace(/'/g, '') + "' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false" : '';
+  var ids = photoFolders();
+  if (!ids.length) return '';
+  return '(' + ids.map(function (id) { return "'" + id.replace(/'/g, '') + "' in parents"; }).join(' or ') + ") and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false";
+}
+/* アプリから足した写真の置き場。無ければ作る */
+function uploadFolder() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('uploadFolder');
+  if (id) {
+    try { if (Drive.Files.get(id, { fields: 'id,trashed' }).trashed) id = ''; }
+    catch (e) { if (/not ?found|404/i.test(String(e && e.message))) id = ''; else throw e; }
+  }
+  if (!id) {
+    id = Drive.Files.create({ name: 'WAGAYA 写真（アプリから）', mimeType: 'application/vnd.google-apps.folder' }, null, { fields: 'id' }).id;
+    props.setProperty('uploadFolder', id);
+  }
+  return id;
+}
+/* アプリから写真・動画を足す。画面で縮めた写真（JPEG）か、上限までの動画だけ受け取る */
+var PHOTO_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'video/mp4': '.mp4', 'video/quicktime': '.mov' };
+function addPhoto(req, me) {
+  var mime = String(req.mime || ''), ext = PHOTO_TYPES[mime], data = String(req.data || '');
+  if (!ext || !data || !/^[A-Za-z0-9+\/=]+$/.test(data)) return { ok: false, code: 'bad_request' };
+  var video = /^video\//.test(mime), max = video ? videoLimit() : 8 * 1048576;
+  if (data.length * 3 / 4 > max + 4) return { ok: false, code: 'too_big' };
+  var bytes = Utilities.base64Decode(data);
+  if (bytes.length > max) return { ok: false, code: 'too_big' };
+  var name = ymd(new Date()).replace(/-/g, '') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + ext;
+  var f = Drive.Files.create({ name: name, parents: [uploadFolder()], description: 'アプリから（' + me.who + '）' }, Utilities.newBlob(bytes, mime, name), { fields: 'id' });
+  bump();
+  return { ok: true, id: f.id };
 }
 function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 15) : 10) * 1048576; }
 
@@ -733,11 +769,11 @@ function photoList() {
 
 /* 動画の中身（写真フォルダの中のものだけ、上限まで） */
 function videoData(id) {
-  var folderId = settings()['写真フォルダID'];
-  if (!folderId || !id) return { ok: false, code: 'bad_request' };
+  var folders = photoFolders();
+  if (!folders.length || !id) return { ok: false, code: 'bad_request' };
   var f;
   try { f = Drive.Files.get(String(id), { fields: 'id,parents,mimeType,size' }); } catch (err) { return { ok: false, code: 'not_found' }; }
-  if ((f.parents || []).indexOf(folderId) < 0 || !/^video\//.test(f.mimeType || '')) return { ok: false, code: 'not_found' };
+  if (!(f.parents || []).some(function (p) { return folders.indexOf(p) >= 0; }) || !/^video\//.test(f.mimeType || '')) return { ok: false, code: 'not_found' };
   if (Number(f.size || 0) > videoLimit()) return { ok: false, code: 'too_big' };
   var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (r.getResponseCode() !== 200) return { ok: false, code: 'fetch_failed' };

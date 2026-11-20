@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '42';
+  var APP_VERSION = '43';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -959,6 +959,53 @@
     this.send('addReply', { reply: r }, revert);
     return true;
   };
+  /* 写真を足す：iPhoneの写真から選ぶ → 写真は長い辺1600pxのJPEGに縮めて送る（動画は15MBまでそのまま）。1枚ずつ順に */
+  function shrinkImage(file) {
+    var MAX = 1600;
+    var draw = function (src, w, h) {
+      var k = Math.min(1, MAX / Math.max(w, h)), c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+    };
+    var viaImg = function () {
+      return new Promise(function (ok, ng) {
+        var url = URL.createObjectURL(file), img = new Image();
+        img.onload = function () { try { ok(draw(img, img.naturalWidth, img.naturalHeight)); } catch (e) { ng(e); } URL.revokeObjectURL(url); };
+        img.onerror = function () { URL.revokeObjectURL(url); ng(new Error('decode')); };
+        img.src = url;
+      });
+    };
+    return (window.createImageBitmap ? createImageBitmap(file).then(function (b) { var d = draw(b, b.width, b.height); if (b.close) b.close(); return d; }).catch(viaImg) : viaImg());
+  }
+  function readBase64(file) {
+    return new Promise(function (ok, ng) { var r = new FileReader(); r.onload = function () { ok(String(r.result).split(',')[1] || ''); }; r.onerror = ng; r.readAsDataURL(file); });
+  }
+  App.prototype.pickPhotos = function () { var el = document.getElementById('photo-pick'); if (el) el.click(); };
+  App.prototype.uploadPhotos = function (e) {
+    var self = this, files = Array.prototype.slice.call((e && e.target && e.target.files) || [], 0, 20);
+    if (e && e.target) e.target.value = '';
+    if (!files.length) return;
+    USAGE.add('act:photo_add');
+    var done = 0, ng = 0, big = 0, n = files.length;
+    var step = function (i) {
+      if (i >= n) {
+        self.showToast(done ? '写真を' + done + '件足しました' + (ng || big ? '（' + [big ? big + '件は大きすぎ' : '', ng ? ng + '件は失敗' : ''].filter(String).join('、') + '）' : '') : (big ? '大きすぎて送れませんでした（動画は15MBまで）' : '送れませんでした。電波のよい所でもう一度'), null);
+        if (done) self.refresh(true, true);
+        return;
+      }
+      var f = files[i], isVideo = /^video\//.test(f.type || '');
+      self.showToast('写真を送っています ' + (i + 1) + ' / ' + n, null);
+      if (isVideo && f.size > 15 * 1048576) { big++; step(i + 1); return; }
+      var prep = isVideo ? readBase64(f).then(function (d) { return { mime: f.type === 'video/quicktime' ? 'video/quicktime' : 'video/mp4', data: d }; })
+        : shrinkImage(f).then(function (d) { return { mime: 'image/jpeg', data: d }; });
+      prep.then(function (x) { return api('addPhoto', x); })
+        .then(function () { done++; }, function (err) { if (err && err.code === 'too_big') big++; else ng++; })
+        .then(function () { step(i + 1); });
+    };
+    step(0);
+  };
+
   /* 相談のカードのコメント1件ぶんの表示。長い文は3行で切り「続きを読む」で全文。返信（1段だけ）を下に並べる */
   App.prototype.commentVM = function (r, children, qid) {
     var self = this, st = this.state;
@@ -2002,6 +2049,7 @@
       diaryCount: diaryAll.length ? diaryAll.length + '件' : '',
       diaryEmpty: diaryAll.length === 0,
       openDiaryNote: function () { self.openNoteFor('今日の日記', null); },
+      pickPhotos: function () { self.pickPhotos(); }, uploadPhotos: function (e) { self.uploadPhotos(e); },
       noteTarget: st.noteTarget, noteDraft: st.noteDraft,
       isHandover: st.noteMode === 'handover',
       sheetKicker: st.noteMode === 'handover' ? '申し送りを書く' : '気づきを残す',
@@ -2316,7 +2364,8 @@
         if (a === 'deleteDiary') db.diary = db.diary.filter(function (x) { return x.id !== p.id; });
         if (a === 'saveMenu') { db.menu = db.menu.filter(function (x) { return x.date !== p.menu.date; }).concat([{ date: p.menu.date, dish: p.menu.dish, servings: p.menu.servings, hotcook: p.menu.hotcook, note: p.menu.note, ingredients: p.menu.ingredients.map(function (x) { return [x.name, x.qty]; }), how: p.menu.how, photo: '' }]); }
         if (a === 'deleteMenu') db.menu = db.menu.filter(function (x) { return x.date !== p.date; });
-        if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text });
+        if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text, parent: p.reply.parent || '' });
+        if (a === 'addPhoto') { db.uploaded = (db.uploaded || 0) + 1; }
         if (a === 'deleteReply') db.replies = db.replies.filter(function (x) { return x.id !== p.id; });
         res({ ok: true });
       }, 250);
