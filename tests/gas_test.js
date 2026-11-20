@@ -55,7 +55,7 @@ function makeEnv(sheets) {
       computeDigest: (a, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map(b => b > 127 ? b - 256 : b),
       DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64')
     },
-    UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }), fetchAll: () => [] },
+    UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }), fetchAll: () => [] },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
     Drive: { Files: {
       list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
@@ -444,6 +444,18 @@ ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼2', 'saveMenu: 直す（同じ日は1つ）');
   ok(post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: '' } }).code === 'bad_request', 'saveMenu: 料理名が空は断る');
   ok(post(env, { action: 'deleteMenu', session: S, date: today }).ok && !post(env, { action: 'boot', session: S, today }).data.menu.some(x => x.date === today), 'deleteMenu');
+  env.wiki = { query: { redirects: [{ from: 'スパゲッティ・ボロネーゼ', to: 'ボロネーゼ' }], pages: {
+    '1': { title: 'ミートソース' }, '2': { title: 'ボロネーゼ', thumbnail: { source: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/x/xx/Bolo.jpg/800px-Bolo.jpg?utm_source=x' } },
+    '3': { title: '豚汁', thumbnail: { source: 'http://evil.example/a.jpg' } } } } };
+  post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'ミートソース（ごはんかパスタ）', ingredients: [] } });
+  bd = post(env, { action: 'boot', session: S, today }).data; mm = bd.menu.filter(x => x.date === today);
+  ok(mm[0].photo === 'https://thumb.wikimedia.org/wikipedia/commons/thumb/x/xx/Bolo.jpg/800px-Bolo.jpg' && mm[0].photoBy === 'wiki' && mm[0].photoTitle === 'ボロネーゼ', '献立の写真: 名前に合う記事の写真（画像のない記事は飛ばして言いかえへ）' + JSON.stringify(mm[0].photo));
+  const calls = env.wikiCalls; env.onEdit(); bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(env.wikiCalls === calls && bd.menu.find(x => x.date === today).photo, '献立の写真: 2回目は覚えた物を使う');
+  post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: '豚汁', ingredients: [] } });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(!bd.menu.find(x => x.date === today).photo, '献立の写真: https の wikimedia 以外は使わない');
+  post(env, { action: 'deleteMenu', session: S, date: today });
   r = post(env, { action: 'addReply', session: S, reply: { id: 'rp1', target: 'topics:t1', text: '返信です' } });
   bd = post(env, { action: 'boot', session: S, today }).data;
   ok(r.ok && bd.replies.some(x => x.id === 'rp1' && x.target === 'topics:t1' && x.text === '返信です' && x.who), 'addReply: 返信がbootに出る');

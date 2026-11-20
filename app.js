@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '33';
+  var APP_VERSION = '34';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1337,7 +1337,8 @@
       label: dayIdx === todayIdx ? '今日' : dows[dayIdx] + '曜', servingsLabel: dm.servings ? '・' + dm.servings + '人分' : '', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
       ingredients: (dm.ingredients || []).map(function (x) { return { name: x[0], qty: x[1] }; }), how: dm.how || '',
       photo: dm.photo || pexels(MOOD[((dayOfYear % MOOD.length) + MOOD.length) % MOOD.length]),
-      photoAlt: dm.photo ? dm.dish + 'のイメージ写真' : '食卓を囲むイメージ写真',
+      photoAlt: dm.photo ? (dm.photoBy === 'wiki' ? dm.dish + 'に近い料理の写真（ウィキペディア「' + (dm.photoTitle || '') + '」）' : dm.dish + 'の写真') : '食卓を囲むイメージ写真',
+      photoCredit: dm.photo ? (dm.photoBy === 'wiki' ? '写真：ウィキペディア「' + (dm.photoTitle || '') + '」' : '') : 'イメージ写真（Pexels）',
       photoStyle: 'display: block; width: 100%; height: 100%; object-fit: cover; animation: ' + (st.dayAnim % 2 ? 'slideA' : 'slideB') + ' .5s cubic-bezier(.2,.8,.2,1) both'
     };
 

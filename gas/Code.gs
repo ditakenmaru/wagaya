@@ -345,6 +345,11 @@ function buildBoot(today) {
   var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(weekEnd); }).map(function (r) {
     return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']), servings: text(r['人数']) };
   });
+  /* 写真URLが空の献立は、料理名に合うウィキペディアの写真を付ける（見つからなければ空のまま） */
+  try {
+    var auto = dishPhotos(menu.filter(function (m) { return !m.photo && m.dish; }).map(function (m) { return m.dish; }));
+    menu.forEach(function (m) { if (!m.photo && auto[m.dish]) { m.photo = auto[m.dish].url; m.photoBy = 'wiki'; m.photoTitle = auto[m.dish].title; } });
+  } catch (err) { console.error(err); }
 
   var replies = rowsOf('返信').filter(function (r) { return r.id && text(r['本文']); }).slice(-400).map(function (r) {
     return { id: String(r.id), target: text(r['対象']), who: whoOf(r['誰']), at: new Date(r['日時']).getTime() || 0, text: text(r['本文']) };
@@ -544,6 +549,60 @@ function plansFor(rangeStart, rangeEnd, calendarId) {
     }
   });
   return outList;
+}
+
+/* 献立の写真：料理名から、日本語版ウィキペディアの記事の写真（自由なライセンスの物だけ。Wikimedia Commons）を探す。
+ * 記事名がぴったり合う時だけ使う（検索の上位は関係ない記事が混ざるので使わない）。
+ * 候補：料理名（かっこを外し、＆などで分けた先頭から）→「〜の」の後ろ（鶏と大根の煮物→煮物）→ 下の言いかえ。
+ * 見つかった物は60日、見つからなかった物は7日覚える（スクリプトのプロパティ） */
+var DISH_ALIAS = { 'ミートソース': 'ボロネーゼ', 'クリーム煮': 'クリームシチュー', 'トマト煮': 'カチャトーラ', 'トマト煮込み': 'カチャトーラ', 'カレー': 'カレーライス', 'シチュー': 'クリームシチュー', '焼き鮭': '焼き魚', '鮭の塩焼き': '焼き魚' };
+function dishCandidates(name) {
+  var out = [];
+  var add = function (t) { t = String(t || '').trim(); if (t.length >= 2 && out.indexOf(t) < 0) out.push(t); if (DISH_ALIAS[t] && out.indexOf(DISH_ALIAS[t]) < 0) out.push(DISH_ALIAS[t]); };
+  var s = String(name || '').replace(/[（(][^）)]*[）)]/g, ' ').replace(/煮こみ/g, '煮込み').replace(/[0-9０-９]+段/g, ' ');
+  s.split(/[＆&＋+、,，／\/]|\s+/).forEach(function (part) {
+    part = part.trim(); if (!part) return;
+    add(part);
+    var seg = part.split('の'); if (seg.length > 1) add(seg[seg.length - 1]);
+  });
+  return out.slice(0, 8);
+}
+function dishPhotos(names) {
+  var props = PropertiesService.getScriptProperties(), now = Date.now(), res = {}, need = [];
+  names.forEach(function (n) {
+    if (res[n] || need.indexOf(n) >= 0) return;
+    var c = null; try { c = JSON.parse(props.getProperty('dishimg:' + n) || 'null'); } catch (e) { c = null; }
+    if (c && now - c.t < (c.u ? 60 : 7) * 864e5) { if (c.u) res[n] = { url: c.u, title: c.ti || '' }; return; }
+    need.push(n);
+  });
+  if (!need.length) return res;
+  need = need.slice(0, 10);
+  var cands = {}, all = [];
+  need.forEach(function (n) { cands[n] = dishCandidates(n); cands[n].forEach(function (t) { if (all.indexOf(t) < 0) all.push(t); }); });
+  var found = {};   /* 書いた名前 → { url, title } */
+  for (var i = 0; i < all.length; i += 50) {
+    var chunk = all.slice(i, i + 50);
+    var r = UrlFetchApp.fetch('https://ja.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=thumbnail&pithumbsize=800&pilicense=free&titles=' + encodeURIComponent(chunk.join('|')), { muteHttpExceptions: true, headers: { 'Api-User-Agent': 'wagaya-family-app/1.0 (private use)' } });
+    if (r.getResponseCode() !== 200) return res;
+    var q = (JSON.parse(r.getContentText()) || {}).query || {};
+    var to = {};
+    (q.normalized || []).forEach(function (x) { to[x.from] = x.to; });
+    (q.redirects || []).forEach(function (x) { to[x.from] = x.to; });
+    var byTitle = {};
+    Object.keys(q.pages || {}).forEach(function (k) { var pg = q.pages[k]; if (pg.thumbnail && pg.thumbnail.source) byTitle[pg.title] = pg.thumbnail.source.split('?')[0]; });
+    chunk.forEach(function (t) {
+      var tt = t, hop = 0; while (to[tt] && hop++ < 3) tt = to[tt];
+      var u = byTitle[tt];
+      if (u && /^https:\/\/(upload|thumb)\.wikimedia\.org\/[^\s"'<>]+$/.test(u)) found[t] = { url: u, title: tt };
+    });
+  }
+  need.forEach(function (n) {
+    var hit = null;
+    for (var j = 0; j < cands[n].length && !hit; j++) hit = found[cands[n][j]] || null;
+    try { props.setProperty('dishimg:' + n, JSON.stringify(hit ? { u: hit.url, ti: hit.title, t: now } : { u: '', t: now })); } catch (e) { /* いっぱいの時は覚えない */ }
+    if (hit) res[n] = hit;
+  });
+  return res;
 }
 
 /* 買うかも：これまでの買い物リストから、くり返し買っている物を出す。
