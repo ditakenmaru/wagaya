@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '43';
+  var APP_VERSION = '44';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -458,7 +458,9 @@
    * 動画の中身はそのあと1本ずつ取る。どれも端末に保存し、2回目からはすぐ出る */
   App.prototype.loadPhotos = function (list) {
     var self = this;
-    list = (list || []).slice(0, 10);
+    list = (list || []).slice(0, 30);
+    /* 動画の中身まで取るのは新しい5本だけ（通信を抑える）。残りは1コマで出す */
+    var nv = 0; list = list.map(function (p) { if (p.video && !p.big && ++nv > 5) return Object.assign({}, p, { big: true }); return p; });
     var key = list.map(function (p) { return p.id + p.v; }).join('|');
     if (key === this.photoKey) return;
     this.photoKey = key;
@@ -475,19 +477,25 @@
       return Promise.all(list.map(function (p, i) {
         return (cache ? cache.match(url(p)) : Promise.resolve(null)).then(function (hit) { return hit ? hit.blob().then(function (b) { show(i, b); return true; }) : false; }).catch(function () { return false; });
       })).then(function (have) {
-        /* 2) 足りない1コマ目だけ、1回の通信でまとめて取る */
+        /* 2) 足りない1コマ目だけ、8枚ずつまとめて取る（新しい物から順に出る） */
         var missing = list.filter(function (_, i) { return !have[i]; });
         if (!missing.length || self.state.needLogin) return;
-        return api('photosBatch', { ids: missing.map(function (p) { return p.id; }) }).then(function (res) {
-          return Promise.all(list.map(function (p, i) {
-            var src = res.photos && res.photos[p.id];
-            if (have[i] || !src) return null;
-            return fetch(src).then(function (r) { return r.blob(); }).then(function (blob) {
-              show(i, blob);
-              if (cache) return cache.put(url(p), new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } })).catch(function () {});
-            });
-          }));
-        }).catch(function () {});
+        var chunks = []; for (var c = 0; c < missing.length; c += 8) chunks.push(missing.slice(c, c + 8));
+        return chunks.reduce(function (chain, part) {
+          return chain.then(function () {
+            if (self.state.needLogin) return;
+            return api('photosBatch', { ids: part.map(function (p) { return p.id; }) }).then(function (res) {
+              return Promise.all(list.map(function (p, i) {
+                var src = res.photos && res.photos[p.id];
+                if (have[i] || !src || part.indexOf(p) < 0) return null;
+                return fetch(src).then(function (r) { return r.blob(); }).then(function (blob) {
+                  show(i, blob);
+                  if (cache) return cache.put(url(p), new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } })).catch(function () {});
+                });
+              }));
+            }).catch(function () {});
+          });
+        }, Promise.resolve());
       }).then(function () {
         /* 3) 動画の中身を1本ずつ（大きすぎる動画は1コマだけ） */
         return list.reduce(function (chain, p, i) {

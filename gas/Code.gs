@@ -68,6 +68,7 @@ var SETTING_ROWS = [
   ['献立がない日のメモ', '日曜の15分で決めます。', ''],
   ['カレンダーID', '', '家族の共有Googleカレンダーの「カレンダーID」。空なら「予定」シートを使う。予定名の頭に「とと:」「まま:」で担当の色'],
   ['写真フォルダID', '', '子どもの写真と動画を置くGoogleドライブのフォルダID（URLの folders/ の後ろ）。空なら写真は出さない'],
+  ['写真を出す期間（日）', '30', 'この日数のうちに足した写真・動画を新しい順に出す（最大30件）。少ない時は古い物で8件まで埋める'],
   ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）'],
   ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
@@ -753,17 +754,28 @@ function addPhoto(req, me) {
 }
 function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 15) : 10) * 1048576; }
 
-/* 写真と動画の一覧（idだけ。軽い）。動画は大きさも見る */
-function photoList() {
+/* 写真と動画の一覧（idだけ。軽い）。動画は大きさも見る。
+ * みてねのように「最近足した物」を出す：足した日（ドライブに入った日）が新しい順に、設定「写真を出す期間（日）」（既定30）の分だけ、最大 PHOTO_MAX 件。
+ * その期間の物が PHOTO_MIN 件より少ない時は、古い物で PHOTO_MIN 件まで埋める（スライドが寂しくならないように） */
+var PHOTO_MAX = 30, PHOTO_MIN = 8, PHOTO_SCAN = 60;
+function photoFiles() {
   var q = photoQuery();
   if (!q) return [];
+  return Drive.Files.list({ q: q, pageSize: PHOTO_SCAN, orderBy: 'createdTime desc', fields: 'files(id,modifiedTime,createdTime,mimeType,size,thumbnailLink)' }).files || [];
+}
+function pickRecent(files, now) {
+  var days = Number(settings()['写真を出す期間（日）']); if (!(days > 0)) days = 30;
+  var since = now - days * 864e5;
+  var recent = files.filter(function (f) { return new Date(f.createdTime || f.modifiedTime || 0).getTime() >= since; }).slice(0, PHOTO_MAX);
+  return recent.length >= PHOTO_MIN ? recent : files.slice(0, Math.max(PHOTO_MIN, recent.length));
+}
+function photoList() {
   try {
     var lim = videoLimit();
-    return (Drive.Files.list({ q: q, pageSize: 10, orderBy: 'createdTime desc', fields: 'files(id,modifiedTime,mimeType,size)' }).files || [])
-      .map(function (f) {
-        var v = /^video\//.test(f.mimeType || '');
-        return { id: f.id, v: f.modifiedTime, video: v, big: v && Number(f.size || 0) > lim };
-      });
+    return pickRecent(photoFiles(), Date.now()).map(function (f) {
+      var v = /^video\//.test(f.mimeType || '');
+      return { id: f.id, v: f.modifiedTime, video: v, big: v && Number(f.size || 0) > lim, at: f.createdTime || '' };
+    });
   } catch (err) { console.error(err); return []; }
 }
 
@@ -787,7 +799,7 @@ function photosBatch(ids) {
   var want = {};
   (ids || []).forEach(function (id) { want[String(id)] = 1; });
   var files;
-  try { files = Drive.Files.list({ q: q, pageSize: 10, orderBy: 'createdTime desc', fields: 'files(id,thumbnailLink)' }).files || []; }
+  try { files = photoFiles(); }
   catch (err) { console.error(err); return { ok: true, photos: {} }; }
   var res0 = {}, need = [];
   files.forEach(function (f) {

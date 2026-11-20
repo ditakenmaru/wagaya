@@ -215,6 +215,19 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   ok(b2.data.plans[0].who === 'ケン' && b2.data.plans[0].what === '病院' && b2.data.plans[1].who === '家族', '予定: 別名（人1の別名）で担当 ' + JSON.stringify(b2.data.plans.map(p => p.who)));
 }
 
+// 写真：最近足した物を出す
+{
+  const now = Date.parse('2026-11-20T00:00:00Z'), day = 864e5;
+  const mk = (n, ago) => Array.from({ length: n }, (_, i) => ({ id: 'p' + ago + '_' + i, createdTime: new Date(now - ago * day - i * 1000).toISOString() }));
+  let files = mk(12, 1).concat(mk(20, 60));
+  let r = env.pickRecent(files, now);
+  ok(r.length === 12 && r.every(f => f.id.startsWith('p1_')), '写真: 30日以内の物だけ（新しい順）');
+  files = mk(3, 2).concat(mk(20, 60));
+  r = env.pickRecent(files, now);
+  ok(r.length === 8 && r.slice(0, 3).every(f => f.id.startsWith('p2_')), '写真: 少ない時は古い物で8件まで埋める');
+  files = mk(45, 3);
+  ok(env.pickRecent(files, now).length === 30, '写真: 多くても30件まで');
+}
 // 写真：アプリから足す
 {
   const small = Buffer.from('jpegdata').toString('base64');
