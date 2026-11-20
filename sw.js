@@ -2,7 +2,7 @@
  * 開く時は手元の画面をすぐ出し、裏で新しい版を取っておく（次に開いた時に新しい版になる）。
  * index.html と同じ版の app.js / config.js だけを使う（?v= の番号で合わせる。混ざると画面が空になるため）。
  * 版を上げる時：index.html の ?v= と、下の VERSION をそろえて上げる。 */
-var VERSION = '53';
+var VERSION = '54';
 var CACHE = 'wagaya-v' + VERSION;
 var SHELL = ['./', 'index.html', 'app.js?v=' + VERSION, 'config.js?v=' + VERSION, 'manifest.webmanifest', 'icons/icon-192.png?v=4', 'icons/apple-touch-icon.png?v=4'];
 self.addEventListener('install', function (e) {
@@ -47,7 +47,9 @@ self.addEventListener('push', function (e) {
     if (!items.length) return plain();
     return Promise.all(items.map(function (x, i) {
       return showNote(x.title, x.body + (i === items.length - 1 && r.more ? '（ほか' + r.more + '件）' : ''), x.id, x.go);
-    }));
+    })).then(function () {   /* アイコンの数字：最後に開いてから来た通知の数（開くと、アプリが「あなたの番」の数に直す） */
+      try { if (r.badge && self.navigator.setAppBadge) return self.navigator.setAppBadge(r.badge).catch(function () {}); } catch (err) {}
+    });
   }).catch(plain));
 });
 /* 通知を押したら、アプリを開いて（開いていれば前に出して）その場所へ */

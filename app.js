@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '53';
+  var APP_VERSION = '54';
   var API_EXPECTED = 15;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -329,7 +329,7 @@
       if (n && self.showPhotos() && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd = upd || {}; upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
       if (upd) self.setState(upd);
     }, 1000);
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.setState({ now: Date.now() }); self.refresh(true); checkUpdate(); } });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.appBadge = null; self.setState({ now: Date.now() }); self.refresh(true); checkUpdate(); } });   /* 通知で付いたアイコンの数字を、開いたら「あなたの番」の数に直す */
     /* 開いている間は15秒ごとに「変わったか」だけ確かめ、変わった時だけ読み直す（Museや相手の書き込みがすぐ出る）。
        予定（カレンダー）などシートの外のものもあるので、5分ごとには必ず読み直す */
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.pollVer(); }, 15000);

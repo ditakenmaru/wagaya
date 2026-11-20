@@ -587,6 +587,7 @@ ok(b3.api === 15 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(m && crypto.verify('sha256', Buffer.from(m[1] + '.' + m[2]), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(m[3], 'base64url')), '通知: VAPIDのJWTの署名が正しい');
   ok(claims.aud === 'https://web.push.apple.com' && claims.exp > Date.now() / 1000 && /^https:/.test(claims.sub) && e.pushReqs[0].headers.TTL && !e.pushReqs[0].payload, '通知: aud・exp・sub、中身は送らない');
   let pk = post(e, { action: 'pushPeek', session: M });
+  ok(pk.badge === 1, '通知: アイコンの数字＝開いてから来た通知の数');
   ok(pk.items.length === 1 && pk.items[0].title === 'ととから申し送り' && pk.items[0].body === '牛乳を買ってきて' && pk.items[0].go === 'notes', '通知: 端末が中身を聞くと返す');
   ok(post(e, { action: 'pushPeek', session: M }).items.length === 0 && post(e, { action: 'pushPeek', session: T }).items.length === 0, '通知: 2回目は空・自分（とと）には無い');
   // 2台で受けても、どちらにも中身が出る（端末ごとに印）

@@ -1698,6 +1698,8 @@ function pushInfo(me) {
     var v = vapid(), n = pushSubs().filter(function (x) { return x.w === me.who; }).length;
     var q = pushGet(pushQKey(me.who), []), held = q.filter(function (x) { return x.st === 'held'; });
     if (held.length) { held.forEach(function (x) { x.st = 'seen'; }); pushSet(pushQKey(me.who), q); }   /* 開いたので、止めていた分は送らない */
+    var ok = 'push:open:' + sha(me.who).slice(0, 12), last = Number(pushGet(ok, 0)) || 0;
+    if (Date.now() - last > 60000) pushSet(ok, Date.now());   /* 最後に開いた時（アイコンの数字＝これより後に来た通知の数） */
     return { key: v.pub, subs: n };
   } catch (e) { console.error(e); return { key: '', subs: 0 }; }
 }
@@ -1723,7 +1725,9 @@ function pushPeek(me, ep) {
   var items = q.filter(function (x) { return x.st === 'sent' && now - (x.s || x.t) < 30 * 60000 && (x.pk || []).indexOf(h) < 0; });
   items.forEach(function (x) { x.pk = (x.pk || []).concat([h]).slice(-6); });
   pushSet(key, q);
-  return { ok: true, items: items.reverse().slice(0, 3).map(function (x) { return { id: x.id, title: x.title, body: x.body, go: x.go }; }), more: Math.max(0, items.length - 3) };
+  var opened = Number(pushGet('push:open:' + sha(me.who).slice(0, 12), 0)) || 0;
+  var badge = q.filter(function (x) { return x.st !== 'held' && x.t > opened && now - x.t < 2 * 864e5; }).length;
+  return { ok: true, badge: badge, items: items.reverse().slice(0, 3).map(function (x) { return { id: x.id, title: x.title, body: x.body, go: x.go }; }), more: Math.max(0, items.length - 3) };
 }
 
 function quietNow(d) {
