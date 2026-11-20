@@ -1,9 +1,10 @@
 """新しいセクション（ふたりで決めること・期限・今週末・献立→買い物・夜の並び・旅行中）を見本モードで確かめる。
-python3 -m http.server 8765 を立ててから実行する。"""
+python3 -m http.server 8765 を立ててから実行する（ポートは環境変数 WAGAYA_PORT で変えられる）。"""
 import asyncio
+import os
 from playwright.async_api import async_playwright
 
-URL = 'http://localhost:8765/index.html?demo=1'
+URL = 'http://localhost:%s/index.html?demo=1' % os.environ.get('WAGAYA_PORT', '8765')
 
 
 async def main():

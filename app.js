@@ -185,7 +185,26 @@
   function render() {
     var vals = comp.renderVals();
     patchSlots(root, compiled.map(function (k) { return renderNode(k, vals); }));
+    checkTitle();
   }
+  function renderNow() { if (!comp) return; queued = false; render(); }
+
+  /* 画面の切り替えを滑らかに（View Transitions。無い端末・動きを減らす設定ではそのまま切り替える） */
+  function swapView(fn) {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!document.startViewTransition || reduce) { fn(); return; }
+    try { document.startViewTransition(function () { fn(); renderNow(); }); } catch (e) { fn(); }
+  }
+
+  /* 大きな見出しが上のバーの下に隠れたら、バーにタブの名前を出す（iPhoneの大きな見出しの縮み） */
+  var titleOn = false, titleTick = false;
+  function checkTitle() {
+    titleTick = false;
+    var h = document.querySelector('.tabhead h2'), bar = document.querySelector('.appbar');
+    var v = !!(h && bar && h.getBoundingClientRect().bottom < bar.getBoundingClientRect().bottom + 4);
+    if (v !== titleOn) { titleOn = v; document.documentElement.classList.toggle('collapsed', v); }
+  }
+  window.addEventListener('scroll', function () { if (!titleTick) { titleTick = true; (window.requestAnimationFrame || setTimeout)(checkTitle); } }, { passive: true });
 
   /* ---------------- 通信（GAS） ---------------- */
   function api(action, payload, keepalive) {
@@ -264,7 +283,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}, homeStyle: LS.get('homeStyle') || 'a'
+      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -1020,7 +1039,7 @@
   /* 相談のカードのコメント1件ぶんの表示。長い文は3行で切り「続きを読む」で全文。返信（1段だけ）を下に並べる */
   App.prototype.commentVM = function (r, children, qid) {
     var self = this, st = this.state;
-    var base = 'margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; ';
+    var base = 'margin: 0; font-size: var(--t-sub); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; ';
     var one = function (c, isChild) {
       var o = !!(st.cmOpen || {})[c.id], lg = String(c.text).length > 60 || String(c.text).split('\n').length > 3;
       return { who: c.who, time: whenLabel(c.at), text: c.text, badgeStyle: self.badge(c.who), long: lg,
@@ -1028,7 +1047,7 @@
         expandLabel: o ? '閉じる ⌃' : 'さらに見る ⌄',
         toggle: function () { var m = Object.assign({}, self.state.cmOpen || {}); if (m[c.id]) delete m[c.id]; else m[c.id] = true; self.setState({ cmOpen: m }); },
         mine: c.who === self.meWho(), del: function () { self.tapDeleteReply(c.id); }, delLabel: self.delLabelOf(c.id),
-        style: 'display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: ' + (isChild ? '#FFFFFF; margin-left: 20px; border-left: 3px solid #C9D0C6' : '#F4F6F2') };
+        style: 'display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: var(--r-btn); background: ' + (isChild ? 'var(--card); margin-left: 16px; border-left: 3px solid var(--sep)' : 'var(--card2)') };
     };
     var vm = one(r, false);
     vm.replies = children.map(function (c) { return one(c, true); });
@@ -1313,14 +1332,21 @@
   };
   App.prototype.badge = function (who) {
     var c = this.person(who);
-    return 'flex-shrink: 0; font-size: 12px; font-weight: 700; color: ' + c.ink + '; background: ' + c.tint + '; border-radius: 999px; padding: 4px 10px; white-space: nowrap';
+    return 'flex-shrink: 0; font-size: var(--t-cap); font-weight: 600; color: ' + c.ink + '; color: color-mix(in srgb, ' + c.ink + ' var(--pc-ink), #FFFFFF); background: ' + c.tint + '; background: color-mix(in srgb, ' + c.ink + ' var(--pc-tint), transparent); border-radius: var(--r-chip); padding: 4px 12px; white-space: nowrap';
   };
 
+  /* 人の色：ダークモードでは白に寄せて読みやすくする（--pc-ink・--pc-tint） */
+  function inkText(ink) { return 'color-mix(in srgb, ' + ink + ' var(--pc-ink), #FFFFFF)'; }
+  function inkTint(ink) { return 'color-mix(in srgb, ' + ink + ' var(--pc-tint), transparent)'; }
+  /* 選ぶ札：選んだ物は塗り、ほかは薄い灰色。人の札だけ人の色（ダークでは明るく寄せる） */
+  function pill(on, ink) {
+    return 'flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: var(--r-chip); border: none; font-size: var(--t-sub); font-weight: 600; cursor: pointer; transition: background-color .2s, color .2s; background: ' + (on ? (ink || 'var(--accent-bg)') : 'var(--fill)') + '; color: ' + (on ? '#FFFFFF' : (ink ? 'color-mix(in srgb, ' + ink + ' var(--pc-ink), #FFFFFF)' : 'var(--label)'));
+  }
   var SHEET_POS = 'position: fixed; left: 0; right: 0; bottom: 0; width: 100%; max-width: 480px; margin: 0 auto; box-sizing: border-box; ';
-  var SHEET_PAD = 'padding: 12px 20px calc(28px + env(safe-area-inset-bottom)); ';
-  function backdrop(open) { return 'position: fixed; inset: 0; width: 100%; border: none; padding: 0; background: rgba(23,32,27,0.4); z-index: 30; transition: opacity .25s; ' + (open ? 'opacity: 1' : 'opacity: 0; pointer-events: none'); }
+  var SHEET_PAD = 'padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); ';
+  function backdrop(open) { return 'position: fixed; inset: 0; width: 100%; border: none; padding: 0; background: var(--scrim); z-index: 30; transition: opacity .3s; ' + (open ? 'opacity: 1' : 'opacity: 0; pointer-events: none'); }
   function sheetStyle(open, extra, ease) {
-    return SHEET_POS + extra + 'background: #FFFFFF; border-radius: 24px 24px 0 0; ' + SHEET_PAD + 'display: flex; flex-direction: column; gap: 10px; z-index: 40; transition: transform ' + (ease || '.45s cubic-bezier(.2,1.2,.3,1)') + '; ' + (open ? 'transform: translateY(0)' : 'transform: translateY(105%); visibility: hidden');
+    return SHEET_POS + extra + 'background: var(--card); border-radius: var(--r-sheet) var(--r-sheet) 0 0; box-shadow: 0 -1px 0 var(--sep), 0 120px 0 0 var(--card); ' + SHEET_PAD + 'display: flex; flex-direction: column; gap: 12px; z-index: 40; transition: transform ' + (ease || '.5s var(--ease-sheet)') + '; ' + (open ? 'transform: translateY(0)' : 'transform: translateY(105%); visibility: hidden');
   }
 
   App.prototype.renderVals = function () {
@@ -1343,7 +1369,6 @@
       return {
         label: t[1], pressed: on ? 'true' : 'false',
         pick: function () { LS.set('who', t[0]); USAGE.add('tab:' + (t[0] === 'all' ? 'all' : (names.indexOf(t[0]) === 0 ? 'p1' : 'p2'))); self.setState({ who: t[0] }); },
-        style: 'min-height: 44px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #FFFFFF; color: #17201B; box-shadow: 0 1px 2px rgba(23,32,27,0.12)' : 'background: transparent; color: rgba(255,255,255,0.86)')
       };
     });
 
@@ -1367,18 +1392,20 @@
         hero = { kicker: 'まだ終わっていない担当（' + left0.length + '件）', time: hm(lastL.t), countdown: '時間は過ぎています', task: lastL.task, who: lastL.who, color: this.person(lastL.who).ink }; }
       else hero = { kicker: '今日の担当', time: 'おしまい', countdown: 'おつかれさま', task: '今日の担当は全部終わりました', who: whoSel === 'all' ? 'みんな' : whoSel, color: this.person('家族').ink };
     }
-    hero.bandStyle = 'margin: 4px 16px 0; padding: 22px 20px 16px; border-radius: 24px; background: ' + hero.color + '; color: #FFFFFF; display: flex; flex-direction: column; gap: 6px; transition: background .5s; animation: heroIn .6s cubic-bezier(.2,.8,.2,1) both';
+    /* つぎの担当：白いカード。人の色は左の細い印と名札だけ */
+    hero.bandStyle = 'margin: 4px 16px 0; padding: 16px 16px 12px 20px; border-radius: var(--r-card); background: var(--card); color: var(--label); box-shadow: inset 4px 0 0 ' + hero.color + '; display: flex; flex-direction: column; gap: 8px; animation: heroIn .6s var(--ease) both';
+    hero.whoStyle = this.badge(hero.who);
     hero.marks = [tS, 720, 1080, tE].filter(function (m, k, a) { return (k === 0 || k === a.length - 1 || (m > tS + 90 && m < tE - 90)); }).map(function (m, k, a) {
       var p0 = pct(m);
       return { label: hm(m), style: 'position: absolute; top: 0; ' + (k === 0 ? 'left: 0' : (k === a.length - 1 ? 'right: 0' : 'left: ' + p0 + '%; transform: translateX(-50%)')) };
     });
-    hero.passedStyle = 'position: absolute; left: 0; top: 13px; height: 2px; width: ' + pct(nowMin) + '%; background: #FFFFFF; border-radius: 2px';
-    hero.nowStyle = 'position: absolute; top: 4px; left: calc(' + pct(nowMin) + '% - 1px); width: 2px; height: 20px; background: #FFFFFF; border-radius: 2px; animation: breathe 2.4s ease-in-out infinite';
+    hero.passedStyle = 'position: absolute; left: 0; top: 13px; height: 2px; width: ' + pct(nowMin) + '%; background: var(--accent); border-radius: 2px';
+    hero.nowStyle = 'position: absolute; top: 4px; left: calc(' + pct(nowMin) + '% - 1px); width: 2px; height: 20px; background: var(--accent); border-radius: 2px; animation: breathe 2.4s ease-in-out infinite';
     var timeline = mine.filter(function (d) { return d.t != null; }).map(function (d) {
       var isNext = next && d.id === next.id;
       var size = isNext ? 14 : 8;
-      var fill = done[d.id] || d.t < nowMin ? '#FFFFFF' : 'transparent';
-      return { dotStyle: 'position: absolute; top: ' + (14 - size / 2) + 'px; left: calc(' + pct(d.t) + '% - ' + size / 2 + 'px); width: ' + size + 'px; height: ' + size + 'px; border-radius: 50%; box-sizing: border-box; border: 2px solid #FFFFFF; background: ' + fill };
+      var fill = done[d.id] || d.t < nowMin ? 'var(--accent)' : 'var(--card)';
+      return { dotStyle: 'position: absolute; top: ' + (14 - size / 2) + 'px; left: calc(' + pct(d.t) + '% - ' + size / 2 + 'px); width: ' + size + 'px; height: ' + size + 'px; border-radius: 50%; box-sizing: border-box; border: 2px solid ' + (fill === 'var(--card)' ? 'var(--label3)' : 'var(--accent)') + '; background: ' + fill };
     });
 
     var flow = mine.map(function (d) {
@@ -1393,21 +1420,21 @@
           self.setDone(d, v);
           self.showToast(v ? '「' + d.task + '」を終わりにしました' : '「' + d.task + '」を未完了に戻しました', function () { self.setDone(d, !v); self.setState({ toast: null }); });
         },
-        wrapStyle: 'border-radius: 18px; transition: background .3s, opacity .3s; background: ' + (isDone ? '#F4F6F2' : '#FFFFFF') + '; ' + (past && !isDone ? 'opacity: 0.72' : ''),
+        wrapStyle: 'border-radius: var(--r-card); transition: background .3s, opacity .3s; background: ' + (isDone ? 'var(--card2)' : 'var(--card)') + '; ' + (past && !isDone ? 'opacity: 0.72' : ''),
         notes: tnotes.map(function (n) {
           return {
             text: n.text,
             meta: n.from + 'から' + n.to + 'へ　' + whenLabel(n.createdAt).replace('今日 ', '') + (n.read ? '　確認済み' : '　未確認'),
-            bubbleStyle: 'margin: 0 12px 10px 70px; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.6; transition: background .3s; animation: rise .35s cubic-bezier(.2,.8,.2,1) both; background: ' + (n.read ? '#F0F2EE' : '#FFF6E8')
+            bubbleStyle: 'margin: 0 12px 12px 72px; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: var(--t-foot); line-height: 1.6; transition: background .3s; animation: rise .35s cubic-bezier(.2,.8,.2,1) both; background: ' + (n.read ? 'var(--card2)' : 'var(--attn-soft)')
           };
         }),
         hasNotes: tnotes.some(function (n) { return !n.read; }),
         noteCount: tnotes.filter(function (n) { return !n.read; }).length,
         noteLabel: '「' + d.task + '」の申し送りを書く',
         openNote: function () { self.openNoteFor(d.task, d.id, 'handover', d.who); },
-        noteBtnStyle: 'position: relative; width: 50px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: 14px; border: none; background: transparent; color: #6B746E; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; cursor: pointer',
-        markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + c.ink + '; background: ' + (isDone ? c.ink : 'transparent'),
-        taskStyle: 'display: inline; font-size: 16px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: #55605A' : '0% 1.5px'),
+        noteBtnStyle: 'position: relative; width: 50px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: var(--r-btn); border: none; background: transparent; color: var(--label2); display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; cursor: pointer',
+        markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + inkText(c.ink) + '; background: ' + (isDone ? inkText(c.ink) : 'transparent'),
+        taskStyle: 'display: inline; font-size: var(--t-body); font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: var(--label2)' : '0% 1.5px'),
         badgeStyle: self.badge(d.who)
       };
     });
@@ -1501,10 +1528,10 @@
     var moreOf = function (kind, id) {
       var n = rCount[kind + ':' + id] || 0;
       return { label: n ? '詳細を見る（コメント' + n + '件）' : '詳細を見る', go: function () { self.openDetail(kind, id); },
-        style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: none; background: ' + (n ? '#E3E7F6' : '#EEF1EC') + '; color: ' + (n ? '#22337A' : '#17201B') + '; font-size: 13px; font-weight: 700; cursor: pointer' };
+        style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: var(--r-btn); border: none; background: ' + (n ? 'var(--accent-soft)' : 'var(--fill)') + '; color: ' + (n ? 'var(--accent)' : 'var(--label)') + '; font-size: var(--t-foot); font-weight: 700; cursor: pointer' };
     };
     var topics = (D.topics || []).map(function (t) {
-      return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, more: moreOf('topics', t.id), titleStyle: clamp(2, 'font-size: 16px; font-weight: 900; line-height: 1.4'), noteStyle: clamp(5, 'font-size: 13px; color: #39433D; line-height: 1.6'), url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
+      return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, more: moreOf('topics', t.id), titleStyle: clamp(2, 'font-size: var(--t-body); font-weight: 700; line-height: 1.4'), noteStyle: clamp(5, 'font-size: var(--t-foot); color: var(--label); line-height: 1.6'), url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
@@ -1528,7 +1555,7 @@
         if (x.a2 === o) picks.push({ label: names[1], style: self.badge(names[1]) });
         var on = mine === o;
         return { label: o, picks: picks, pressed: on ? 'true' : 'false', pick: function () { self.answer(x, o); },
-          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: 12px; text-align: left; cursor: pointer; font-size: 15px; font-weight: 700; color: #17201B; border: 2px solid ' + (on ? '#17201B' : '#DDE3DA') + '; background: ' + (on ? '#F4F6F2' : '#FFFFFF') };
+          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: var(--r-btn); text-align: left; cursor: pointer; font-size: var(--t-sub); font-weight: 600; border: none; color: ' + (on ? 'var(--accent)' : 'var(--label)') + '; background: ' + (on ? 'var(--accent-soft)' : 'var(--fill)') + '; box-shadow: ' + (on ? 'inset 0 0 0 2px var(--accent)' : 'none') };
       });
       var other = me1 ? x.a2 : x.a1, otherName = me1 ? names[1] : names[0];
       var waiting = !mine && !other ? 'まだ2人とも答えていません。あなたから答えられます'
@@ -1536,7 +1563,7 @@
         : !other ? otherName + 'の答え待ち'
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
-      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: 16px; font-weight: 900; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: 13px; color: #39433D; line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: var(--t-body); font-weight: 700; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
         comments: (function () {
           var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
           var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); });
@@ -1562,7 +1589,7 @@
         },
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
-        cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
+        cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); background: ' + (decided ? 'var(--card2)' : 'var(--card)') };
     });
 
     /* 決まった相談はアーカイブへ。一覧には決まっていないものだけ出し、下の「決まったこと」で広げる（新しく決まった順＝シートの下から） */
@@ -1573,7 +1600,7 @@
       label: decArchiveOpen ? '決まったことを閉じる ⌃' : '決まったこと（アーカイブ ' + decDone.length + '件）⌄',
       toggle: function () { self.setState({ decArchiveOpen: !self.state.decArchiveOpen }); USAGE.add('act:decide_archive'); },
       items: decDone.map(function (x) {
-        return { q: x.q, decidedText: x.decided, qStyle: clamp(2, 'font-size: 14px; font-weight: 800; line-height: 1.45; color: #17201B'),
+        return { q: x.q, decidedText: x.decided, qStyle: clamp(2, 'font-size: var(--t-sub); font-weight: 700; line-height: 1.45; color: var(--label)'),
           more: moreOf('decide', x.id),
           reopen: function () { self.decideNow(x, true); } };
       })
@@ -1583,12 +1610,12 @@
     /* 期限があるもの */
     var deadlines = (D.deadlines || []).filter(function (x) { return whoSel === 'all' || !x.who || x.who === whoSel || x.who === '家族'; }).sort(function (a, b) { return (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0); }).map(function (x) {
       var n = x.due ? Math.round((parseYmd(x.due) - parseYmd(todayStr0)) / 864e5) : 99;
-      var col = x.done ? '#55605A' : (n < 0 ? '#A3355D' : n <= 2 ? '#8A5A12' : '#39433D');
+      var col = x.done ? 'var(--label2)' : (n < 0 ? 'var(--danger)' : n <= 2 ? 'var(--attn-ink)' : 'var(--label)');
       return { isNew: !!marks['deadline:' + x.id], what: x.what, due: x.due ? dueLabel(x.due) : '期限なし', who: x.who, done: !!x.done, url: x.url, hasUrl: !!x.url, note: x.note,
         toggle: function () { self.toggleDeadline(x); }, edit: function () { self.openDeadline(x); }, badgeStyle: self.badge(x.who),
-        dueStyle: 'font-size: 13px; font-weight: 900; color: ' + col,
-        boxStyle: 'width: 26px; height: 26px; flex-shrink: 0; border-radius: 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 2px solid #2C6B52; background: ' + (x.done ? '#2C6B52' : 'transparent'),
-        textStyle: 'font-size: 15px; font-weight: 700; ' + (x.done ? 'text-decoration: line-through; color: #55605A' : '') };
+        dueStyle: 'font-size: var(--t-foot); font-weight: 700; color: ' + col,
+        boxStyle: 'width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 2px solid ' + (x.done ? 'var(--done)' : 'var(--label3)') + '; background: ' + (x.done ? 'var(--done)' : 'transparent'),
+        textStyle: 'font-size: var(--t-sub); font-weight: 700; ' + (x.done ? 'text-decoration: line-through; color: var(--label2)' : '') };
     });
 
     /* 今週末 */
@@ -1601,15 +1628,15 @@
       if (x.like2) likes.push({ label: names[1], style: self.badge(names[1]) });
       var planned = x.state === '決めた' && x.go;
       var gd = planned ? parseYmd(x.go) : null;
-      return { isNew: !!marks['weekend:' + x.id], more: moreOf('weekend', x.id), noteStyle: clamp(5, 'font-size: 13px; color: #39433D; line-height: 1.6'), name: x.name, kind: x.kind, meta: [x.date ? dueLabel(x.date).replace(/（.*）/, '') + 'のイベント' : '', x.place].filter(String).join('・'), note: x.note, url: x.url, hasUrl: !!x.url,
+      return { isNew: !!marks['weekend:' + x.id], more: moreOf('weekend', x.id), noteStyle: clamp(5, 'font-size: var(--t-foot); color: var(--label); line-height: 1.6'), name: x.name, kind: x.kind, meta: [x.date ? dueLabel(x.date).replace(/（.*）/, '') + 'のイベント' : '', x.place].filter(String).join('・'), note: x.note, url: x.url, hasUrl: !!x.url,
         likes: likes, likeLabel: mineLike ? '行きたい（取り消す）' : '行きたい', like: function () { self.likeOuting(x); },
         planned: !!planned, notPlanned: !planned && x.like1 && x.like2, needBoth: !planned && !(x.like1 && x.like2),
         needText: (x.like1 || x.like2) ? (x.like1 ? names[1] : names[0]) + 'も「行きたい」を押すと、行く日を決められます' : '2人とも「行きたい」を押すと、行く日を決められます',
         goLabel: planned ? (gd.getMonth() + 1) + '/' + gd.getDate() + '（' + DOWS[gd.getDay()] + '）に行く' : '',
         days: wkDays.map(function (w) { return { label: w.label + 'に行く', pick: function () { self.planOuting(x, w.ymd); } }; }),
         unplan: function () { self.planOuting(x, ''); }, edit: function () { self.openOuting(x); }, muse: function () { self.openMuse('outing', x); },
-        likeStyle: 'min-height: 44px; padding: 0 14px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #A3355D; ' + (mineLike ? 'background: #A3355D; color: #FFFFFF' : 'background: transparent; color: #A3355D'),
-        cardStyle: 'flex-shrink: 0; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (planned ? '#E0EEE7' : '#FFFFFF') };
+        likeStyle: 'min-height: 44px; padding: 0 16px; border-radius: var(--r-btn); font-size: var(--t-sub); font-weight: 700; cursor: pointer; border: none; ' + (mineLike ? 'background: var(--accent-bg); color: #FFFFFF' : 'background: var(--accent-soft); color: var(--accent)'),
+        cardStyle: 'flex-shrink: 0; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); background: ' + (planned ? 'var(--done-soft)' : 'var(--card)') };
     });
 
     /* 編集シート（担当・買い物・話題） */
@@ -1624,7 +1651,7 @@
       FIELDS.forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
       ed.cancel = function () { self.setState({ editor: null }); };
       if (E.kind === 'duty') {
-        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
+        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: pill(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
         ed.showKind = !E.routine || E.isNew;
         ed.isRoutine = !!E.routine && !E.isNew;
         ed.skipLabel = E.skipToday ? '今日もやる（休みをやめる）' : '今日だけ休む（くり返しはそのまま）';
@@ -1633,18 +1660,18 @@
         ed.date = E.date || '';
         ed.set.date = function (ev) { self.editSet('date', ev.target.value); };
         var tdy = (self.state.data || {}).today || ymd(new Date()), tmr = (function () { var x = parseYmd(tdy); x.setDate(x.getDate() + 1); return ymd(x); })();
-        ed.dateChips = [[tdy, '今日'], [tmr, '明日']].map(function (x) { var on = E.date === x[0]; return { label: x[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('date', x[0]); } }; });
-        ed.kindChips = [['once', '日にちを決める'], ['repeat', 'くり返し']].map(function (k) { var on = (k[0] === 'once') === !!E.once; return { label: k[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('once', k[0] === 'once'); } }; });
+        ed.dateChips = [[tdy, '今日'], [tmr, '明日']].map(function (x) { var on = E.date === x[0]; return { label: x[1], pressed: on ? 'true' : 'false', style: pill(on), pick: function () { self.editSet('date', x[0]); } }; });
+        ed.kindChips = [['once', '日にちを決める'], ['repeat', 'くり返し']].map(function (k) { var on = (k[0] === 'once') === !!E.once; return { label: k[1], pressed: on ? 'true' : 'false', style: pill(on), pick: function () { self.editSet('once', k[0] === 'once'); } }; });
         ed.repeat = !E.once;
         var days = ruleDays(E.rule || '毎日');
-        ed.dayChips = DOWS.map(function (dn, i) { return { label: dn, pressed: days[i] ? 'true' : 'false', style: chip(days[i]) + '; flex: 1; min-width: 0; padding: 0', pick: function () {
+        ed.dayChips = DOWS.map(function (dn, i) { return { label: dn, pressed: days[i] ? 'true' : 'false', style: pill(days[i]) + '; flex: 1; min-width: 0; padding: 0', pick: function () {
           var cur = self.state.editor.rule || '毎日', on2 = ruleDays(cur);
           if (cur === '毎日') { on2 = DOWS.map(function (_, k) { return k === i; }); }   /* 「毎日」から曜日を押したら、その曜日だけにする */
           else { on2[i] = !on2[i]; if (!on2.some(Boolean)) return; }
           self.editSet('rule', daysRule(on2));
         } }; });
         ed.ruleText = ruleWords(E.rule || '毎日');
-        ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('rule', r[0]); } }; });
+        ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: pill(on), pick: function () { self.editSet('rule', r[0]); } }; });
         ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
       } else if (E.kind === 'shop') {
         ed.catChips = shopCats.map(function (c) { var on = E.cat === c; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('cat', c); } }; });
@@ -1652,7 +1679,7 @@
       } else if (E.kind === 'decide') {
         ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
       } else if (E.kind === 'deadline') {
-        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: chip(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
+        ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: pill(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
         ed.save = function () { self.saveDeadline(); }; ed.del = function () { self.deleteDeadline(); };
       } else if (E.kind === 'menu') {
         ed.heading += '　' + E.dateLabel;
@@ -1661,7 +1688,7 @@
         ed.toggleHotcook = function () { self.editSet('hotcook', !self.state.editor.hotcook); };
         ed.save = function () { self.saveMenu(); }; ed.del = function () { self.deleteMenu(); };
       } else if (E.kind === 'outing') {
-        ed.okindChips = ['公園', '行くところ', 'イベント'].map(function (k) { var on = E.okind === k; return { label: k, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('okind', k); } }; });
+        ed.okindChips = ['公園', '行くところ', 'イベント'].map(function (k) { var on = E.okind === k; return { label: k, pressed: on ? 'true' : 'false', style: pill(on), pick: function () { self.editSet('okind', k); } }; });
         ed.save = function () { self.saveOuting(); }; ed.del = function () { self.deleteOuting(); };
       } else {
         ed.save = function () { self.saveTopic(); }; ed.del = function () { self.deleteTopic(); };
@@ -1674,7 +1701,7 @@
       /* 消すは2回押し：1回目で「本当に消す」に変わる */
       var del0 = ed.del;
       ed.delLabel = E.confirmDel ? '本当に消す（もう一度押す）' : '消す';
-      ed.delStyle = 'min-height: 48px; border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer; ' + (E.confirmDel ? 'border: none; background: #A3355D; color: #FFFFFF' : 'border: 1.5px solid #C9A1B0; background: transparent; color: #7A2645');
+      ed.delStyle = 'min-height: 48px; border-radius: var(--r-btn); font-size: var(--t-sub); font-weight: 700; cursor: pointer; ' + (E.confirmDel ? 'border: none; background: var(--danger); color: #FFFFFF' : 'border: none; background: var(--danger-soft); color: var(--danger)');
       ed.del = function () {
         if (self.state.editor && self.state.editor.confirmDel) { del0(); return; }
         self.editSet('confirmDel', true);
@@ -1690,7 +1717,7 @@
       lazy[id] = {
         on: m, off: !m,
         wrapStyle: 'transition: opacity .8s cubic-bezier(.2,.8,.2,1), transform .8s cubic-bezier(.2,.8,.2,1); ' + (s ? 'opacity: 1; transform: none' : 'opacity: 0; transform: translateY(32px)'),
-        skelStyle: 'margin: 24px 20px 8px; height: ' + skelH[id] + 'px; border-radius: 20px; background: linear-gradient(90deg, #DDE3DA 0%, #E9EDE6 50%, #DDE3DA 100%); background-size: 780px 100%; animation: shimmer 1.4s linear infinite'
+        skelStyle: 'margin: 24px 16px 8px; height: ' + skelH[id] + 'px; border-radius: var(--r-card); background: linear-gradient(90deg, var(--fill) 0%, var(--card2) 50%, var(--fill) 100%); background-size: 780px 100%; animation: shimmer 1.4s linear infinite'
       };
     });
 
@@ -1705,8 +1732,8 @@
       return {
         label: g.label, count: cnt, pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ goal: g.id, newsOpen: {}, goalAnim: (self.state.goalAnim || 0) + 1 }); },
-        style: 'flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
-        countStyle: 'min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; ' + (on ? 'background: rgba(255,255,255,.2)' : 'background: #EEF1EC; color: #55605A')
+        style: 'flex-shrink: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: var(--r-chip); border: none; font-size: var(--t-sub); font-weight: 700; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: var(--accent-bg); color: #FFFFFF' : 'background: var(--card); color: var(--label)'),
+        countStyle: 'min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: var(--r-btn); display: inline-flex; align-items: center; justify-content: center; font-size: var(--t-cap); ' + (on ? 'background: rgba(255,255,255,.2)' : 'background: var(--fill); color: var(--label2)')
       };
     });
     var news = newsRaw.filter(function (n) { return goalId === 'all' || n.goals.indexOf(goalId) >= 0; }).map(function (n) {
@@ -1716,8 +1743,8 @@
         title: n.title, why: n.why, body: n.body, url: n.url, src: n.src, meta: n.from + (n.date ? '（' + n.date + '）' : ''),
         open: false, expanded: 'false', more: (rCount['news:' + n.id] ? '詳細を見る（コメント' + rCount['news:' + n.id] + '件）' : '詳細を見る'),
         toggle: function () { self.openDetail('news', n.id); },
-        srcStyle: 'padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 900; ' + (web ? 'background: #E3E7F6; color: #3046A6' : 'background: #F3E8D6; color: #8A5A12'),
-        cardStyle: 'flex-shrink: 0; width: 290px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: 20px; background: #FFFFFF; animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
+        srcStyle: 'padding: 4px 8px; border-radius: var(--r-btn); font-size: var(--t-cap); font-weight: 700; ' + (web ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--attn-soft); color: var(--attn-ink)'),
+        cardStyle: 'flex-shrink: 0; width: 290px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: var(--r-card); background: var(--card); animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
       };
     });
 
@@ -1757,21 +1784,21 @@
         var shown = mine.slice(0, 3);
         var more = mine.length - shown.length + extra.length;
         var col = c + 1;
-        var ink = dw === 0 ? '#C0392B' : (dw === 6 ? '#2F5DA8' : '#17201B');
+        var ink = dw === 0 ? 'var(--danger)' : (dw === 6 ? 'var(--accent)' : 'var(--label)');
         cells.push({
           dow: i === 0 ? '今日' : DOWS[dw], date: dt.getDate() === 1 || c === 0 ? (dt.getMonth() + 1) + '/' + dt.getDate() : String(dt.getDate()),
           aria: (i === 0 ? '今日 ' : '') + (dt.getMonth() + 1) + '月' + dt.getDate() + '日' + DOWS[dw] + '曜、予定' + (mine.length + spanList.filter(function (g) { return g.d0 <= i && g.d1 >= i; }).length) + '件',
           go: (function (day) { return function () { self.planJump(day); }; })(dstr),
-          style: 'grid-column: ' + col + '; grid-row: 1 / -1; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer; border-radius: 12px; min-width: 0; ' + (i === 0 ? 'background: #17201B; ' : (dw === 0 || dw === 6 ? 'background: #F3F5EF; ' : 'background: #FFFFFF; ')) + (off ? 'opacity: .35; ' : '') + 'display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start',
-          headStyle: 'display: flex; flex-direction: column; align-items: center; padding: 6px 0 4px; line-height: 1.15; color: ' + (i === 0 ? '#FFFFFF' : ink),
+          style: 'grid-column: ' + col + '; grid-row: 1 / -1; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer; border-radius: var(--r-btn); min-width: 0; ' + (i === 0 ? 'background: var(--accent-bg); ' : (dw === 0 || dw === 6 ? 'background: var(--card2); ' : 'background: var(--card); ')) + (off ? 'opacity: .35; ' : '') + 'display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start',
+          headStyle: 'display: flex; flex-direction: column; align-items: center; padding: 8px 0 4px; line-height: 1.15; color: ' + (i === 0 ? '#FFFFFF' : ink),
         });
         chips.push({
-          style: 'grid-column: ' + col + '; grid-row: ' + (lanes + 2) + '; pointer-events: none; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 6px',
+          style: 'grid-column: ' + col + '; grid-row: ' + (lanes + 2) + '; pointer-events: none; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 8px',
           list: shown.map(function (p) {
             var pc = self.person(p.who);
-            return { text: p.what, style: 'display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 10px; line-height: 13px; max-height: 28px; box-sizing: border-box; font-weight: 700; overflow: hidden; word-break: break-all; border-radius: 4px; padding: 1px 3px; border-bottom: 1px solid transparent; color: ' + pc.ink + '; background: ' + (i === 0 ? '#FFFFFF' : pc.tint) };
+            return { text: p.what, style: 'display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--t-cap); line-height: 15px; max-height: 32px; box-sizing: border-box; font-weight: 700; overflow: hidden; word-break: break-all; border-radius: 4px; padding: 1px 4px; border-bottom: 1px solid transparent; color: ' + (i === 0 ? pc.ink : inkText(pc.ink)) + '; background: ' + (i === 0 ? '#fff' : inkTint(pc.ink)) };
           }),
-          more: more > 0 ? '+' + more : '', moreStyle: 'font-size: 10px; font-weight: 700; padding-left: 3px; color: ' + (i === 0 ? '#FFFFFF' : '#55605A')
+          more: more > 0 ? '+' + more : '', moreStyle: 'font-size: var(--t-cap); font-weight: 700; padding-left: 4px; color: ' + (i === 0 ? '#FFFFFF' : 'var(--label2)')
         });
       }
       spanList.forEach(function (g) {
@@ -1783,10 +1810,10 @@
         var rl = openL ? '0' : '8px', rr = openR ? '0' : '8px';
         bands.push({
           text: (openL ? '… ' : '') + g.what,
-          style: 'grid-column: ' + (c0 + 1) + ' / ' + (c1 + 2) + '; grid-row: ' + (g.lane + 2) + '; pointer-events: none; margin: 1px ' + (openR && c1 < 6 ? '-3px' : (openR ? '0' : '2px')) + ' 1px ' + (openL ? '0' : '2px') + '; height: 15px; box-sizing: border-box; border-radius: ' + rl + ' ' + rr + ' ' + rr + ' ' + rl + '; padding: 0 6px; font-size: 10px; line-height: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; color: #FFFFFF; background: ' + pc.ink
+          style: 'grid-column: ' + (c0 + 1) + ' / ' + (c1 + 2) + '; grid-row: ' + (g.lane + 2) + '; pointer-events: none; margin: 1px ' + (openR && c1 < 6 ? '-3px' : (openR ? '0' : '2px')) + ' 1px ' + (openL ? '0' : '2px') + '; height: 16px; box-sizing: border-box; border-radius: ' + rl + ' ' + rr + ' ' + rr + ' ' + rl + '; padding: 0 8px; font-size: var(--t-cap); line-height: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; color: #FFFFFF; background: ' + pc.ink
         });
       });
-      return { cells: cells, chips: chips, bands: bands, gridStyle: 'display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 40px' + (lanes ? ' repeat(' + lanes + ', 17px)' : '') + ' minmax(34px, auto); column-gap: 3px' };
+      return { cells: cells, chips: chips, bands: bands, gridStyle: 'display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 40px' + (lanes ? ' repeat(' + lanes + ', 18px)' : '') + ' minmax(34px, auto); column-gap: 4px' };
     });
     /* 下の一覧：予定のある日だけ。続く予定は、見えている最初の日に「11/26〜12/3」で1回だけ */
     var planList = [];
@@ -1804,7 +1831,7 @@
       planList.push({
         id: 'plan-d-' + pds,
         label: (pi === 0 ? '今日 ' : (pi === 1 ? '明日 ' : '')) + (pdt.getMonth() + 1) + '/' + pdt.getDate() + '（' + DOWS[dwi] + '）',
-        labelStyle: 'margin: 0; padding: 12px 0 2px; font-size: 13px; font-weight: 900; color: ' + (pi === 0 ? '#2C6B52' : (dwi === 0 ? '#C0392B' : (dwi === 6 ? '#2F5DA8' : '#55605A'))),
+        labelStyle: 'margin: 0; padding: 12px 0 2px; font-size: var(--t-foot); font-weight: 700; color: ' + (pi === 0 ? 'var(--done)' : (dwi === 0 ? 'var(--danger)' : (dwi === 6 ? 'var(--accent)' : 'var(--label2)'))),
         rows: rows.map(function (r) { return { time: r.time, what: r.what, sub: r.sub, hasSub: !!r.sub, who: r.who, badgeStyle: self.badge(r.who) }; })
       });
     }
@@ -1847,7 +1874,7 @@
         USAGE.add('act:order_' + (plain ? 'auto' : 'plain'));
         self.setState({ orderTick: Date.now() });
       },
-      style: 'display: flex; align-items: center; gap: 10px; margin: 0 16px 12px; padding: 8px 8px 8px 14px; border-radius: 14px; font-size: 13px; font-weight: 700; line-height: 1.5; ' + (travel ? 'background: #E3E7F6; color: #22337A' : 'background: #E6ECE4; color: #2C3A31')
+      style: 'display: flex; align-items: center; gap: 12px; margin: 0 16px 12px; padding: 8px 8px 8px 16px; border-radius: var(--r-btn); font-size: var(--t-foot); font-weight: 700; line-height: 1.5; ' + (travel ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--card2); color: var(--label)')
     };
     var secCfg = ui.sections && ui.sections.length ? ui.sections : SEC_DEF.map(function (x, k) { return { key: x[0], title: x[1], all: true, person: x[0] !== 'photos', order: k }; });
     var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
@@ -1876,7 +1903,6 @@
     secAll.forEach(function (c) { var t = tabOf(c); if (tabHas[t] && tabNames.indexOf(t) < 0) tabNames.push(t); });
     var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
-    var tileMode = st.homeStyle === 'b' && isHome;   /* ホームの見た目 B：タイル（写真と「つぎの担当」はタイルの中に出す） */
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
@@ -1885,7 +1911,7 @@
       var ra = seq0 ? (seq0.indexOf(a[0]) < 0 ? 50 : seq0.indexOf(a[0])) : 0, rb = seq0 ? (seq0.indexOf(b[0]) < 0 ? 50 : seq0.indexOf(b[0])) : 0;
       return (ra - rb) || (a[1] - b[1]);
     }).forEach(function (a, i) { rankOf[a[0]] = i; });
-    var visOf = {}; shown.forEach(function (x) { visOf[x.c.key] = x.vis && (isHome || tabOf(x.c) === curTab) && !(tileMode && (x.c.key === 'photos' || x.c.key === 'hero')); });
+    var visOf = {}; shown.forEach(function (x) { visOf[x.c.key] = x.vis && (isHome || tabOf(x.c) === curTab); });
     SEC_DEF.map(function (d) { return d[0]; }).concat(shown.map(function (x) { return x.c.key; }).filter(function (k) { return !SEC_DEF.some(function (d) { return d[0] === k; }); })).forEach(function (k) {
       if (!(k in visOf)) return;
       var o2 = { key: k, vis: !!visOf[k], wrapStyle: visOf[k] ? 'order: ' + rankOf[k] : 'display: none' };
@@ -1903,12 +1929,10 @@
       return {
         label: TAB_LABEL[t] || t, ic_today: TAB_ID[t] === 'today' || !TAB_ID[t], ic_two: TAB_ID[t] === 'two', ic_food: TAB_ID[t] === 'food', ic_plan: TAB_ID[t] === 'plan', ic_news: TAB_ID[t] === 'news', current: on ? 'page' : 'false', badge: badge, hasBadge: badge > 0,
         aria: (TAB_LABEL[t] || t) + (badge ? '（あなたの番 ' + badge + '件）' : ''),
-        style: 'position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: none; border-radius: 16px; color: #FFFFFF; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .25s; background: ' + (on ? 'rgba(255,255,255,0.18)' : 'transparent'),
         go: function () {
           if (on) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
           USAGE.add('nav:' + (TAB_ID[t] || 'n' + tabNames.indexOf(t)));
-          self.setState({ nav: t });
-          window.scrollTo(0, 0);
+          swapView(function () { self.setState({ nav: t }); window.scrollTo(0, 0); });
         }
       };
     });
@@ -1924,15 +1948,13 @@
       var greet = (tod === 'morning' ? 'おはよう、' : tod === 'day' ? 'こんにちは、' : 'おつかれさま、') + meWho;
       var tot = mine.length, dn = mine.filter(function (d) { return done[d.id]; }).length;
       var turn = myUnread.length + myTurnDecide;
-      var onPhoto = curTab === tabNames[0] && sections.some(function (x) { return x.key === 'photos' && x.vis; });
-      var chip = function (on) { if (onPhoto) return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 86px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(23,32,27,0.06); color: ' + (on ? '#FFFFFF' : '#17201B') + '; background: ' + (on ? '#17201B' : '#FFFFFF');
-        return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 92px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; color: ' + (on ? '#17201B' : '#FFFFFF') + '; background: ' + (on ? '#FFFFFF' : 'rgba(255,255,255,0.14)'); };
+      var chip = function (on) { return on ? '1' : '0'; };   /* 札の見た目は CSS（.statchip）。on は数字を色で強める */
       var chips = [];
-      chips.push({ k: '今日の担当', v: tot ? dn + ' / ' + tot : 'なし', sub: tot && dn === tot ? 'ぜんぶ終わり' : '', style: chip(false),
+      chips.push({ k: '今日の担当', v: tot ? dn + ' / ' + tot : 'なし', sub: tot && dn === tot ? 'ぜんぶ終わり' : '', on: chip(false),
         go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-sec="flow"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 80); } });
-      chips.push({ k: 'あなたの番', v: turn ? turn + '件' : 'なし', sub: '', style: chip(turn > 0),
+      chips.push({ k: 'あなたの番', v: turn ? turn + '件' : 'なし', sub: '', on: chip(turn > 0),
         go: function () { self.setState({ nav: twoTab }); window.scrollTo(0, 0); } });
-      var newChip = function (n) { return { k: '新着', v: n + '件', sub: '', style: chip(true),
+      var newChip = function (n) { return { k: '新着', v: n + '件', sub: '', on: chip(true),
         go: function () { if (curTab !== tabNames[0]) self.setState({ nav: tabNames[0] }); setTimeout(function () { var el = document.querySelector('[data-new]'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } }; };
       var goFlow = chips[0].go;
       var goTrip = function () {
@@ -1942,11 +1964,11 @@
       };
       if (ui.tripFrom && ui.tripTo) {
         var dTo = Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5);
-        if (tripNow) chips.push({ k: '旅行', v: (Math.round((parseYmd(todayStr) - parseYmd(ui.tripFrom)) / 864e5) + 1) + '日目', sub: '', style: chip(false), go: goTrip });
-        else if (dTo > 0 && dTo <= 120) chips.push({ k: '旅行まで', v: 'あと' + dTo + '日', sub: '', style: chip(false), go: goTrip });
+        if (tripNow) chips.push({ k: '旅行', v: (Math.round((parseYmd(todayStr) - parseYmd(ui.tripFrom)) / 864e5) + 1) + '日目', sub: '', on: chip(false), go: goTrip });
+        else if (dTo > 0 && dTo <= 120) chips.push({ k: '旅行まで', v: 'あと' + dTo + '日', sub: '', on: chip(false), go: goTrip });
       }
       var streak = D.streak || 0;
-      if (streak >= 2) chips.splice(1, 0, { k: '全部できた日', v: '連続' + streak + '日', sub: '', style: chip(false), go: goFlow });
+      if (streak >= 2) chips.splice(1, 0, { k: '全部できた日', v: '連続' + streak + '日', sub: '', on: chip(false), go: goFlow });
       var W = D.weather, wx = null;
       if (W && W.max != null && W.min != null) {
         var c = W.code, kind = c === 0 ? ['晴れ', 'sun'] : c <= 2 ? ['晴れときどき曇り', 'part'] : c === 3 ? ['曇り', 'cloud'] : c <= 48 ? ['霧', 'cloud'] : c <= 67 || (c >= 80 && c <= 82) ? ['雨', 'rain'] : c <= 77 || c === 85 || c === 86 ? ['雪', 'snow'] : ['雷雨', 'rain'];
@@ -1964,12 +1986,11 @@
       var isHomeTab = curTab === tabNames[0];
       var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && x.vis; });
       return {
-        big: isHomeTab && !photoHero && st.homeStyle !== 'b', small: !isHomeTab, inPhoto: photoHero, newChip: newChip,
+        big: isHomeTab && !photoHero, small: !isHomeTab, inPhoto: photoHero, newChip: newChip,
         tot: tot, dn: dn, turn: turn, streak: D.streak || 0, twoTab: twoTab, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
-        smallTitle: TAB_LABEL[curTab] || curTab, smallSum: sum.filter(String).join('　・　'),
-        smallStyle: 'margin: 10px 12px 0; padding: 16px 18px 14px; border-radius: 24px; display: flex; flex-direction: column; gap: 10px; color: #FFFFFF; background: ' + bg,
+        smallTitle: TAB_LABEL[curTab] || curTab, barTitle: isHomeTab ? '' : (TAB_LABEL[curTab] || curTab), smallSum: sum.filter(String).join('　・　'),
         wx: wx, hasWx: !!wx,
-        style: 'position: relative; overflow: hidden; margin: 10px 12px 0; padding: 18px 18px 16px; border-radius: 28px; color: #FFFFFF; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); background: ' + bg,
+        style: 'position: relative; overflow: hidden; margin: 8px 16px 0; padding: 16px; border-radius: var(--r-card); color: #FFFFFF; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 14px 34px rgba(0,0,0,0.22); background: ' + bg,
         greet: greet,
         date: (dd.getMonth() + 1) + '月' + dd.getDate() + '日（' + DOWS[dd.getDay()] + '）',
         chips: chips
@@ -1980,10 +2001,10 @@
     var R = {
       sections: sections, title: title, planNote: '', travelOn: travel, orderBanner: orderBanner,
       hdr: hdr, seeAll: function () { self.seeAll(); },
-      navTabs: navTabs, navStyle: 'position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25',
+      navTabs: navTabs, navStyle: 'grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr))',
       notesHere: notesHere,
       notesCardText: myUnread.length || newReplies.length ? [myUnread.length ? 'あなた宛てが ' + myUnread.length + '件' : '', newReplies.length ? '新しい返信が ' + newReplies.length + '件' : ''].filter(String).join('、') + 'あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
-      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: 20px; text-align: left; cursor: pointer; font-family: inherit; color: #17201B; border: ' + (myUnread.length || newReplies.length ? '2px solid #F2A33A' : '1.5px solid #DDE3DA') + '; background: #FFFFFF',
+      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: var(--r-card); text-align: left; cursor: pointer; color: var(--label); border: ' + (myUnread.length || newReplies.length ? '2px solid var(--attn)' : '2px solid transparent') + '; background: var(--card)',
       travelText: travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）' : '',
       decisions: decisions, decisionsEmpty: decisions.length === 0, decArchive: decArchive, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
@@ -2038,7 +2059,7 @@
           return { who: r.who, text: r.text, time: r.at ? (d0.getMonth() + 1) + '/' + d0.getDate() + ' ' + d0.getHours() + ':' + pad(d0.getMinutes()) : '', badgeStyle: self.badge(r.who), mine: mine, del: function () { self.tapDeleteReply(r.id); }, delLabel: self.delLabelOf(r.id),
             isChild: child, reLabel: child ? '↳ ' + parentWho + 'への返信' : '', canReply: !child,
             reply: function () { self.setState({ replyTo: { id: r.id, who: r.who } }); setTimeout(function () { var el = document.getElementById('reply-input'); if (el) { el.focus(); el.scrollIntoView({ block: 'center' }); } }, 60); },
-            style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 16px; ' + (child ? 'margin-left: 28px; border-left: 3px solid #C9D0C6; ' : '') + (mine ? 'background: #EEF1EC' : 'background: #FFF6E8') };
+            style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: var(--r-card); ' + (child ? 'margin-left: 24px; border-left: 3px solid var(--sep); ' : '') + (mine ? 'background: var(--fill)' : 'background: var(--attn-soft)') };
         });
         return { open: true, kindLabel: KL[x.kind] || '', title: it ? title : '（見つかりません。消されたかもしれません）', body: body || '', hasBody: !!body, meta: meta, hasMeta: !!meta, url: url || '', hasUrl: !!url,
           lines: lines.map(function (l) { return { text: l }; }), hasLines: lines.length > 0, replies: rs, empty: rs.length === 0, canReply: !!it,
@@ -2058,9 +2079,9 @@
       appVersion: 'v' + APP_VERSION,
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
-      goalCardStyle: 'margin: 0 20px; padding: 12px 16px; border-radius: 16px; background: #E0EEE7; display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
+      goalCardStyle: 'margin: 0 16px; padding: 12px 16px; border-radius: var(--r-card); background: var(--done-soft); display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
       planWeeks: planWeeks, planList: planList, plansEmpty: planTotal === 0, planTotal: planTotal, planRange: planN >= 14 ? '2週間' : planN + '日',
-      planCardStyle: 'margin-top: 4px; background: #FFFFFF; border-radius: 20px; padding: 2px 16px 10px; display: flex; flex-direction: column',
+      planCardStyle: 'margin-top: 4px; background: var(--card); border-radius: var(--r-card); padding: 2px 16px 12px; display: flex; flex-direction: column',
       whoTabs: whoTabs, hero: hero, timeline: timeline, flow: flow, flowEmpty: flow.length === 0,
       prog: (function () {
         var tot = mine.length;
@@ -2074,8 +2095,8 @@
           var c = list.filter(function (d) { return done[d.id]; }).length;
           var col = self.person(nm).ink;
           return {
-            name: nm, count: c + ' / ' + list.length, nameStyle: 'color: ' + col,
-            barStyle: 'height: 100%; border-radius: 999px; background: ' + col + '; transition: width .6s cubic-bezier(.2,.8,.2,1); width: ' + (list.length ? c / list.length * 100 : 0) + '%'
+            name: nm, count: c + ' / ' + list.length, nameStyle: 'color: ' + inkText(col),
+            barStyle: 'height: 100%; border-radius: var(--r-chip); background: ' + col + '; transition: width .6s cubic-bezier(.2,.8,.2,1); width: ' + (list.length ? c / list.length * 100 : 0) + '%'
           };
         });
         return {
@@ -2086,7 +2107,7 @@
         };
       })(),
       diary: diaryAll.slice().reverse().map(function (k, i) {
-        return { isNew: !!marks['diary:' + k.id], time: k.time + (k.by ? '　' + k.by : ''), text: k.text, more: moreOf('diary', k.id), textStyle: clamp(5, 'margin: 0; font-size: 14px; line-height: 1.7'), cardStyle: 'flex-shrink: 0; width: 240px; box-sizing: border-box; background: #FFF6E8; border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; animation: rise .45s cubic-bezier(.2,.8,.2,1) ' + (i * 60) + 'ms both' };
+        return { isNew: !!marks['diary:' + k.id], time: k.time + (k.by ? '　' + k.by : ''), text: k.text, more: moreOf('diary', k.id), textStyle: clamp(5, 'margin: 0; font-size: var(--t-sub); line-height: 1.7'), cardStyle: 'flex-shrink: 0; width: 240px; box-sizing: border-box; background: var(--attn-soft); border-radius: var(--r-card); padding: 16px 16px; display: flex; flex-direction: column; gap: 8px; animation: rise .45s cubic-bezier(.2,.8,.2,1) ' + (i * 60) + 'ms both' };
       }),
       diaryCount: diaryAll.length ? diaryAll.length + '件' : '',
       diaryEmpty: diaryAll.length === 0,
@@ -2105,7 +2126,7 @@
       listening: st.listening ? 'true' : 'false',
       listeningOn: !!st.listening,
       micHint: st.listening ? '聞いています。話し終わったら、もう一度押してください。' : 'マイクを押して話すと、文字になります。',
-      micStyle: 'position: relative; width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s, color .2s; ' + (st.listening ? 'background: #A3355D; color: #FFFFFF' : 'background: #F5E2E9; color: #A3355D'),
+      micStyle: 'position: relative; width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s, color .2s; ' + (st.listening ? 'background: var(--danger); color: #FFFFFF' : 'background: var(--danger-soft); color: var(--danger)'),
       noteBackdropStyle: backdrop(st.noteOpen),
       noteSheetStyle: sheetStyle(st.noteOpen, ''),
       toastHasUndo: !!(st.toast && st.toast.undo),
@@ -2117,7 +2138,7 @@
       hideLabel: st.hideBought ? '買ったものも表示' : '買ったものを隠す',
       toggleHide: function () { self.setState({ hideBought: !self.state.hideBought }); },
       noPhotos: o.length === 0,
-      figStyle: 'margin: 10px 12px 0; position: relative; height: ' + (o.length ? 310 : 280) + 'px; border-radius: 28px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
+      figStyle: 'margin: 8px 16px 0; position: relative; height: ' + (o.length ? 310 : 280) + 'px; border-radius: var(--r-card); box-shadow: 0 14px 34px rgba(0,0,0,0.22); overflow: hidden; background: var(--fill); animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
       photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : 'ここに子どもたちの写真が流れます。',
       slides: o.map(function (m, i) {
         var on = i === cur;
@@ -2127,7 +2148,7 @@
       }),
       bars: o.map(function (m, i) {
         var w = i < cur ? 'width: 100%' : (i === cur ? 'width: 0; animation: ' + (st.slideIdx % 2 ? 'barA' : 'barB') + ' ' + m.dur + 's linear forwards; animation-play-state: ' + (st.paused ? 'paused' : 'running') : 'width: 0');
-        return { fillStyle: 'display: block; height: 100%; background: #FFFFFF; border-radius: 3px; ' + w };
+        return { fillStyle: 'display: block; height: 100%; background: #fff; border-radius: 3px; ' + w };
       }),
       capDay: now.getDate(),
       capMonth: (now.getMonth() + 1) + '月',
@@ -2158,7 +2179,7 @@
           from: n.from, to: n.to, when: whenLabel(n.createdAt), text: n.text, task: n.task,
           unread: !n.read && mineTo, read: n.read, hasTask: !!n.task,
           fromBadge: self.badge(n.from), toBadge: self.badge(n.to),
-          cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; transition: background .3s; background: ' + (n.read ? '#F4F6F2' : '#FFF6E8') + '; border: 1.5px solid ' + (n.read ? 'transparent' : '#F2C77E'),
+          cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); transition: background .3s; background: ' + (n.read ? 'var(--card2)' : 'var(--attn-soft)') + '; border: 1.5px solid ' + (n.read ? 'transparent' : 'var(--attn)'),
           ack: function () {
             self.ackNote(n, true);
             self.showToast('申し送りを確認しました', function () { self.ackNote(n, false); self.setState({ toast: null }); });
@@ -2168,7 +2189,7 @@
             var mine = r.who === meWho;
             return { who: r.who, text: r.text, time: whenLabel(r.at), badgeStyle: self.badge(r.who), mine: mine,
               del: function () { self.tapDeleteReply(r.id); }, delLabel: self.delLabelOf(r.id),
-              style: 'display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #FFFFFF; ' + (mine ? 'margin-left: 24px' : 'margin-right: 24px') };
+              style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 12px; border-radius: var(--r-btn); background: var(--card); ' + (mine ? 'margin-left: 24px' : 'margin-right: 24px') };
           }),
           replyOpen: st.noteReplyId === n.id, replyExpanded: st.noteReplyId === n.id ? 'true' : 'false',
           replyLabel: st.noteReplyId === n.id ? 'やめる' : '返信',
@@ -2181,7 +2202,7 @@
         var c = self.person(p);
         return {
           label: p + 'へ', pressed: on ? 'true' : 'false', pick: function () { self.setState({ draftTo: p }); },
-          style: 'min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; border: 1.5px solid ' + c.ink + '; ' + (on ? 'background: ' + c.ink + '; color: #FFFFFF' : 'background: transparent; color: ' + c.ink)
+          style: pill(on, c.ink)
         };
       }),
       decCommentDraft: st.decCommentDraft || '',
@@ -2200,7 +2221,7 @@
       notesSheetStyle: sheetStyle(st.notesOpen, 'max-height: 85vh; overflow-y: auto; '),
       loading: st.loading && !st.needLogin, ready: !st.loading && !st.needLogin,
       skeletonRows: [56, 56, 56, 140, 56, 56].map(function (h, k) {
-        return { style: 'height: ' + h + 'px; border-radius: ' + (h > 60 ? 20 : 12) + 'px; background: linear-gradient(90deg, #DDE3DA 0%, #E9EDE6 40%, #DDE3DA 80%); background-size: 780px 100%; animation: shimmer 1.1s linear infinite; animation-delay: ' + (k * 60) + 'ms' };
+        return { style: 'height: ' + h + 'px; border-radius: ' + (h > 60 ? 20 : 12) + 'px; background: linear-gradient(90deg, var(--fill) 0%, var(--card2) 40%, var(--fill) 80%); background-size: 780px 100%; animation: shimmer 1.1s linear infinite; animation-delay: ' + (k * 60) + 'ms' };
       }),
       menuCardStyle: 'margin: 4px 20px 0; background: #FFFFFF; border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 10px; animation: ' + (st.dayAnim % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both',
       confetti: (function () {
@@ -2214,7 +2235,7 @@
       })(),
       toastMsg: st.toast ? st.toast.msg : '',
       undo: function () { if (self.state.toast && self.state.toast.undo) self.state.toast.undo(); },
-      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: #17201B; color: #FFFFFF; box-shadow: 0 8px 24px rgba(23,32,27,0.25); z-index: 30; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
+      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: var(--r-card); background: var(--toast); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 30; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
       openSheet: function () { self.setState({ sheet: true }); },
       closeSheet: function () { self.setState({ sheet: false }); },
       backdropStyle: backdrop(st.sheet),
@@ -2227,7 +2248,7 @@
       login: function () { self.login(); },
       syncLabel: syncLabel,
       accountAria: 'アカウントと更新（' + syncLabel + '）',
-      syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: #F5E2E9; color: #7A2645' : 'background: #DDE3DA; color: #39433D'),
+      syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: var(--r-chip); border: none; font-size: var(--t-cap); font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: var(--danger-soft); color: var(--danger)' : 'background: var(--fill); color: var(--label)'),
       openAccount: function () { self.setState({ accountOpen: true }); },
       closeAccount: function () { self.setState({ accountOpen: false }); },
       meLabel: D.me ? D.me.who + 'でログイン中' : 'ログイン中',
@@ -2235,14 +2256,6 @@
       lastSyncLabel: st.lastSync ? '最後に更新：' + whenLabel(st.lastSync) : 'まだ更新していません',
       refreshNow: function () { self.setState({ accountOpen: false }); self.refresh(); },
       logout: function () { self.logout(); },
-      theme: st.homeStyle === 'c' ? 'apple' : '',
-      homeStyleA: st.homeStyle !== 'b' && st.homeStyle !== 'c' ? 'true' : 'false', homeStyleB: st.homeStyle === 'b' ? 'true' : 'false', homeStyleC: st.homeStyle === 'c' ? 'true' : 'false',
-      pickHomeC: function () { LS.set('homeStyle', 'c'); USAGE.add('act:home_c'); self.setState({ homeStyle: 'c', accountOpen: false }); window.scrollTo(0, 0); },
-      homeCStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle === 'c' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
-      pickHomeA: function () { LS.set('homeStyle', 'a'); USAGE.add('act:home_a'); self.setState({ homeStyle: 'a', accountOpen: false }); window.scrollTo(0, 0); },
-      pickHomeB: function () { LS.set('homeStyle', 'b'); USAGE.add('act:home_b'); self.setState({ homeStyle: 'b', accountOpen: false }); window.scrollTo(0, 0); },
-      homeAStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle !== 'b' && st.homeStyle !== 'c' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
-      homeBStyle: 'flex: 1; min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #17201B; ' + (st.homeStyle === 'b' ? 'background: #17201B; color: #FFFFFF' : 'background: transparent; color: #17201B'),
       accountBackdropStyle: backdrop(st.accountOpen),
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
@@ -2258,35 +2271,9 @@
       + (visSec.diary ? cnt(R.diary) : 0) + (visSec.weekend ? cnt(R.outings) : 0) + (visSec.shop ? (R.shop || []).reduce(function (a, g) { return a + cnt(g.items); }, 0) : 0);
     R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== '新着'; });
     if (nNew) R.hdr.chips.unshift(R.hdr.newChip(nNew));   /* 新着はいちばん左（見切れないように） */
-    R.tiles = this.tilesFor(tileMode, R, hero, nNew);   /* 新着の数を出してから */
-    /* 札は3つまで。タイルを作った後に減らす（4つ目は画面の右で切れるため）。減らす順：全部できた日 → 旅行の日数 */
+    /* 札は3つまで（4つ目は画面の右で切れるため）。減らす順：全部できた日 → 旅行の日数 */
     ['全部できた日', '旅行まで', '旅行'].forEach(function (k) { if (R.hdr.chips.length > 3) R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== k; }); });
     return R;
-  };
-
-  /* ホームの見た目 B（タイル）：写真・天気・今日の担当・つぎの担当・あなたの番・新着をタイルで並べる */
-  App.prototype.tilesFor = function (on, R, hero, nNew) {
-    if (!on) return { show: false };
-    var self = this, st = this.state, H = R.hdr, o = this.order();
-    var cur = o.length ? o[st.slideIdx % o.length] : null;
-    var circ = 263.9, pct = H.tot ? H.dn / H.tot : 0;
-    var goHome = function (sel) { setTimeout(function () { var el = document.querySelector(sel); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60); };
-    var last = nNew ? { k: '新着', v: nNew + '件', sub: '押すと最初の新着へ', dark: true, go: function () { goHome('[data-new]'); } }
-      : (R.hdr.chips.filter(function (c) { return c.k === '旅行まで' || c.k === '旅行'; })[0] ? (function (c) { return { k: c.k, v: c.v, sub: '予定を見る', dark: true, go: c.go }; })(R.hdr.chips.filter(function (c) { return c.k === '旅行まで' || c.k === '旅行'; })[0])
-      : { k: '全部できた日', v: H.streak ? '連続' + H.streak + '日' : 'これから', sub: '', dark: true, go: function () { goHome('[data-sec="flow"]'); } });
-    return {
-      show: true, date: H.date, greet: H.greet,
-      hasPhoto: !!cur, photoSrc: cur ? (cur.type === 'video' ? (cur.poster || '') : cur.src) : '', age: R.capAge, photoHint: R.photoHint,
-      nextPhoto: function () { if (o.length) self.setState({ slideIdx: st.slideIdx + 1, slideAt: Date.now() }); },
-      hasWx: H.hasWx, wx: H.wx || {},
-      ringOffset: (circ * (1 - pct)).toFixed(1), prog: H.tot ? H.dn + '/' + H.tot : 'なし', streakText: H.streak >= 2 ? '連続' + H.streak + '日' : (H.tot && H.dn === H.tot ? 'ぜんぶ終わり' : ''),
-      goFlow: function () { goHome('[data-sec="flow"]'); },
-      next: { kicker: hero.kicker + (hero.countdown ? '・' + hero.countdown : ''), time: hero.time, task: hero.task, who: hero.who === '—' ? '' : '担当：' + hero.who,
-        style: 'grid-column: span 2; border: none; cursor: pointer; text-align: left; font-family: inherit; padding: 14px 16px; border-radius: 22px; color: #FFFFFF; display: flex; flex-direction: column; justify-content: space-between; min-height: 112px; box-sizing: border-box; background: ' + hero.color },
-      turn: H.turn ? H.turn + '件' : 'なし', turnSub: H.turn ? '押すと「相談・連絡」へ' : '答える番はありません',
-      goTurn: function () { self.setState({ nav: H.twoTab }); window.scrollTo(0, 0); },
-      last: last
-    };
   };
 
   /* カレンダーの日を押したら、下の一覧のその日へ。ホームでしぼっていたら広げる */
@@ -2304,7 +2291,7 @@
     Object.keys(HOME_LIMIT).forEach(function (k) {
       var sec = HOME_LIMIT[k][0], n = HOME_LIMIT[k][1], list = R[k] || [];
       var count = k === 'shop' ? list.reduce(function (a, g) { return a + g.items.length; }, 0) : list.length;
-      var m = { show: false, label: '', go: function () {}, style: 'align-self: stretch; margin: 10px ' + ({ topics: 1, diary: 1, outings: 1, news: 1 }[k] ? '20px' : '0') + ' 0; min-height: 48px; border-radius: 14px; border: 1.5px solid #C9D1C5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer' };
+      var m = { show: false, label: '', go: function () {}, style: 'align-self: stretch; margin: 12px ' + ({ topics: 1, diary: 1, outings: 1, news: 1 }[k] ? '20px' : '0') + ' 0; min-height: 48px; border-radius: var(--r-btn); border: none; background: var(--card); color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer' };
       more[k] = m;
       var here = secTab[sec] === curTab;
       var open = !!(st.expanded && st.expanded[sec]);
