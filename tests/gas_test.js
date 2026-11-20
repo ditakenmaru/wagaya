@@ -354,7 +354,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 16 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 17 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -571,7 +571,7 @@ ok(b3.api === 16 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 16 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 17 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';
@@ -712,6 +712,40 @@ ok(b2.code === 'no_session', 'logout');
   ok(tr('1/5～1/8', '2026-11-20') === '["2027-01-05","2027-01-08"]', '旅行: 年のない先の期間は来年');
   ok(tr('2027-08-10 - 2027-08-15', '2026-11-20') === '["2027-08-10","2027-08-15"]', '旅行: ハイフン区切り');
   ok(tr('2027-08-10〜8/15', '2026-11-20') === '["2027-08-10","2027-08-15"]', '旅行: 後ろだけ年なし');
+}
+// 大項目と小項目（担当の「親」）
+{
+  const e = makeEnv({ '設定': [['項目', '値', '説明'], ['クライアントID', 'cid', ''], ['人1のメール', 'p1@example.com', ''], ['人2のメール', 'p2@example.com', '']] });
+  e.setup();
+  const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
+  const T = log('p1@example.com', 'b1'), M = log('p2@example.com', 'b2');
+  ok(e.ss.getSheetByName('担当').data[0].includes('親'), '小項目: setup で「親」の列');
+  post(e, { action: 'saveDuty', session: T, duty: { id: 'dw', task: '犬の散歩', time: '7:15', who: 'とと', rule: '毎日' } });
+  post(e, { action: 'saveDuty', session: T, duty: { id: 'dp', task: '朝の準備', time: '7:30', who: 'とと', rule: '毎日' } });
+  ['水筒の準備', '吸入用のお水の用意', '子どもの朝ごはんの準備'].forEach((t, i) => post(e, { action: 'saveDuty', session: T, duty: { id: 'dc' + i, task: t, parent: 'dp', who: 'まま', time: '9:00', rule: '月' } }));
+  let b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  const kids = b.duties.filter(x => x.parent === 'dp');
+  ok(kids.length === 3 && kids.every(x => x.who === 'とと' && x.t === 450) && b.dutiesAll.filter(x => x.parent === 'dp').length === 3, '小項目: 時刻・担当は大項目についていく（毎日出る）');
+  ok(e.ss.getSheetByName('担当').data.filter(r => r.includes('dp') && r.includes('')).length >= 3, '小項目: シートの「親」に大項目のid');
+  ok(post(e, { action: 'saveDuty', session: T, duty: { id: 'dx', task: '孫', parent: 'dc0' } }).code === 'bad_parent', '小項目: 小項目の下には付けられない（1段だけ）');
+  post(e, { action: 'swapDuty', session: M, date: b.today, id: 'dp', take: true });
+  b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  ok(b.duties.filter(x => x.parent === 'dp').every(x => x.who === 'まま' && x.orig === 'とと'), '小項目: 大項目の今日の担当替えについていく');
+  post(e, { action: 'setDoneMany', session: T, date: b.today, ids: ['dp', 'dc0', 'dc1', 'dc2'], done: true });
+  b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  ok(['dp', 'dc0', 'dc1', 'dc2'].every(id => b.done[id]) && !b.done.dw, '小項目: まとめて済にする');
+  // 古い画面（parent を送らない）で小項目を直しても、小項目のまま
+  post(e, { action: 'saveDuty', session: T, duty: { id: 'dc0', task: '水筒の準備2', time: '7:30', who: 'とと', rule: '毎日' } });
+  b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  ok(b.dutiesAll.filter(x => x.id === 'dc0')[0].parent === 'dp', '小項目: parent を送らない古い画面の保存でも親は消えない');
+  post(e, { action: 'saveDuty', session: T, duty: { id: 'dc0', task: '水筒の準備', parent: 'dp' } });
+  post(e, { action: 'deleteDuty', session: T, id: 'dp' });
+  b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  ok(b.dutiesAll.length === 1 && b.dutiesAll[0].id === 'dw', '小項目: 大項目を消すと小項目も消える');
+  e.ss.getSheetByName('担当').data.push(['dz', '8:00', 'ひとり', 'とと', '毎日', '', 'nai']);
+  e.onEdit(); e._tables = {};
+  b = post(e, { action: 'boot', session: T, fresh: true }).data;
+  ok(b.duties.some(x => x.id === 'dz' && !x.parent), '小項目: 親が見つからない行は普通の担当');
 }
 console.log(fails ? fails + ' NG' : 'ALL OK');
 process.exit(fails ? 1 : 0);

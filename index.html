@@ -475,7 +475,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
                 </sc-if>
               </span>
               <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px">
-                <span style="max-width: 100%"><span style="{{r.taskStyle}}">{{r.task}}</span></span><sc-if value="{{r.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: var(--r-chip); background: var(--attn); color: var(--label); font-size: var(--t-cap); font-weight: 700; animation: pop .4s ease-out">新着</span></sc-if>
+                <span style="max-width: 100%"><span style="{{r.taskStyle}}">{{r.task}}</span><sc-if value="{{r.hasSubs}}" hint-placeholder-val="{{ false }}"><span style="margin-left: 8px; font-size: var(--t-cap); font-weight: 600; color: var(--label2); white-space: nowrap">{{r.subCount}}</span></sc-if></span><sc-if value="{{r.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: var(--r-chip); background: var(--attn); color: var(--label); font-size: var(--t-cap); font-weight: 700; animation: pop .4s ease-out">新着</span></sc-if>
                 <sc-if value="{{r.once}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-cap); font-weight: 700; color: var(--attn-ink); background: var(--attn-soft); border-radius: var(--r-chip); padding: 2px 8px">今日</span></sc-if>
               </span>
             </button>
@@ -488,6 +488,16 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
               </sc-if>
             </button>
           </div>
+          <sc-if value="{{r.hasSubs}}" hint-placeholder-val="{{ false }}">
+            <div role="group" aria-label="小項目" style="display: flex; flex-direction: column; margin: -4px 12px 8px 64px; border-left: 2px solid var(--line); padding-left: 8px">
+              <sc-for list="{{r.subs}}" as="sb" hint-placeholder-count="0">
+                <button type="button" aria-pressed="{{sb.done}}" onClick="{{sb.toggle}}" style="display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 4px; border: none; background: transparent; color: inherit; cursor: pointer; text-align: left; font-family: inherit">
+                  <span style="{{sb.markStyle}}"><sc-if value="{{sb.isDone}}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if></span>
+                  <span style="{{sb.taskStyle}}">{{sb.task}}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
           <sc-for list="{{r.notes}}" as="nt" hint-placeholder-count="0">
             <p style="{{nt.bubbleStyle}}">{{nt.text}}<span style="display: block; font-size: var(--t-cap); font-weight: 700; color: var(--attn-ink); margin-top: 2px">{{nt.meta}}</span></p>
           </sc-for>
@@ -1159,6 +1169,12 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <sc-if value="{{ed.duty}}" hint-placeholder-val="{{ false }}">
       <label for="ed-task" class="lbl">やること</label>
       <input id="ed-task" type="text" value="{{ed.task}}" onInput="{{ed.set.task}}" placeholder="例：ゴミ出し" class="field" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px">
+      <sc-if value="{{ed.showParent}}" hint-placeholder-val="{{ false }}">
+        <span class="lbl">大項目（この中の小項目にする）</span>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap"><sc-for list="{{ed.parentChips}}" as="c" hint-placeholder-count="2"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
+      </sc-if>
+      <sc-if value="{{ed.isChild}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); color: var(--label2); line-height: 1.6">{{ed.childHint}}</span></sc-if>
+      <sc-if value="{{ed.notChild}}" hint-placeholder-val="{{ true }}">
       <sc-if value="{{ed.showTime}}" hint-placeholder-val="{{ true }}"><label for="ed-time" class="lbl">時刻</label>
       <div style="display: flex; gap: 8px; align-items: center">
         <input id="ed-time" type="time" lang="ja" value="{{ed.time}}" onInput="{{ed.set.time}}" class="field" style="box-sizing: border-box; flex: 1; min-width: 0; min-height: 48px; padding: 0 12px">
@@ -1189,6 +1205,11 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       </sc-if>
       <sc-if value="{{ed.isRoutine}}" hint-placeholder-val="{{ false }}">
         <button type="button" onClick="{{ed.toggleSkip}}" style="min-height: 48px; border-radius: var(--r-btn); border: 1.5px solid var(--attn); background: var(--attn-soft); color: var(--attn-ink); font-size: var(--t-sub); font-weight: 700; cursor: pointer">{{ed.skipLabel}}</button>
+      </sc-if>
+      </sc-if>
+      <sc-if value="{{ed.hasKids}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); color: var(--label2); line-height: 1.6">{{ed.kidsText}}</span></sc-if>
+      <sc-if value="{{ed.canAddChild}}" hint-placeholder-val="{{ false }}">
+        <button type="button" onClick="{{ed.addChild}}" class="btn btn-gray" style="min-height: 48px">＋ 小項目を足す</button>
       </sc-if>
       <sc-if value="{{ed.canAskOther}}" hint-placeholder-val="{{ false }}">
         <button type="button" onClick="{{ed.askOther}}" class="btn btn-tint" style="min-height: 48px">別の日を代わってほしいと頼む</button>
@@ -1346,7 +1367,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=56"></script>
-<script src="app.js?v=56"></script>
+<script src="config.js?v=57"></script>
+<script src="app.js?v=57"></script>
 </body>
 </html>

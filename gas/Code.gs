@@ -18,14 +18,14 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 16;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 17;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
   '設定': ['項目', '値', '説明'],
   '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明', '下のタブ', '朝の順番'],
-  '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付'],
+  '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付', '親'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人', '依頼', '依頼の日', '依頼の答え'],
   '日記': ['id', '日付', '時刻', '誰', 'text', '対象'],
@@ -121,6 +121,7 @@ function doPost(e) {
       case 'addPhoto': return out(addPhoto(req, me));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
+      case 'setDoneMany': return out(withLock(function () { return setDoneMany(req.date, req.ids, !!req.done, me); }));
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
       case 'addNote': return out(withLock(function () { return addNote(req.note, me); }));
       case 'ackNote': return out(withLock(function () { return ackNote(req.id, !!req.read, me); }));
@@ -133,7 +134,7 @@ function doPost(e) {
       case 'skipDuty': return out(withLock(function () { return setCheck(req.date, '休み', req.id, !!req.skip, me); }));
       case 'setDepart': return out(withLock(function () { return setDepart(req.time); }));
       case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
-      case 'deleteDuty': return out(withLock(function () { return deleteById('担当', req.id, DUTY_KEYS); }));
+      case 'deleteDuty': return out(withLock(function () { return deleteDuty(req.id); }));
       case 'saveShop': return out(withLock(function () { return saveShop(req.item || {}); }));
       case 'deleteShop': return out(withLock(function () { return deleteById('買い物', req.id, SHOP_KEYS); }));
       case 'saveTopic': return out(withLock(function () { return saveTopic(req.topic || {}); }));
@@ -329,8 +330,10 @@ function buildBoot(today) {
   var depart = departMin(s);
   var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
     var dt = dutyTime(r['時刻'], depart);
-    return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
+    return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']), parent: text(r['親']),
+      _who0: !!text(r['担当']), _rule0: !!text(r['曜日']) };
   });
+  linkDutyParents(dutyRows);
   var skipped = {};
   var swaps = {};   /* 今日だけの担当替え（チェックの種類「担当替え」。誰＝代わった人） */
   rowsOf('チェック').forEach(function (r) {
@@ -338,9 +341,22 @@ function buildBoot(today) {
     if (r['種類'] === '休み') skipped[String(r['対象ID'])] = true;
     if (r['種類'] === '担当替え') swaps[String(r['対象ID'])] = whoOf(r['誰']);
   });
-  var duties = dutyRows.filter(function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; })
-    .map(function (d) { var sw = swaps[d.id] && swaps[d.id] !== d.who ? swaps[d.id] : ''; return { id: d.id, t: d.t, rel: d.rel, task: d.task, who: sw || d.who, orig: sw ? d.who : '', once: !!d.date }; });
-  var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
+  var onToday = function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; };
+  var dutyById = {}; dutyRows.forEach(function (d) { dutyById[d.id] = d; });
+  var duties = dutyRows.filter(function (d) { return onToday(d) && (!d.parent || onToday(dutyById[d.parent])); })   /* 小項目は大項目が出る日だけ */
+    .map(function (d) {
+      var sw = swaps[d.id] && swaps[d.id] !== d.who ? swaps[d.id] : '';
+      var p = d.parent ? dutyById[d.parent] : null;
+      if (p && !d._who0) sw = swaps[p.id] && swaps[p.id] !== p.who ? swaps[p.id] : '';   /* 担当が空の小項目は、大項目の今日の担当についていく */
+      var o = { id: d.id, t: d.t, rel: d.rel, task: d.task, who: sw || d.who, orig: sw ? d.who : '', once: !!d.date };
+      if (d.parent) o.parent = d.parent;
+      return o;
+    });
+  var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; }).map(function (d) {
+    var o = { id: d.id, t: d.t, rel: d.rel, task: d.task, who: d.who, rule: d.rule, date: d.date };
+    if (d.parent) o.parent = d.parent;
+    return o;
+  });
   /* 先の日の担当替え（明日から SWAP_AHEAD_DAYS 日先まで）。「別の日を代わってほしい」の状態と取り消しに使う */
   var aheadTo = ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + SWAP_AHEAD_DAYS));
   var dutyWho = {}; dutyRows.forEach(function (d) { dutyWho[d.id] = d.who; });
@@ -461,7 +477,7 @@ function streakOf(dutyRows, doneBy, skipBy, firstDay, t) {
   Object.keys(doneBy).forEach(function (d) { Object.keys(doneBy[d]).forEach(function (id) { if (!first[id] || d < first[id]) first[id] = d; }); });
   var allDone = function (x) {
     var d = ymd(x), dow = x.getDay(), dn = doneBy[d] || {}, sk = skipBy[d] || {};
-    var list = dutyRows.filter(function (r) { return (r.date ? r.date === d : dayMatch(r.rule, dow)) && !sk[r.id] && first[r.id] && first[r.id] <= d; });
+    var list = dutyRows.filter(function (r) { return !r.parent && (r.date ? r.date === d : dayMatch(r.rule, dow)) && !sk[r.id] && first[r.id] && first[r.id] <= d; });   /* 数えるのは大項目（とふつうの担当）だけ。小項目は大項目の済に含まれる */
     if (!list.length) return null;
     return list.every(function (r) { return dn[r.id]; });
   };
@@ -1066,12 +1082,53 @@ function deleteById(name, id, keys) {
   return { ok: true };
 }
 
+/* 大項目と小項目：「親」に大項目の id がある行が小項目。1段だけ。
+   小項目の時刻・担当・曜日が空なら大項目のものを使う（大項目の時刻を変えれば一緒に動く）。親が見つからない・親にも親がある時は普通の担当として扱う */
+function linkDutyParents(rows) {
+  var by = {}; rows.forEach(function (d) { by[d.id] = d; });
+  rows.forEach(function (d) {
+    var p = d.parent ? by[d.parent] : null;
+    if (!p || p.parent || p === d) { d.parent = ''; return; }
+    if (!d._who0) d.who = p.who;
+    if (d.t == null && d.rel == null) { d.t = p.t; d.rel = p.rel; }
+    if (!d._rule0 && !d.date) { d.rule = p.rule; d.date = p.date; }
+  });
+  rows.forEach(function (d) { if (d.parent && by[d.parent].parent) d.parent = ''; });
+}
+/* 大項目を消す時は、小項目も一緒に消す */
+function deleteDuty(id) {
+  var r = findById('担当', id, DUTY_KEYS);
+  if (!r) return { ok: false, code: 'not_found' };
+  var rows = rowsOf('担当').filter(function (x) { return text(x['親']) === String(id); }).map(function (x) { return x._row; });
+  rows.concat([r._row]).sort(function (a, b) { return b - a; }).forEach(function (n) { sheet('担当').deleteRow(n); });
+  delete _tables['担当'];
+  return { ok: true };
+}
+/* 大項目と小項目をまとめて済にする・戻す（1回の書き込みで） */
+function setDoneMany(date, ids, val, me) {
+  ids = (ids || []).map(String).filter(String).slice(0, 30);
+  if (!ids.length) return { ok: false, code: 'bad_request' };
+  for (var i = 0; i < ids.length; i++) { var r = setCheck(date, '担当', ids[i], val, me); if (!r.ok) return r; }
+  return { ok: true };
+}
+
 /* 担当を足す・直す。date があれば「その日だけ」、なければ rule（毎日・平日・土日・月水金など）でくり返す */
 function saveDuty(d) {
   var task = String(d.task || '').slice(0, 100).trim();
   if (!task || !d.id) return { ok: false, code: 'bad_request' };
+  var parent = String(d.parent || '').trim();
+  if (parent) {
+    /* 小項目：時刻・担当・曜日は空（大項目についていく）。大項目は1段だけ（小項目の下には付けない） */
+    var p = findById('担当', parent, DUTY_KEYS);
+    if (!p || text(p['親']) || parent === String(d.id)) return { ok: false, code: 'bad_parent' };
+    var objC = { id: String(d.id), '時刻': '', 'やること': task, '担当': '', '曜日': '', '日付': '', '親': parent };
+    var rc = findById('担当', d.id, DUTY_KEYS);
+    if (rc) setCells('担当', rc._row, objC); else appendObj('担当', objC);
+    return { ok: true };
+  }
   var rel = d.rel == null || d.rel === '' ? null : Math.max(0, Math.min(600, Math.round(Number(d.rel) || 0)));
   var obj = { id: String(d.id), '時刻': rel != null ? '出発' + (rel ? '-' + rel : '') : (normTime(d.time) || ''), 'やること': task, '担当': whoOf(d.who), '曜日': d.date ? '' : (String(d.rule || '毎日').trim() || '毎日'), '日付': normDate(d.date) || '' };
+  if ('parent' in d) obj['親'] = '';   /* 「親」は新しい画面が送った時だけ書き換える（古い画面で小項目を直しても、小項目のまま） */
   var r = findById('担当', d.id, DUTY_KEYS);
   if (r) setCells('担当', r._row, obj); else appendObj('担当', obj);
   return { ok: true };
