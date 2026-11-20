@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '39';
+  var APP_VERSION = '40';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1450,7 +1450,21 @@
         : !other ? otherName + 'の答え待ち'
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
-      return { isNew: !!marks['decide:' + x.id], more: moreOf('decide', x.id), qStyle: clamp(3, 'font-size: 16px; font-weight: 900; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: 13px; color: #39433D; line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: 16px; font-weight: 900; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: 13px; color: #39433D; line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+        comments: (function () {
+          var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
+          return all.slice(-2).map(function (r) { return { who: r.who, text: r.text, time: whenLabel(r.at), badgeStyle: self.badge(r.who), textStyle: clamp(3, 'margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap') }; });
+        })(),
+        moreComments: (function () { var n = rCount['decide:' + x.id] || 0; return n > 2 ? 'コメントをすべて見る（' + n + '件）' : ''; })(),
+        commentOpen: st.decCommentId === x.id, commentLabel: st.decCommentId === x.id ? 'やめる' : 'コメントする',
+        commentExpanded: st.decCommentId === x.id ? 'true' : 'false',
+        toggleComment: function () { self.setState({ decCommentId: self.state.decCommentId === x.id ? null : x.id, decCommentDraft: '' }); setTimeout(function () { var el = document.getElementById('dec-comment-input'); if (el) el.focus(); }, 60); },
+        sendComment: function () {
+          var text = String(self.state.decCommentDraft || '').trim();
+          if (!text) { self.showToast('コメントを入力してください', null); return; }
+          if (self.addReplyTo('decide', x.id, text)) { USAGE.add('act:decide_comment'); self.setState({ decCommentId: null, decCommentDraft: '' }); }
+        },
+        openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
     });
@@ -2045,6 +2059,8 @@
           style: 'min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; border: 1.5px solid ' + c.ink + '; ' + (on ? 'background: ' + c.ink + '; color: #FFFFFF' : 'background: transparent; color: ' + c.ink)
         };
       }),
+      decCommentDraft: st.decCommentDraft || '',
+      setDecCommentDraft: function (e) { self.setState({ decCommentDraft: e.target.value }); },
       noteReplyDraft: st.noteReplyDraft || '',
       setNoteReplyDraft: function (e) { self.setState({ noteReplyDraft: e.target.value }); },
       draft: st.draft,

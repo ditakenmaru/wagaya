@@ -452,6 +452,20 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <sc-if value="{{dc.decided}}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="font-size: 15px; font-weight: 700; color: #2C6B52">決まった：{{dc.decidedText}}</span><button type="button" onClick="{{dc.reopen}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">相談に戻す</button></div>
         </sc-if>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid #ECEFE9">
+          <sc-for list="{{dc.comments}}" as="cm" hint-placeholder-count="0">
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: #F4F6F2">
+              <div style="display: flex; align-items: center; gap: 8px"><span style="{{cm.badgeStyle}}">{{cm.who}}</span><span style="font-size: 12px; color: #55605A">{{cm.time}}</span></div>
+              <p style="{{cm.textStyle}}">{{cm.text}}</p>
+            </div>
+          </sc-for>
+          <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.openAll}}" style="align-self: flex-start; min-height: 36px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
+          <sc-if value="{{dc.commentOpen}}" hint-placeholder-val="{{ false }}">
+            <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+            <button type="button" onClick="{{dc.sendComment}}" style="min-height: 44px; border: none; border-radius: 12px; background: #3046A6; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">送信</button>
+          </sc-if>
+          <button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: #FFFFFF; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.commentLabel}}</button>
+        </div>
       </article>
     </sc-for>
     <sc-if value="{{decisionsEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: 14px; color: #55605A; line-height: 1.6">いま相談していることはありません。「＋ 相談」から、選択肢をつけて聞けます。</p></sc-if>
@@ -1121,7 +1135,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=39"></script>
-<script src="app.js?v=39"></script>
+<script src="config.js?v=40"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>
