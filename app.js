@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '51';
+  var APP_VERSION = '52';
   var API_EXPECTED = 14;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1570,8 +1570,8 @@
         markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + inkText(c.ink) + '; background: ' + (isDone ? inkText(c.ink) : 'transparent'),
         taskStyle: 'display: inline; font-size: var(--t-body); font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: var(--label2)' : '0% 1.5px'),
         badgeStyle: self.badge(d.who),
-        whoLabel: d.who, swapped: !!d.orig, swapNote: d.orig ? '今日だけ（いつもは' + d.orig + '）' : '',
-        whoAria: '担当：' + d.who + (d.orig ? '（今日だけ。いつもは' + d.orig + '）' : '') + '。押すと担当を替えられます',
+        whoLabel: d.who, swapped: !!d.orig, swapNote: '',
+        whoAria: '担当：' + d.who + (d.orig ? '（今日の担当。いつもは' + d.orig + '）' : '') + '。押すと担当を替えられます',
         openWho: function () { self.openWho(d); }
       };
     });
@@ -1869,8 +1869,8 @@
         var wd = self.todayDuty(E.dutyId), me0 = self.meWho(), acts = [];
         ed.save = function () {}; ed.del = function () {};
         if (wd) {
-          ed.whoNow = '今日の担当：' + wd.who + (wd.orig ? '（今日だけ。いつもは' + wd.orig + '）' : '');
-          if (wd.who !== me0) acts.push({ label: '今日は自分がやる', sub: '今日だけ' + me0 + 'に替えます。いつもの担当はそのまま', go: function () { self.swapToMe(wd, true); }, primary: true });
+          ed.whoNow = '今日の担当：' + wd.who + (wd.orig ? '（いつもは' + wd.orig + '）' : '');
+          if (wd.who !== me0) acts.push({ label: '今日は自分がやる', sub: '今日の担当を' + me0 + 'にします。いつもの担当はそのまま', go: function () { self.swapToMe(wd, true); }, primary: true });
           if (wd.who === me0 && !wd.orig) acts.push({ label: '代わってほしいと頼む', sub: '申し送りで' + self.otherWho() + 'に頼みます。「代わる」を押してもらえたら替わります', go: function () { self.setState({ editor: null }); self.openNoteFor(wd.task, wd.id, 'swap', wd.who); }, primary: true });
           if (wd.orig) acts.push({ label: 'いつもの担当に戻す', sub: '今日の入れ替えをやめて、' + wd.orig + 'に戻します', go: function () { self.swapToMe(wd, false); } });
           acts.push({ label: 'いつもの担当を変える', sub: 'くり返しの決まりを変えます（明日からも）', go: function () { var x = wd; self.setState({ editor: null }); setTimeout(function () { self.openDuty(x); }, 0); } });
