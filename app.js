@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '37';
+  var APP_VERSION = '38';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1763,7 +1763,7 @@
     var visOf = {}; shown.forEach(function (x) { visOf[x.c.key] = x.vis && (isHome || tabOf(x.c) === curTab) && !(tileMode && (x.c.key === 'photos' || x.c.key === 'hero')); });
     SEC_DEF.map(function (d) { return d[0]; }).concat(shown.map(function (x) { return x.c.key; }).filter(function (k) { return !SEC_DEF.some(function (d) { return d[0] === k; }); })).forEach(function (k) {
       if (!(k in visOf)) return;
-      var o2 = { key: k, wrapStyle: visOf[k] ? 'order: ' + rankOf[k] : 'display: none' };
+      var o2 = { key: k, vis: !!visOf[k], wrapStyle: visOf[k] ? 'order: ' + rankOf[k] : 'display: none' };
       SEC_DEF.forEach(function (d) { o2['is_' + d[0]] = d[0] === k; });
       sections.push(o2);
     });
@@ -1799,7 +1799,7 @@
       var greet = (tod === 'morning' ? 'おはよう、' : tod === 'day' ? 'こんにちは、' : 'おつかれさま、') + meWho;
       var tot = mine.length, dn = mine.filter(function (d) { return done[d.id]; }).length;
       var turn = myUnread.length + myTurnDecide;
-      var onPhoto = curTab === tabNames[0] && sections.some(function (x) { return x.key === 'photos' && !x.wrapStyle; });
+      var onPhoto = curTab === tabNames[0] && sections.some(function (x) { return x.key === 'photos' && x.vis; });
       var chip = function (on) { if (onPhoto) return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 86px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; box-shadow: 0 2px 8px rgba(23,32,27,0.06); color: ' + (on ? '#FFFFFF' : '#17201B') + '; background: ' + (on ? '#17201B' : '#FFFFFF');
         return 'flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 92px; min-height: 56px; padding: 8px 12px; box-sizing: border-box; border-radius: 16px; border: none; text-align: left; cursor: pointer; font-family: inherit; color: ' + (on ? '#17201B' : '#FFFFFF') + '; background: ' + (on ? '#FFFFFF' : 'rgba(255,255,255,0.14)'); };
       var chips = [];
@@ -1831,7 +1831,7 @@
         : tid === 'plan' ? [planTotal ? (planN >= 14 ? '2週間' : planN + '日') + 'の予定 ' + planTotal + '件' : (planN >= 14 ? '2週間' : planN + '日') + 'の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
-      var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && !x.wrapStyle; });
+      var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && x.vis; });
       return {
         big: isHomeTab && !photoHero && st.homeStyle !== 'b', small: !isHomeTab, inPhoto: photoHero, newChip: newChip,
         tot: tot, dn: dn, turn: turn, streak: D.streak || 0, twoTab: twoTab, showWho: tid !== 'food' && tid !== 'news',   /* 人で絞っても変わらないタブには出さない */
@@ -2109,15 +2109,15 @@
     this.planMore = R.more.planList && R.more.planList.show && R.more.planList.label.indexOf('少なく') < 0 ? R.more.planList.go : null;
     /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
     R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
-    R.tiles = this.tilesFor(tileMode, R, hero, nNew);
     R.notesTop = R.notesHere && !R.hdr.inPhoto; R.notesInHero = R.notesHere && !!R.hdr.inPhoto;   /* 申し送りの入口も写真の下へ */
     /* 見出しの「新着」は、いま画面に出ているものだけ数える（今日でない担当や、しぼって隠れた分は数えない） */
-    var visSec = {}; sections.forEach(function (x) { if (!x.wrapStyle) visSec[x.key] = true; });
+    var visSec = {}; sections.forEach(function (x) { if (x.vis) visSec[x.key] = true; });
     var cnt = function (list) { return (list || []).filter(function (x) { return x.isNew; }).length; };
     var nNew = (visSec.flow ? cnt(R.flow) : 0) + (visSec.decide ? cnt(R.decisions) : 0) + (visSec.deadline ? cnt(R.deadlines) : 0) + (visSec.topics ? cnt(R.topics) : 0)
       + (visSec.diary ? cnt(R.diary) : 0) + (visSec.weekend ? cnt(R.outings) : 0) + (visSec.shop ? (R.shop || []).reduce(function (a, g) { return a + cnt(g.items); }, 0) : 0);
     R.hdr.chips = R.hdr.chips.filter(function (c) { return c.k !== '新着'; });
     if (nNew) R.hdr.chips.unshift(R.hdr.newChip(nNew));   /* 新着はいちばん左（見切れないように） */
+    R.tiles = this.tilesFor(tileMode, R, hero, nNew);   /* 新着の数を出してから */
     return R;
   };
 
