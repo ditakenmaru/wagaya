@@ -6,8 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '49';
-  var API_EXPECTED = 13;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '50';
+  var API_EXPECTED = 14;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
   var LSP = DEMO ? 'demo.' : '';
@@ -1151,6 +1151,15 @@
     if (!title) { this.showToast('見出しを入力してください', null); return; }
     if (url && !/^https:\/\/\S+$/.test(url)) { this.showToast('リンクは https:// から始まるものを入れてください', null); return; }
     var t = { id: e.id, title: title, url: url, note: (e.note || '').trim(), high: !!e.high };
+    if (e.isNew && e.toArchive) {   /* リンク集に直接入れる */
+      t.show = false;
+      var rv0 = this.snapshot(), now0 = new Date();
+      this.mutate(function (d) { d.topicsArchived = [Object.assign({ date: (now0.getMonth() + 1) + '/' + now0.getDate() }, t)].concat(d.topicsArchived || []); });
+      this.setState({ editor: null, linksOpen: true });
+      this.send('saveTopic', { topic: t }, rv0);
+      this.showToast('リンク集に「' + title + '」を入れました', null);
+      return;
+    }
     var revert = this.snapshot();
     this.mutate(function (d) {
       var now = new Date(), list = (d.topics || []).filter(function (x) { return x.id !== t.id; });
@@ -1159,6 +1168,22 @@
     this.setState({ editor: null });
     this.send('saveTopic', { topic: t }, revert);
     this.showToast(e.isNew ? '話題に「' + title + '」を足しました' : '話題を直しました', null);
+  };
+  /* リンク集（アーカイブ）へしまう・話題に戻す。消さずに残しておき、いつでも見られる */
+  App.prototype.archiveTopic = function (t, toArchive) {
+    if (this.stale()) return;
+    var nt = { id: t.id, title: t.title, url: t.url || '', note: t.note || '', show: !toArchive };
+    var revert = this.snapshot();
+    this.mutate(function (d) {
+      var x = (d.topics || []).concat(d.topicsArchived || []).filter(function (y) { return y.id === t.id; })[0] || t;
+      d.topics = (d.topics || []).filter(function (y) { return y.id !== t.id; });
+      d.topicsArchived = (d.topicsArchived || []).filter(function (y) { return y.id !== t.id; });
+      if (toArchive) d.topicsArchived = [Object.assign({}, x, { high: false })].concat(d.topicsArchived); else d.topics = [x].concat(d.topics);
+    });
+    this.setState({ editor: null });
+    this.send('saveTopic', { topic: nt }, revert);
+    var self = this;
+    this.showToast(toArchive ? '「' + t.title + '」をリンク集にしまいました' : '「' + t.title + '」を話題に戻しました', function () { self.archiveTopic(t, !toArchive); self.setState({ toast: null }); });
   };
   /* 話題の優先度：高くすると色が変わって一番前に来る */
   App.prototype.toggleTopicHigh = function (t) {
@@ -1667,8 +1692,20 @@
       return { label: n ? '詳細を見る（コメント' + n + '件）' : '詳細を見る', go: function () { self.openDetail(kind, id); },
         style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: var(--r-btn); border: none; background: ' + (n ? 'var(--accent-soft)' : 'var(--fill)') + '; color: ' + (n ? 'var(--accent)' : 'var(--label)') + '; font-size: var(--t-foot); font-weight: 700; cursor: pointer' };
     };
+    var arch = D.topicsArchived || [];
+    var linksArchive = {
+      show: arch.length > 0, open: !!st.linksOpen, expanded: st.linksOpen ? 'true' : 'false',
+      label: st.linksOpen ? 'リンク集を閉じる ⌃' : 'リンク集（アーカイブ ' + arch.length + '件）⌄',
+      toggle: function () { self.setState({ linksOpen: !self.state.linksOpen }); USAGE.add('act:links_archive'); },
+      items: arch.map(function (t) {
+        return { title: t.title, note: t.note || '', hasNote: !!t.note, url: t.url, hasUrl: !!t.url, noUrl: !t.url, date: t.date || '',
+          host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })(),
+          restore: function () { self.archiveTopic(t, false); } };
+      })
+    };
     var topics = (D.topics || []).filter(function (t) { return t.high; }).concat((D.topics || []).filter(function (t) { return !t.high; })).map(function (t) {
       return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, more: moreOf('topics', t.id), titleStyle: clamp(2, 'font-size: var(--t-body); font-weight: 700; line-height: 1.4'), noteStyle: clamp(5, 'font-size: var(--t-foot); color: var(--label); line-height: 1.6'), url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
+        archive: function () { self.archiveTopic(t, true); },
         high: !!t.high, highLabel: t.high ? '優先度 高' : '優先度を高く', highPressed: t.high ? 'true' : 'false', toggleHigh: function () { self.toggleTopicHigh(t); },
         highBtnStyle: 'flex-shrink: 0; min-height: 32px; padding: 0 10px; border-radius: var(--r-chip); border: none; cursor: pointer; font-size: var(--t-cap); font-weight: 700; ' + (t.high ? 'background: var(--attn); color: #FFFFFF' : 'background: var(--fill); color: var(--label2)'),
         cardStyle: 'flex-shrink: 0; width: 250px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px 16px; border-radius: var(--r-card); ' + (t.high ? 'background: var(--attn-soft); box-shadow: inset 0 0 0 2px var(--attn)' : 'background: var(--card)'),
@@ -1840,6 +1877,10 @@
       } else if (E.kind === 'topic') {
         ed.highPressed = E.high ? 'true' : 'false'; ed.highStyle = pill(!!E.high) + '; align-self: flex-start';
         ed.toggleHigh = function () { self.editSet('high', !self.state.editor.high); };
+        ed.topicNew = !!E.isNew; ed.topicOld = !E.isNew;
+        ed.toArchivePressed = E.toArchive ? 'true' : 'false'; ed.toArchiveStyle = pill(!!E.toArchive) + '; align-self: flex-start';
+        ed.toggleToArchive = function () { self.editSet('toArchive', !self.state.editor.toArchive); };
+        ed.archiveNow = function () { var tt = ((self.state.data || {}).topics || []).filter(function (x) { return x.id === E.id; })[0]; if (tt) self.archiveTopic(tt, true); };
       } else if (E.kind === 'depart') {
         ed.save = function () { self.saveDepart(); }; ed.del = function () {};
         var nRel = ((self.state.data || {}).dutiesAll || []).filter(function (x) { return x.rel != null; }).length;
@@ -2213,7 +2254,7 @@
       addShop: function () { self.addShopFromForm(); },
       shopCatChips: shopCats.map(function (c) { var on = c === shopCatSel; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.setState({ shopCat: c }); } }; }),
       shopSuggest: shopSuggest, hasSuggest: shopSuggest.length > 0,
-      topics: topics, topicsEmpty: topics.length === 0, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '完了' : '直す',
+      topics: topics, topicsEmpty: topics.length === 0, linksArchive: linksArchive, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '完了' : '直す',
       toggleTopicEdit: function () { self.setState({ topicEdit: !self.state.topicEdit }); },
       addTopic: function () { self.openTopic(null); },
       ed: ed, edBackdropStyle: backdrop(!!E), edSheetStyle: sheetStyle(!!E, 'max-height: 88vh; overflow-y: auto; '),
@@ -2580,6 +2621,7 @@
         deadlines: [{ id: 'k1', what: '見本：保育園の書類を出す', due: ymd(t), who: 'まま', done: false, url: '', note: '' }, { id: 'k2', what: '見本：ペットホテルの予約', due: dd(9), who: 'とと', done: false, url: '', note: '' }],
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
         weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
+        topicsArchived: [{ id: 't0', title: '見本：去年の旅のしおり', url: 'https://example.com/old', note: '終わった旅行のリンク', date: '10/02' }],
         topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }, { id: 't2', title: '見本：年末の帰省の相談', url: '', note: '見本の長い文です。12/28の夕方に出て、実家に2泊する案。新幹線は混むので、車で行くなら途中で1回休む。おみやげは前の日に買う。ふたりの昼寝の時間に合わせて出発したい。帰りは12/30の午前。大掃除は帰ってからにするか、出る前に半分だけ済ませるか、決めたい。年賀状は今年は写真入りにする？', date: '11/20' }],
         replies: [{ id: 'r0', target: 'notes:n1', who: 'とと', at: Date.now() - 1200e3, text: '見本の返信：了解、今夜カバンに入れておきます。' }, { id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本のコメント：出る前に半分だけ大掃除がいいと思う。' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],

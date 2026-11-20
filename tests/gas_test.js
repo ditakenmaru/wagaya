@@ -287,7 +287,16 @@ ok(b3.topics[0].id === 'tpB' && b3.topics[0].high === true && b3.topics.find(x =
 post(env, { action: 'saveTopic', session: S, topic: { id: 'tpB', title: '話題B', url: '', note: '', high: false } });
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.topics.find(x => x.id === 'tpB').high === false, '話題: 優先度を戻せる');
-post(env, { action: 'deleteTopic', session: S, id: 'tpA' }); post(env, { action: 'deleteTopic', session: S, id: 'tpB' });
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpA', title: '話題A', url: '', note: '', show: false } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(!b3.topics.some(x => x.id === 'tpA') && b3.topicsArchived.some(x => x.id === 'tpA'), 'リンク集: 表示を外すとアーカイブへ');
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpC', title: '話題C', url: 'https://example.com', note: '', show: false } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(b3.topicsArchived.some(x => x.id === 'tpC') && !b3.topics.some(x => x.id === 'tpC'), 'リンク集: 最初からアーカイブに足せる');
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpA', title: '話題A', url: '', note: '', show: true } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(b3.topics.some(x => x.id === 'tpA'), 'リンク集: 話題に戻せる');
+post(env, { action: 'deleteTopic', session: S, id: 'tpA' }); post(env, { action: 'deleteTopic', session: S, id: 'tpB' }); post(env, { action: 'deleteTopic', session: S, id: 'tpC' });
 // 買い物：前の週の履歴から買うかも
 const ws = (d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - t.getDay()); return t; })(today);
 const wk = n => { const t = new Date(ws); t.setDate(t.getDate() - 7 * n); return t.toISOString().slice(0, 10); };
@@ -341,7 +350,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 13 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 14 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);

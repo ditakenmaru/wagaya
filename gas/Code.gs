@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 13;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 14;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -382,12 +382,17 @@ function buildBoot(today) {
     return { id: idOf(r, ['見出し']), goals: text(r['中期ID']).split(/[,、\s]+/).filter(String), src: text(r['出どころ']) || 'Web', from: text(r['発信元']), date: d instanceof Date ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : text(d), title: text(r['見出し']), why: text(r['なぜ今']), body: text(r['本文']), url: safeUrl(r['URL']) };
   });
 
-  var topics = rowsOf('話題').filter(function (r) { return text(r['見出し']) && (r['表示'] === '' || r['表示'] == null || truthy(r['表示'])); }).map(function (r) {
+  var shown = function (r) { return r['表示'] === '' || r['表示'] == null || truthy(r['表示']); };
+  var topicOf = function (r) {
     var d = r['日付'];
     var pr = text(r['優先']);
     return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: safeUrl(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d),
       high: pr === '高' || truthy(r['優先']) };
-  }).reverse();
+  };
+  var topicRows = rowsOf('話題').filter(function (r) { return text(r['見出し']); });
+  var topics = topicRows.filter(shown).map(topicOf).reverse();
+  /* リンク集（アーカイブ）：「表示」を外した話題。新しい順に50件まで */
+  var topicsArchived = topicRows.filter(function (r) { return !shown(r); }).map(topicOf).reverse().slice(0, 50);
   /* 優先度が高い話題を先に（その中は新しい順のまま） */
   topics = topics.filter(function (x) { return x.high; }).concat(topics.filter(function (x) { return !x.high; }));
 
@@ -413,7 +418,7 @@ function buildBoot(today) {
   var trip = tripRange(s['旅行の期間'], today);
   var ps = people();
   return {
-    topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
+    topics: topics, topicsArchived: topicsArchived, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, menuFrom: ymd(weekStart), menuTo: ymd(menuEnd), shopCats: shopCatsOf(shop), shopLastCat: shopLastCat(menu),
@@ -977,12 +982,13 @@ function saveTopic(t) {
   if (!title || !t.id || (url && !/^https:\/\/[^\s]+$/.test(url))) return { ok: false, code: 'bad_request' };
   var obj = { id: String(t.id), '見出し': title, 'URL': url, '説明': String(t.note || '').slice(0, 200).trim() };
   if (t.high != null) obj['優先'] = t.high ? '高' : '';
+  if (t.show != null) obj['表示'] = !!t.show;   /* false でリンク集（アーカイブ）へ */
   var r = findById('話題', t.id, TOPIC_KEYS);
   if (r) setCells('話題', r._row, obj);
   else {
-    obj['日付'] = ymd(new Date()); obj['表示'] = true; appendObj('話題', obj);
+    obj['日付'] = ymd(new Date()); if (t.show == null) obj['表示'] = true; appendObj('話題', obj);
     var t2 = table('話題');
-    if (t2.col['表示'] != null) t2.sh.getRange(t2.sh.getLastRow(), t2.col['表示'] + 1).insertCheckboxes().setValue(true);
+    if (t2.col['表示'] != null) t2.sh.getRange(t2.sh.getLastRow(), t2.col['表示'] + 1).insertCheckboxes().setValue(!!obj['表示']);
   }
   return { ok: true };
 }
