@@ -385,7 +385,7 @@ function buildBoot(today) {
     topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
-    menu: menu, replies: replies, shop: shop, plans: plansFor(weekStart, new Date(Math.max(weekEnd.getTime(), t.getTime() + 6 * 864e5)), s['カレンダーID']),   /* 今週と、今日から7日（今週末の日曜まで入る） */ goals: goals, news: news,
+    menu: menu, replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
     photosReady: !!s['写真フォルダID'], photos: s['写真フォルダID'] ? photoList() : [],
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
     ui: {
@@ -497,34 +497,47 @@ function shopFor(weekStart) {
   return { week: week, groups: groups };
 }
 
-function plansFor(weekStart, weekEnd, calendarId) {
+/* 予定：今日から PLAN_DAYS 日。何日も続く予定（終日・時刻つき）は、見える日ごとに1件ずつ出し、
+ * key（同じ予定の印）・from・to（最初と最後の日）を付ける。時刻は最初の日だけ、最後の日は「〜H:mm」 */
+var PLAN_DAYS = 14;
+function plansFor(rangeStart, rangeEnd, calendarId) {
+  var from = ymd(rangeStart), to = ymd(rangeEnd);
   if (!calendarId) {
-    return rowsOf('予定').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(weekEnd); })
+    return rowsOf('予定').filter(function (r) { var d = normDate(r['日付']); return d && d >= from && d <= to; })
       .map(function (r) { return { date: normDate(r['日付']), time: normTime(r['時刻']), what: text(r['内容']), who: whoOf(r['誰']) }; });
   }
-  var end = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate() + 1);
+  var end = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1);
   var items;
   try {
-    items = Calendar.Events.list(calendarId, { timeMin: weekStart.toISOString(), timeMax: end.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 }).items || [];
+    items = Calendar.Events.list(calendarId, { timeMin: rangeStart.toISOString(), timeMax: end.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 250 }).items || [];
   } catch (err) { console.error(err); return []; }
   var names = [];
   people().list.forEach(function (p) { names = names.concat(p.alias); });
   names.push('家族');
   var re = new RegExp('^(' + names.map(function (n) { return n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')\\s*[：:]\\s*');
   var outList = [];
-  items.forEach(function (ev) {
+  items.forEach(function (ev, i) {
     if (ev.status === 'cancelled') return;
     var title = String(ev.summary || '（予定）'), who = '家族';
     var m = title.match(re);
     if (m) { who = whoOf(m[1]); title = title.slice(m[0].length); }
+    var first, last, t0 = '', t1 = '';
     if (ev.start.dateTime) {
-      var st = new Date(ev.start.dateTime);
-      outList.push({ date: ymd(st), time: Utilities.formatDate(st, TZ, 'H:mm'), what: title, who: who });
+      var st = new Date(ev.start.dateTime), en = new Date(ev.end && ev.end.dateTime ? ev.end.dateTime : ev.start.dateTime);
+      first = ymd(st); t0 = Utilities.formatDate(st, TZ, 'H:mm');
+      /* 0:00ちょうどに終わる予定は前の日まで */
+      var enDay = new Date(en.getTime() - (Utilities.formatDate(en, TZ, 'H:mm') === '0:00' && en > st ? 1 : 0));
+      last = ymd(enDay); t1 = Utilities.formatDate(en, TZ, 'H:mm');
     } else {
-      var d = parseYmd(ev.start.date), last = parseYmd(ev.end.date);
-      for (; d < last; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
-        if (d >= weekStart && d <= weekEnd) outList.push({ date: ymd(d), time: '', what: title, who: who });
-      }
+      var e = parseYmd(ev.end.date);
+      first = ev.start.date; last = ymd(new Date(e.getFullYear(), e.getMonth(), e.getDate() - 1));
+      if (last < first) last = first;
+    }
+    if (first === last) { if (first >= from && first <= to) outList.push({ date: first, time: t0, what: title, who: who }); return; }
+    var key = String(ev.id || ('e' + i)).slice(0, 60);
+    for (var d = parseYmd(first > from ? first : from); ymd(d) <= last && ymd(d) <= to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      var day = ymd(d);
+      outList.push({ date: day, time: day === first ? t0 : (day === last && t1 ? '〜' + t1 : ''), what: title, who: who, key: key, from: first, to: last });
     }
   });
   return outList;

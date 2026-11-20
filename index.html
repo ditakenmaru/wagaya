@@ -699,34 +699,49 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <section aria-labelledby="sec-plan" style="padding: 24px 20px 16px; display: flex; flex-direction: column; gap: 4px">
     <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px">
       <h2 id="sec-plan" style="margin: 0; font-size: 18px; font-weight: 900">{{title.plan}}</h2>
-      <span style="font-size: 12px; color: #55605A">今週 {{planTotal}}件</span>
+      <span style="font-size: 12px; color: #55605A">{{planRange}} {{planTotal}}件</span>
     </div>
-    <div class="strip" role="group" aria-label="予定を見る曜日を選ぶ" style="display: flex; gap: 8px; overflow-x: auto; margin: 0 -20px; padding: 0 20px 6px; scrollbar-width: none">
-      <sc-for list="{{planWeek}}" as="pw" hint-placeholder-count="7">
-        <button type="button" aria-pressed="{{pw.pressed}}" aria-label="{{pw.aria}}" onClick="{{pw.pick}}" style="{{pw.style}}">
-          <span style="font-size: 12px; font-weight: 700">{{pw.dow}}</span>
-          <span style="font-size: 20px; font-weight: 900">{{pw.date}}</span>
-          <span style="display: flex; gap: 3px; height: 6px">
-            <sc-for list="{{pw.dots}}" as="dt" hint-placeholder-count="1">
-              <span style="{{dt.style}}"></span>
-            </sc-for>
-          </span>
-        </button>
+    <div role="group" aria-label="2週間のカレンダー。日を押すと下の一覧のその日へ" style="display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{planWeeks}}" as="pw" hint-placeholder-count="2">
+        <div style="{{pw.gridStyle}}">
+          <sc-for list="{{pw.cells}}" as="pc" hint-placeholder-count="7">
+            <button type="button" aria-label="{{pc.aria}}" onClick="{{pc.go}}" style="{{pc.style}}"><span aria-hidden="true" style="{{pc.headStyle}}"><span style="font-size: 10px; font-weight: 700">{{pc.dow}}</span><span style="font-size: 15px; font-weight: 900">{{pc.date}}</span></span></button>
+          </sc-for>
+          <sc-for list="{{pw.bands}}" as="pb" hint-placeholder-count="1">
+            <span aria-hidden="true" style="{{pb.style}}">{{pb.text}}</span>
+          </sc-for>
+          <sc-for list="{{pw.chips}}" as="ch" hint-placeholder-count="7">
+            <span aria-hidden="true" style="{{ch.style}}">
+              <sc-for list="{{ch.list}}" as="cx" hint-placeholder-count="1"><span style="{{cx.style}}">{{cx.text}}</span></sc-for>
+              <sc-if value="{{ch.more}}" hint-placeholder-val="{{ false }}"><span style="{{ch.moreStyle}}">{{ch.more}}</span></sc-if>
+            </span>
+          </sc-for>
+        </div>
       </sc-for>
     </div>
     <div style="{{planCardStyle}}">
-      <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #55605A">{{planDayLabel}}の予定</p>
-      <sc-for list="{{plans}}" as="p" hint-placeholder-count="2">
-        <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px solid #ECEFE9">
-          <span style="width: 52px; flex-shrink: 0; font-size: 15px; font-weight: 900">{{p.time}}</span>
-          <span style="flex: 1; font-size: 15px; line-height: 1.4">{{p.what}}</span>
-          <span style="{{p.badgeStyle}}">{{p.who}}</span>
+      <sc-for list="{{planList}}" as="pd" hint-placeholder-count="3">
+        <div id="{{pd.id}}" style="display: flex; flex-direction: column; scroll-margin-top: 120px">
+          <p style="{{pd.labelStyle}}">{{pd.label}}</p>
+          <sc-for list="{{pd.rows}}" as="p" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; gap: 12px; min-height: 48px; border-bottom: 1px solid #ECEFE9">
+              <span style="width: 52px; flex-shrink: 0; font-size: 14px; font-weight: 900">{{p.time}}</span>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+                <span style="font-size: 15px; line-height: 1.4">{{p.what}}</span>
+                <sc-if value="{{p.hasSub}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #55605A">{{p.sub}}</span></sc-if>
+              </span>
+              <span style="{{p.badgeStyle}}">{{p.who}}</span>
+            </div>
+          </sc-for>
         </div>
       </sc-for>
       <sc-if value="{{plansEmpty}}" hint-placeholder-val="{{ false }}">
-        <p style="margin: 4px 0 0; font-size: 14px; color: #55605A">この日の予定はありません。</p>
+        <p style="margin: 12px 0 2px; font-size: 14px; color: #55605A">{{planRange}}、予定はありません。</p>
       </sc-if>
     </div>
+    <sc-if value="{{more.planList.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" onClick="{{more.planList.go}}" style="{{more.planList.style}}">{{more.planList.label}}</button>
+    </sc-if>
   </section>
   </sc-if>
   </div>
@@ -1086,7 +1101,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="config.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

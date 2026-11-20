@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '30';
+  var APP_VERSION = '31';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -256,7 +256,6 @@
       noteOpen: false, noteMode: 'diary', noteTarget: '', noteTaskId: null, noteDraft: '', listening: false,
       notesOpen: false, draft: '', draftTo: null,
       mounted: {}, seen: {}, goal: 'all', goalAnim: 0, newsOpen: {},
-      planDay: null, planAnim: 0,
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
@@ -1566,28 +1565,94 @@
       };
     });
 
-    /* 今週の予定 */
-    /* 予定は今日から7日（今週末の土日がいつも入るように） */
+    /* 予定：今日から2週間を、押さなくても見えるように。上は2段×7日のカレンダー（何日も続く予定は帯）、下は日ごとの一覧 */
     var pStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: Math.round((parseYmd(p.date) - pStart) / 864e5) }); }).filter(function (p) { return p.d >= 0 && p.d < 7 && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
-    var planIdx = st.planDay === null ? 0 : st.planDay;
-    var plans = plansRaw.filter(function (p) { return p.d === planIdx; }).sort(function (a, b) { return (a.time || '') < (b.time || '') ? -1 : 1; }).map(function (p) {
-      return { time: p.time || '終日', what: p.what, who: p.who, badgeStyle: self.badge(p.who) };
+    var dayOf = function (s) { return Math.round((parseYmd(s) - pStart) / 864e5); };
+    var planN = D.plansTo ? Math.max(1, Math.min(14, dayOf(D.plansTo) + 1)) : 7;
+    var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: dayOf(p.date) }); }).filter(function (p) { return p.d >= 0 && p.d < planN && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
+    var md = function (s) { var x = parseYmd(s); return (x.getMonth() + 1) + '/' + x.getDate(); };
+    var byTime = function (a, b) { var ta = /^\d/.test(a.time || '') ? a.time.replace(/^(\d):/, '0$1:') : '99'; var tb = /^\d/.test(b.time || '') ? b.time.replace(/^(\d):/, '0$1:') : '99'; return ta < tb ? -1 : (ta > tb ? 1 : 0); };
+    /* 続く予定をまとめる（key ごと）。帯の段（レーン）を、始まりが早い・長い順に詰めて決める */
+    var spans = {}, spanList = [];
+    plansRaw.forEach(function (p) {
+      if (!p.key) return;
+      var g = spans[p.key];
+      if (!g) { g = spans[p.key] = { key: p.key, what: p.what, who: p.who, from: p.from, to: p.to, d0: p.d, d1: p.d, time: '' }; spanList.push(g); }
+      g.d0 = Math.min(g.d0, p.d); g.d1 = Math.max(g.d1, p.d);
+      if (p.date === p.from && /^\d/.test(p.time || '')) g.time = p.time;
     });
-    var planWeek = [0, 1, 2, 3, 4, 5, 6].map(function (i) {
-      var dt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + i);
-      var d = dows[dt.getDay()];
-      var on = i === planIdx;
-      var isToday = i === 0;
-      var dayPlans = plansRaw.filter(function (p) { return p.d === i; });
-      return {
-        dow: isToday ? '今日' : d, date: dt.getDate(), pressed: on ? 'true' : 'false',
-        aria: (isToday ? '今日' : d + '曜') + ' ' + dt.getDate() + '日、予定' + dayPlans.length + '件',
-        pick: function () { self.setState({ planDay: i, planAnim: (self.state.planAnim || 0) + 1 }); },
-        style: 'flex: 1 1 0; min-width: 44px; min-height: 72px; border-radius: 14px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
-        dots: dayPlans.slice(0, 4).map(function (p) { return { style: 'width: 6px; height: 6px; border-radius: 50%; background: ' + (on ? '#FFFFFF' : self.person(p.who).ink) }; })
-      };
+    spanList.sort(function (a, b) { return a.d0 - b.d0 || (b.d1 - b.d0) - (a.d1 - a.d0); });
+    var laneEnd = [], PLAN_LANES = 2;
+    spanList.forEach(function (g) {
+      var l = 0; while (l < laneEnd.length && laneEnd[l] >= g.d0) l++;
+      g.lane = l; laneEnd[l] = g.d1;
     });
+    var singles = plansRaw.filter(function (p) { return !p.key; });
+    var planWeeks = [0, 1].filter(function (w) { return w * 7 < planN; }).map(function (w) {
+      var lanes = 0;
+      spanList.forEach(function (g) { if (g.lane < PLAN_LANES && g.d1 >= w * 7 && g.d0 <= w * 7 + 6) lanes = Math.max(lanes, g.lane + 1); });
+      var cells = [], chips = [], bands = [];
+      for (var c = 0; c < 7; c++) {
+        var i = w * 7 + c;
+        var dt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + i), dw = dt.getDay(), dstr = ymd(dt);
+        var off = i >= planN;
+        var mine = singles.filter(function (p) { return p.d === i; }).sort(byTime);
+        var extra = spanList.filter(function (g) { return g.lane >= PLAN_LANES && g.d0 <= i && g.d1 >= i; });
+        var shown = mine.slice(0, 3);
+        var more = mine.length - shown.length + extra.length;
+        var col = c + 1;
+        var ink = dw === 0 ? '#C0392B' : (dw === 6 ? '#2F5DA8' : '#17201B');
+        cells.push({
+          dow: i === 0 ? '今日' : DOWS[dw], date: dt.getDate() === 1 || c === 0 ? (dt.getMonth() + 1) + '/' + dt.getDate() : String(dt.getDate()),
+          aria: (i === 0 ? '今日 ' : '') + (dt.getMonth() + 1) + '月' + dt.getDate() + '日' + DOWS[dw] + '曜、予定' + (mine.length + spanList.filter(function (g) { return g.d0 <= i && g.d1 >= i; }).length) + '件',
+          go: (function (day) { return function () { self.planJump(day); }; })(dstr),
+          style: 'grid-column: ' + col + '; grid-row: 1 / -1; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer; border-radius: 12px; min-width: 0; ' + (i === 0 ? 'background: #17201B; ' : (dw === 0 || dw === 6 ? 'background: #F3F5EF; ' : 'background: #FFFFFF; ')) + (off ? 'opacity: .35; ' : '') + 'display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start',
+          headStyle: 'display: flex; flex-direction: column; align-items: center; padding: 6px 0 4px; line-height: 1.15; color: ' + (i === 0 ? '#FFFFFF' : ink),
+        });
+        chips.push({
+          style: 'grid-column: ' + col + '; grid-row: ' + (lanes + 2) + '; pointer-events: none; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 6px',
+          list: shown.map(function (p) {
+            var pc = self.person(p.who);
+            return { text: p.what, style: 'display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 10px; line-height: 13px; max-height: 28px; box-sizing: border-box; font-weight: 700; overflow: hidden; word-break: break-all; border-radius: 4px; padding: 1px 3px; border-bottom: 1px solid transparent; color: ' + pc.ink + '; background: ' + (i === 0 ? '#FFFFFF' : pc.tint) };
+          }),
+          more: more > 0 ? '+' + more : '', moreStyle: 'font-size: 10px; font-weight: 700; padding-left: 3px; color: ' + (i === 0 ? '#FFFFFF' : '#55605A')
+        });
+      }
+      spanList.forEach(function (g) {
+        if (g.lane >= PLAN_LANES || g.d1 < w * 7 || g.d0 > w * 7 + 6) return;
+        var c0 = Math.max(g.d0, w * 7) - w * 7, c1 = Math.min(g.d1, w * 7 + 6) - w * 7;
+        var pc = self.person(g.who);
+        var dayStr = function (n) { return ymd(new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + n)); };
+        var openL = g.d0 < w * 7 || g.from < dayStr(g.d0), openR = g.d1 > w * 7 + 6 || g.to > dayStr(g.d1);
+        var rl = openL ? '0' : '8px', rr = openR ? '0' : '8px';
+        bands.push({
+          text: (openL ? '… ' : '') + g.what,
+          style: 'grid-column: ' + (c0 + 1) + ' / ' + (c1 + 2) + '; grid-row: ' + (g.lane + 2) + '; pointer-events: none; margin: 1px ' + (openR && c1 < 6 ? '-3px' : (openR ? '0' : '2px')) + ' 1px ' + (openL ? '0' : '2px') + '; height: 15px; box-sizing: border-box; border-radius: ' + rl + ' ' + rr + ' ' + rr + ' ' + rl + '; padding: 0 6px; font-size: 10px; line-height: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; color: #FFFFFF; background: ' + pc.ink
+        });
+      });
+      return { cells: cells, chips: chips, bands: bands, gridStyle: 'display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 40px' + (lanes ? ' repeat(' + lanes + ', 17px)' : '') + ' minmax(34px, auto); column-gap: 3px' };
+    });
+    /* 下の一覧：予定のある日だけ。続く予定は、見えている最初の日に「11/26〜12/3」で1回だけ */
+    var planList = [];
+    for (var pi = 0; pi < planN; pi++) {
+      var pdt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + pi), pds = ymd(pdt);
+      var rows = singles.filter(function (p) { return p.d === pi; }).map(function (p) { return { time: p.time || '終日', what: p.what, who: p.who, sub: '' , t: p.time }; });
+      spanList.forEach(function (g) {
+        if (g.d0 !== pi) return;
+        var started = g.from < pds;
+        rows.push({ time: started ? 'つづき' : (g.time || '終日'), what: g.what, who: g.who, sub: started ? md(g.to) + 'まで' : md(g.from) + '〜' + md(g.to), t: started ? '' : g.time });
+      });
+      if (!rows.length) continue;
+      rows.sort(function (a, b) { return byTime({ time: a.t }, { time: b.t }); });
+      var dwi = pdt.getDay();
+      planList.push({
+        id: 'plan-d-' + pds,
+        label: (pi === 0 ? '今日 ' : (pi === 1 ? '明日 ' : '')) + (pdt.getMonth() + 1) + '/' + pdt.getDate() + '（' + DOWS[dwi] + '）',
+        labelStyle: 'margin: 0; padding: 12px 0 2px; font-size: 13px; font-weight: 900; color: ' + (pi === 0 ? '#2C6B52' : (dwi === 0 ? '#C0392B' : (dwi === 6 ? '#2F5DA8' : '#55605A'))),
+        rows: rows.map(function (r) { return { time: r.time, what: r.what, sub: r.sub, hasSub: !!r.sub, who: r.who, badgeStyle: self.badge(r.who) }; })
+      });
+    }
+    var planTotal = singles.length + spanList.length;
 
     var notesSorted = notesAll.slice().sort(function (a, b) { return (a.read === b.read) ? b.createdAt - a.createdAt : (a.read ? 1 : -1); });
     var myUnread = notesAll.filter(function (n) { return !n.read && n.to === meWho; });
@@ -1824,9 +1889,8 @@
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
       goalCardStyle: 'margin: 0 20px; padding: 12px 16px; border-radius: 16px; background: #E0EEE7; display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
-      planWeek: planWeek, plansEmpty: plans.length === 0, planTotal: plansRaw.length,
-      planDayLabel: planIdx === todayIdx ? '今日' : dows[planIdx] + '曜',
-      planCardStyle: 'margin-top: 4px; background: #FFFFFF; border-radius: 20px; padding: 14px 16px 6px; display: flex; flex-direction: column; animation: ' + ((st.planAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both',
+      planWeeks: planWeeks, planList: planList, plansEmpty: planTotal === 0, planTotal: planTotal, planRange: planN >= 14 ? '2週間' : planN + '日',
+      planCardStyle: 'margin-top: 4px; background: #FFFFFF; border-radius: 20px; padding: 2px 16px 10px; display: flex; flex-direction: column',
       whoTabs: whoTabs, hero: hero, timeline: timeline, flow: flow, flowEmpty: flow.length === 0,
       prog: (function () {
         var tot = mine.length;
@@ -1881,7 +1945,6 @@
       hideBought: st.hideBought ? 'true' : 'false',
       hideLabel: st.hideBought ? '買ったものも表示' : '買ったものを隠す',
       toggleHide: function () { self.setState({ hideBought: !self.state.hideBought }); },
-      plans: plans,
       noPhotos: o.length === 0,
       figStyle: 'margin: 10px 12px 0; position: relative; height: ' + (o.length ? 310 : 280) + 'px; border-radius: 28px; box-shadow: 0 14px 34px rgba(23,32,27,0.22); overflow: hidden; background: #DDE3DA; animation: rise .55s cubic-bezier(.2,.8,.2,1) both',
       photoHint: (D.photos && D.photos.length) ? '写真を読み込んでいます…' : 'ここに子どもたちの写真が流れます。',
@@ -1998,6 +2061,7 @@
       accountSheetStyle: sheetStyle(st.accountOpen, '')
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
+    this.planMore = R.more.planList && R.more.planList.show && R.more.planList.label.indexOf('少なく') < 0 ? R.more.planList.go : null;
     /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
     R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
     R.tiles = this.tilesFor(tileMode, R, hero, nNew);
@@ -2037,9 +2101,16 @@
     };
   };
 
+  /* カレンダーの日を押したら、下の一覧のその日へ。ホームでしぼっていたら広げる */
+  App.prototype.planJump = function (day) {
+    var self = this, go = function () { var el = document.getElementById('plan-d-' + day); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    USAGE.add('act:plan_day');
+    if (!document.getElementById('plan-d-' + day) && this.planMore) { this.planMore(); setTimeout(go, 160); } else go();
+  };
+
   /* ホームでは長い一覧を数件にしぼり、「すべて見る」を付ける。
      そのセクションの居場所が別のタブならそのタブへ、ホームの中ならその場で広げる */
-  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 3], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5] };
+  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 3], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5], planList: ['plan', 3] };
   App.prototype.homeMore = function (R, isHome, secTab, curTab, flowAll) {
     var self = this, st = this.state, more = {};
     Object.keys(HOME_LIMIT).forEach(function (k) {
@@ -2076,7 +2147,7 @@
         R[k] = keep(list, [], n);
       }
       m.show = true;
-      m.label = 'すべて見る（全' + count + '件）';
+      m.label = k === 'planList' ? '2週間の予定をすべて見る（' + count + '日）' : 'すべて見る（全' + count + '件）';
       m.go = function () {
         USAGE.add('act:more_' + sec);
         if (here) { var e = Object.assign({}, self.state.expanded || {}); e[sec] = true; self.setState({ expanded: e }); return; }
@@ -2111,7 +2182,14 @@
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { return { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; }),
         shop: { week: dd(0), groups: [{ label: 'お店で買う', items: [['e', '大根', '1本'], ['f', 'じゃがいも', '4個']] }, { label: 'WEBで頼む（冷凍・重いもの）', items: [['a', '鶏もも肉', '600g'], ['c', '冷凍ブロッコリー', '1袋']] }] },
-        plans: [{ date: dd(3), time: '10:00', what: '保育園の面談', who: 'まま' }, { date: dd(6), time: '10:00', what: '公園へおでかけ', who: '家族' }],
+        plans: (function () {
+          var t0 = new Date(), td = function (n) { return ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + n)); };
+          var out = [{ date: td(0), time: '17:00', what: '保育園お迎え', who: 'まま' }, { date: td(1), time: '9:00', what: 'インフルワクチン', who: '家族' }, { date: td(1), time: '', what: '燃えるゴミ', who: '家族' },
+            { date: td(2), time: '9:30', what: 'ベビーパーク', who: 'とと' }, { date: td(4), time: '10:15', what: 'トリミング', who: 'とと' }, { date: td(9), time: '', what: '結婚記念日', who: '家族' }, { date: td(9), time: '19:00', what: 'レストラン予約', who: 'とと' }, { date: td(12), time: '8:30', what: '保育園 写真前撮り', who: 'まま' }];
+          for (var i = 6; i <= 13; i++) out.push({ date: td(i), time: i === 6 ? '' : '', what: '家族旅行', who: '家族', key: 'trip', from: td(6), to: td(15) });
+          for (var j = 0; j <= 3; j++) out.push({ date: td(j), time: j === 3 ? '〜10:30' : '', what: 'まるペットホテル', who: 'とと', key: 'hotel', from: td(-1), to: td(3) });
+          return out;
+        })(), plansFrom: ymd(new Date()), plansTo: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 13)),
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
         decisions: [{ id: 'q1', q: '見本：週末の朝ごはん、どうする？', options: ['見本：A案', '見本：B案'], due: dd(5), state: '相談中', a1: '見本：A案', a2: '', decided: '', note: '' }],

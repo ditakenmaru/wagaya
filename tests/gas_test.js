@@ -194,6 +194,21 @@ env.calItems = [{ summary: 'まま: 面談', start: { dateTime: new Date().toISO
 env.onEdit();
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2.data.plans[1].who === 'ケン', 'カレンダー: 頭の名前で担当');
+{
+  const dd = n => { const x = new Date(today + 'T00:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) === x.toISOString().slice(0, 10) && [x.getFullYear(), String(x.getMonth() + 1).padStart(2, '0'), String(x.getDate()).padStart(2, '0')].join('-'); };
+  const at = (n, h, m) => dd(n) + 'T' + String(h).padStart(2, '0') + ':' + String(m || 0).padStart(2, '0') + ':00+09:00';
+  env.calItems = [
+    { id: 'trip', summary: '旅行', start: { date: dd(-1) }, end: { date: dd(3) } },
+    { id: 'hotel', summary: 'ペットホテル', start: { dateTime: at(1, 10, 40) }, end: { dateTime: at(3, 10, 30) } },
+    { id: 'far', summary: '遠い', start: { date: dd(20) }, end: { date: dd(21) } }
+  ];
+  env.onEdit();
+  b2 = post(env, { action: 'boot', session: S, today });
+  const P = b2.data.plans, trip = P.filter(p => p.key === 'trip'), hotel = P.filter(p => p.key === 'hotel');
+  ok(trip.length === 3 && trip[0].date === today && trip[0].from === dd(-1) && trip[0].to === dd(2), '予定: 続く終日予定は見える日ごとに from/to 付き ' + JSON.stringify(trip.map(p => p.date)));
+  ok(hotel.length === 3 && hotel[0].time === '10:40' && hotel[1].time === '' && hotel[2].time === '〜10:30', '予定: 何日も続く時刻つき ' + JSON.stringify(hotel.map(p => p.time)));
+  ok(b2.data.plansFrom === today && b2.data.plansTo === dd(13), '予定: 範囲は今日から2週間');
+}
 
 // 担当：アプリから足す（今日だけ・くり返し）、直す、消す
 env.onEdit();
