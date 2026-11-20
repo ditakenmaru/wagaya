@@ -11,7 +11,8 @@
 
 - 送り先：`https://script.google.com/macros/s/AKfycbwjZWN5FE2xmmJU0-hpFjvqVZl7eX1k-LrOYU8iqfew0e5mjJYWHLnVgMLWWTspwCRl/exec`
 - POST で、本文は JSON 1つ。`{"action":"muse","key":"（私がわたした鍵）","op":"（操作）", …}`
-- 転送（リダイレクト）は追いかける。返事は JSON で、`ok` が true なら成功
+- 返事は 302 の転送で来る。転送先（Location）へは **GET で、本文なしで**取りに行く（本文つきで POST し直すと 411 になる）。curl なら `-X POST` を付けず `--data` と `-L` だけ：`curl -sL -H "Content-Type: application/json" --data '{…}' （送り先）`
+- 返事は JSON で、`ok` が true なら成功
 - 鍵は秘密です。人に見せたり、メールやメモに書いたりしないでください
 - `{"action":"muse","key":…,"op":"help"}` で、できる操作の一覧が返ります
 
