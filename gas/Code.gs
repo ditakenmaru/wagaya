@@ -854,7 +854,7 @@ function deleteMenu(date) {
 /* 返信：話題・相談・日記・お出かけなどへの、ふたりのやりとり。対象は「種類:id」 */
 function addReply(r, me) {
   var body = String(r.text || '').slice(0, 1000).trim(), target = String(r.target || '').slice(0, 80);
-  if (!body || !r.id || !/^(topics|decide|diary|weekend|deadline|news):\S{1,60}$/.test(target)) return { ok: false, code: 'bad_request' };
+  if (!body || !r.id || !/^(topics|decide|diary|weekend|deadline|news|notes):\S{1,60}$/.test(target)) return { ok: false, code: 'bad_request' };
   appendObj('返信', { id: String(r.id), '対象': target, '誰': me.who, '日時': new Date(), '本文': body });
   return { ok: true };
 }

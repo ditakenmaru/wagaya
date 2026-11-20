@@ -396,7 +396,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
                 </sc-if>
               </span>
               <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px">
-                <span style="{{r.taskStyle}}">{{r.task}}</span><sc-if value="{{r.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
+                <span style="max-width: 100%"><span style="{{r.taskStyle}}">{{r.task}}</span></span><sc-if value="{{r.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900; animation: pop .4s ease-out">新着</span></sc-if>
                 <sc-if value="{{r.once}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 700; color: #8A5A12; background: #F3E8D6; border-radius: 6px; padding: 2px 6px">今日だけ</span></sc-if>
               </span>
               <span style="{{r.badgeStyle}}">{{r.who}}</span>
@@ -558,13 +558,14 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
     <div class="strip" role="group" aria-label="曜日を選ぶ" style="display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 4px; scrollbar-width: none">
       <sc-for list="{{week}}" as="w" hint-placeholder-count="7">
-        <button type="button" aria-pressed="{{w.pressed}}" onClick="{{w.pick}}" style="{{w.style}}">
+        <button type="button" aria-pressed="{{w.pressed}}" aria-label="{{w.aria}}" onClick="{{w.pick}}" style="{{w.style}}">
           <span style="font-size: 12px; font-weight: 700">{{w.dow}}</span>
           <span style="font-size: 20px; font-weight: 900">{{w.date}}</span>
           <span style="{{w.dotStyle}}"></span>
         </button>
       </sc-for>
     </div>
+    <div aria-hidden="true" style="display: flex; gap: 14px; padding: 0 20px; font-size: 11px; color: #55605A"><span style="display: inline-flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #C99A1E"></span>ホットクック</span><span style="display: inline-flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #8A948D"></span>献立あり</span><span>点なし＝未定</span></div>
     <div style="{{menuCardStyle}}">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
         <span style="font-size: 13px; font-weight: 700; color: #55605A">{{dayMenu.label}}の夕ごはん</span>
@@ -846,12 +847,28 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <sc-if value="{{n.hasTask}}" hint-placeholder-val="{{ false }}">
           <span style="font-size: 12px; font-weight: 700; color: #55605A">「{{n.task}}」について</span>
         </sc-if>
-        <p style="margin: 0; font-size: 15px; line-height: 1.65">{{n.text}}</p>
-        <sc-if value="{{n.unread}}" hint-placeholder-val="{{ true }}">
-          <button type="button" onClick="{{n.ack}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border: none; border-radius: 12px; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">確認しました</button>
-        </sc-if>
-        <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
-          <span style="font-size: 12px; font-weight: 700; color: #2C6B52">確認済み</span>
+        <p style="margin: 0; font-size: 15px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere">{{n.text}}</p>
+        <sc-for list="{{n.replies}}" as="nr" hint-placeholder-count="0">
+          <div style="{{nr.style}}">
+            <div style="display: flex; align-items: center; gap: 8px"><span style="{{nr.badgeStyle}}">{{nr.who}}</span><span style="font-size: 12px; color: #55605A">{{nr.time}}</span>
+              <sc-if value="{{nr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{nr.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+            </div>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere">{{nr.text}}</p>
+          </div>
+        </sc-for>
+        <sc-if value="{{n.newReply}}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; padding: 2px 8px; border-radius: 999px; background: #F2A33A; color: #17201B; font-size: 11px; font-weight: 900">新しい返信</span></sc-if>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+          <sc-if value="{{n.unread}}" hint-placeholder-val="{{ true }}">
+            <button type="button" onClick="{{n.ack}}" style="min-height: 44px; padding: 0 14px; border: none; border-radius: 12px; background: #17201B; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">確認しました</button>
+          </sc-if>
+          <button type="button" aria-expanded="{{n.replyExpanded}}" onClick="{{n.toggleReply}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{n.replyLabel}}</button>
+          <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
+            <span style="margin-left: auto; font-size: 12px; font-weight: 700; color: #2C6B52">確認済み</span>
+          </sc-if>
+        </div>
+        <sc-if value="{{n.replyOpen}}" hint-placeholder-val="{{ false }}">
+          <textarea id="note-reply-input" aria-label="返信" rows="2" value="{{noteReplyDraft}}" onInput="{{setNoteReplyDraft}}" placeholder="返信を書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FFFFFF; color: #17201B"></textarea>
+          <button type="button" onClick="{{n.sendReply}}" style="min-height: 44px; border: none; border-radius: 12px; background: #3046A6; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">送信</button>
         </sc-if>
       </div>
     </sc-for>
@@ -1104,7 +1121,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="config.js?v=37"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>

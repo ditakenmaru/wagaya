@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '36';
+  var APP_VERSION = '37';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -527,6 +527,8 @@
     (D.topics || []).forEach(function (x) { withR('topics:' + x.id, [x.title, x.url, x.note].join('|')); });
     (D.diary || []).forEach(function (x) { withR('diary:' + x.id, x.text); });
     (D.outings || []).forEach(function (x) { withR('weekend:' + x.id, [x.name, x.like1, x.like2, x.state, x.go].join('|')); });
+    /* 申し送りは返信が付いた時だけ（確認の有無は別の印で出す） */
+    (D.notes || []).forEach(function (x) { var k = 'notes:' + x.id; if (rc[k]) m[k] = '#r' + rc[k]; });
     ((D.shop && D.shop.groups) || []).forEach(function (g) { (g.items || []).forEach(function (it) { m['shop:' + it[0]] = [it[1], it[2]].join('|'); }); });
     return m;
   }
@@ -948,11 +950,30 @@
   App.prototype.sendReply = function () {
     var dt = this.state.detail, text = String(this.state.replyDraft || '').trim();
     if (!dt || !text) return;
-    if (this.stale()) return;
-    var r = { id: uid('r'), target: dt.kind + ':' + dt.id, text: text }, me = this.meWho(), revert = this.snapshot();
+    if (this.addReplyTo(dt.kind, dt.id, text)) this.setState({ replyDraft: '' });
+  };
+  App.prototype.addReplyTo = function (kind, id, text) {
+    if (this.stale()) return false;
+    var r = { id: uid('r'), target: kind + ':' + id, text: text }, me = this.meWho(), revert = this.snapshot();
     this.mutate(function (d) { d.replies = (d.replies || []).concat([{ id: r.id, target: r.target, who: me, at: Date.now(), text: text }]); });
-    this.setState({ replyDraft: '' });
     this.send('addReply', { reply: r }, revert);
+    return true;
+  };
+  /* 申し送りへの返信。自分宛てで未確認なら、返信した時に確認済みにもする */
+  App.prototype.replyNote = function (n) {
+    var text = String(this.state.noteReplyDraft || '').trim();
+    if (!text) { this.showToast('返信の内容を入力してください', null); return; }
+    if (!this.addReplyTo('notes', n.id, text)) return;
+    USAGE.add('act:note_reply');
+    if (!n.read && n.to === this.meWho()) this.ackNote(n, true);
+    this.setState({ noteReplyId: null, noteReplyDraft: '' });
+    this.showToast('返信しました', null);
+  };
+  /* 申し送りを閉じたら、返信の新着は見たことにする */
+  App.prototype.seeNotes = function () {
+    var marks = Object.assign({}, this.state.marks || {}), seen = LS.get('seen') || {}, cur = sigsOf(this.state.data), hit = false;
+    Object.keys(marks).forEach(function (k) { if (k.indexOf('notes:') === 0) { delete marks[k]; if (cur[k] !== undefined) seen[k] = cur[k]; hit = true; } });
+    if (hit) { LS.set('seen', seen); this.setState({ marks: marks }); }
   };
   App.prototype.deleteReply = function (id) {
     var revert = this.snapshot();
@@ -1301,7 +1322,7 @@
         openNote: function () { self.openNoteFor(d.task, d.id, 'handover', d.who); },
         noteBtnStyle: 'position: relative; width: 50px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: 14px; border: none; background: transparent; color: #6B746E; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; cursor: pointer',
         markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + c.ink + '; background: ' + (isDone ? c.ink : 'transparent'),
-        taskStyle: 'flex: 1; min-width: 0; font-size: 16px; font-weight: 700; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: #55605A' : '0% 1.5px'),
+        taskStyle: 'display: inline; font-size: 16px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: #55605A' : '0% 1.5px'),
         badgeStyle: self.badge(d.who)
       };
     });
@@ -1332,7 +1353,8 @@
         dow: isToday ? '今日' : d, date: dt.getDate(), pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ day: i, dayAnim: self.state.dayAnim + 1 }); },
         style: 'flex: 1 1 0; min-width: 44px; min-height: 72px; border-radius: 14px; border: ' + (isToday && !on ? '2px solid #17201B' : '2px solid transparent') + '; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .2s, color .2s; ' + (on ? 'background: #17201B; color: #FFFFFF' : 'background: #FFFFFF; color: #17201B'),
-        dotStyle: 'width: 6px; height: 6px; border-radius: 50%; background: ' + (menuByDow[i].hotcook ? '#C99A1E' : 'transparent')
+        aria: (isToday ? '今日' : d + '曜') + ' ' + dt.getDate() + '日、' + (menuMap[ymd(dt)] ? (menuByDow[i].hotcook ? 'ホットクックの献立あり' : '献立あり') : '献立なし'),
+        dotStyle: 'width: 6px; height: 6px; border-radius: 50%; background: ' + (!menuMap[ymd(dt)] ? 'transparent' : (menuByDow[i].hotcook ? '#C99A1E' : (on ? '#FFFFFF' : '#8A948D')))
       };
     });
     var dm = menuByDow[dayIdx];
@@ -1666,6 +1688,7 @@
     var notesSorted = notesAll.slice().sort(function (a, b) { return (a.read === b.read) ? b.createdAt - a.createdAt : (a.read ? 1 : -1); });
     var myUnread = notesAll.filter(function (n) { return !n.read && n.to === meWho; });
     var unreadAll = notesAll.filter(function (n) { return !n.read; });
+    var newReplies = notesAll.filter(function (n) { return marks['notes:' + n.id]; });
     var o = this.order();
     var cur = o.length ? st.slideIdx % o.length : 0;
     var syncLabel = st.syncing ? '更新中…' : (st.offline ? 'オフライン' : meWho);
@@ -1750,7 +1773,7 @@
     var myTurnDecide = (D.decisions || []).filter(function (x) { return x.state !== '決まった' && !(me1 ? x.a1 : x.a2); }).length;
     var twoTab = tabOf(secByKey.decide || { key: 'decide' });
     var navTabs = tabNames.map(function (t) {
-      var badge = t === twoTab ? myUnread.length + myTurnDecide : 0;
+      var badge = t === twoTab ? myUnread.length + newReplies.length + myTurnDecide : 0;
       var on = t === curTab;
       return {
         label: TAB_LABEL[t] || t, ic_today: TAB_ID[t] === 'today' || !TAB_ID[t], ic_two: TAB_ID[t] === 'two', ic_food: TAB_ID[t] === 'food', ic_plan: TAB_ID[t] === 'plan', ic_news: TAB_ID[t] === 'news', current: on ? 'page' : 'false', badge: badge, hasBadge: badge > 0,
@@ -1828,8 +1851,8 @@
       hdr: hdr, seeAll: function () { self.seeAll(); },
       navTabs: navTabs, navStyle: 'position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 456px; margin: 0 auto; box-sizing: border-box; display: grid; grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 22px; background: rgba(23,32,27,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(23,32,27,0.28); z-index: 25',
       notesHere: notesHere,
-      notesCardText: myUnread.length ? 'あなた宛てが ' + myUnread.length + '件あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
-      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: 20px; text-align: left; cursor: pointer; font-family: inherit; color: #17201B; border: ' + (myUnread.length ? '2px solid #F2A33A' : '1.5px solid #DDE3DA') + '; background: #FFFFFF',
+      notesCardText: myUnread.length || newReplies.length ? [myUnread.length ? 'あなた宛てが ' + myUnread.length + '件' : '', newReplies.length ? '新しい返信が ' + newReplies.length + '件' : ''].filter(String).join('、') + 'あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
+      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: 20px; text-align: left; cursor: pointer; font-family: inherit; color: #17201B; border: ' + (myUnread.length || newReplies.length ? '2px solid #F2A33A' : '1.5px solid #DDE3DA') + '; background: #FFFFFF',
       travelText: travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）' : '',
       decisions: decisions, decisionsEmpty: decisions.length === 0, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
@@ -1988,7 +2011,7 @@
       notesNavLabel: unreadAll.length ? '申し送り（未確認' + unreadAll.length + '件）' : '申し送り',
       notesNavBg: st.notesOpen ? 'rgba(255,255,255,0.16)' : 'transparent',
       openNotes: function () { self.setState({ notesOpen: true }); },
-      closeNotes: function () { self.setState({ notesOpen: false }); },
+      closeNotes: function () { self.setState({ notesOpen: false, noteReplyId: null }); self.seeNotes(); },
       notesSummary: unreadAll.length ? '未確認 ' + unreadAll.length + '件' : 'すべて確認済み',
       notes: notesSorted.map(function (n) {
         var mineTo = n.to === meWho;
@@ -2000,7 +2023,18 @@
           ack: function () {
             self.ackNote(n, true);
             self.showToast('申し送りを確認しました', function () { self.ackNote(n, false); self.setState({ toast: null }); });
-          }
+          },
+          newReply: !!marks['notes:' + n.id],
+          replies: (D.replies || []).filter(function (r) { return r.target === 'notes:' + n.id; }).sort(function (a, b) { return a.at - b.at; }).map(function (r) {
+            var mine = r.who === meWho;
+            return { who: r.who, text: r.text, time: whenLabel(r.at), badgeStyle: self.badge(r.who), mine: mine,
+              del: function () { self.deleteReply(r.id); },
+              style: 'display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #FFFFFF; ' + (mine ? 'margin-left: 24px' : 'margin-right: 24px') };
+          }),
+          replyOpen: st.noteReplyId === n.id, replyExpanded: st.noteReplyId === n.id ? 'true' : 'false',
+          replyLabel: st.noteReplyId === n.id ? 'やめる' : '返信',
+          toggleReply: function () { self.setState({ noteReplyId: self.state.noteReplyId === n.id ? null : n.id, noteReplyDraft: '' }); setTimeout(function () { var el = document.getElementById('note-reply-input'); if (el) el.focus(); }, 60); },
+          sendReply: function () { self.replyNote(n); }
         };
       }),
       toChoices: names.map(function (p) {
@@ -2011,6 +2045,8 @@
           style: 'min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; border: 1.5px solid ' + c.ink + '; ' + (on ? 'background: ' + c.ink + '; color: #FFFFFF' : 'background: transparent; color: ' + c.ink)
         };
       }),
+      noteReplyDraft: st.noteReplyDraft || '',
+      setNoteReplyDraft: function (e) { self.setState({ noteReplyDraft: e.target.value }); },
       draft: st.draft,
       setDraft: function (e) { self.setState({ draft: e.target.value }); },
       sendNote: function () {
@@ -2184,9 +2220,9 @@
       ];
       demoDB = {
         me: { email: 'demo@example.com', who: 'とと' }, today: ymd(t),
-        duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
+        duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
         done: {}, checked: {},
-        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
+        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
         notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; }),
@@ -2206,11 +2242,11 @@
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
         weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
         topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }, { id: 't2', title: '見本：年末の帰省の相談', url: '', note: '見本の長い文です。12/28の夕方に出て、実家に2泊する案。新幹線は混むので、車で行くなら途中で1回休む。おみやげは前の日に買う。ふたりの昼寝の時間に合わせて出発したい。帰りは12/30の午前。大掃除は帰ってからにするか、出る前に半分だけ済ませるか、決めたい。年賀状は今年は写真入りにする？', date: '11/20' }],
-        replies: [{ id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本のコメント：出る前に半分だけ大掃除がいいと思う。' }],
+        replies: [{ id: 'r0', target: 'notes:n1', who: 'とと', at: Date.now() - 1200e3, text: '見本の返信：了解、今夜カバンに入れておきます。' }, { id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本のコメント：出る前に半分だけ大掃除がいいと思う。' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,
         people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },
-        ui: { timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }
+        ui: Object.assign({ timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }, /[?&]trip=1/.test(location.search) ? { tripFrom: dd(t.getDay() - 1), tripTo: dd(t.getDay() + 3) } : {})   /* ?demo=1&trip=1 で旅行中の見本 */
       };
     }
     var db = demoDB;
