@@ -20,7 +20,7 @@
 
 | op | 中身 | 使う時 |
 |---|---|---|
-| `list` | なし | 今の買い物リスト・献立・担当・予定・期限・相談・お出かけ・私宛ての申し送りを見る |
+| `list` | なし | 今の買い物リスト・献立（今週と来週）・担当・予定・期限・相談・お出かけ・私宛ての申し送りを見る |
 | `shop.add` | `items:[{name, qty?, cat?}]` | 買い物リストに足す。まだ買っていない同じ品名は自動で飛ばす |
 | `menu.add` | `dish, ingredients:[{name, qty?}], servings?, date?, how?, note?, url?, hotcook?, toShop?, replace?` | 献立に入れる。`toShop:true` で、材料のうちリストに無い物を買い物に足す。`date` を省くと今日から7日で空いている最初の日 |
 | `duty.add` | `task, time?, who?, date?` か `repeat?` | 担当（やること）を足す。`date` ならその日だけ、`repeat` は「毎日・平日・土日・月水金」など |

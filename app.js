@@ -7,7 +7,7 @@
 
   var CFG = window.APP_CONFIG || {};
   var APP_VERSION = '46';
-  var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
+  var API_EXPECTED = 12;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
   var LSP = DEMO ? 'demo.' : '';
@@ -255,7 +255,7 @@
     DCLogic.call(this);
     var cached = LS.get('boot');
     this.state = {
-      who: LS.get('who') || 'all', day: null, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, sheet: false,
+      who: LS.get('who') || 'all', day: null, menuWeek: 0, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, sheet: false,
       loading: !cached, data: cached, photos: [],
       slideIdx: 0, slideAt: Date.now(), paused: false,
       noteOpen: false, noteMode: 'diary', noteTarget: '', noteTaskId: null, noteDraft: '', listening: false,
@@ -1263,22 +1263,65 @@
     this.send('deleteMenu', { date: e.date }, revert);
     this.showToast(e.dateLabel + 'の献立を消しました', null);
   };
+  /* 献立の材料を買い物リストへ：先にシートを開き、材料ごとに行き先（買い物リストの分類／家にある）を選んでから、まとめて送る。
+   * すでにリストにある物（まだ買っていない）は「リストにある」で選べない。既定は前回その品を入れた分類、分からなければお店 */
+  var AT_HOME = '家にある';
+  function shopKey(n) { return String(n || '').replace(/[\s　]/g, '').toLowerCase(); }   /* GAS の normName と同じ */
+  App.prototype.shopCatList = function () {
+    var D = this.state.data || {}, out = [];
+    ((D.shop && D.shop.groups) || []).forEach(function (g) { if (out.indexOf(g.label) < 0) out.push(g.label); });
+    (D.shopCats || []).forEach(function (c) { if (c && out.indexOf(c) < 0) out.push(c); });
+    if (!out.length) out.push('その他');
+    return out.slice(0, 5);
+  };
+  App.prototype.shopHave = function () {
+    var D = this.state.data || {}, chk = D.checked || {}, have = {};
+    ((D.shop && D.shop.groups) || []).forEach(function (g) { g.items.forEach(function (x) { if (!chk[x[0]]) have[shopKey(x[1])] = 1; }); });
+    return have;
+  };
   App.prototype.menuToShop = function (dm) {
     if (this.stale()) return;
-    var D = this.state.data || {}, groups = (D.shop && D.shop.groups) || [], week = (D.shop && D.shop.week) || ymd(new Date());
-    var have = {}; groups.forEach(function (g) { g.items.forEach(function (x) { have[String(x[1]).replace(/\s/g, '')] = 1; }); });
-    var cat = (groups[0] && groups[0].label) || 'お店で買う';
-    var items = (dm.ingredients || []).filter(function (x) { return x.name && !have[String(x.name).replace(/\s/g, '')]; }).map(function (x) { return { id: uid('s'), name: x.name, qty: x.qty || '', cat: cat, week: week }; });
-    if (!items.length) { this.showToast('材料はもう全部リストにあります', null); return; }
+    var D = this.state.data || {}, cats = this.shopCatList(), last = D.shopLastCat || {}, have = this.shopHave();
+    var shopCat = cats.filter(function (c) { return /店/.test(c); })[0] || cats[0];
+    var seen = {};
+    var rows = (dm.ingredients || []).filter(function (x) { var k = shopKey(x.name); if (!k || seen[k]) return false; seen[k] = 1; return true; }).map(function (x) {
+      var k = shopKey(x.name), prev = last[k];
+      return { name: x.name, qty: x.qty || '', onList: !!have[k], cat: prev && cats.indexOf(prev) >= 0 ? prev : shopCat };
+    });
+    if (!rows.length) return;
+    var d = parseYmd(dm.date || ymd(new Date()));
+    USAGE.add('act:toShopOpen');
+    this.setState({ editor: { kind: 'toShop', isNew: true, dish: dm.dish, dateLabel: (d.getMonth() + 1) + '/' + d.getDate() + '（' + DOWS[d.getDay()] + '）', rows: rows } });
+  };
+  App.prototype.setToShopCat = function (i, cat) {
+    var e = this.state.editor; if (!e || e.kind !== 'toShop') return;
+    var rows = e.rows.map(function (r, j) { return j === i ? Object.assign({}, r, { cat: cat }) : r; });
+    this.editSet('rows', rows);
+  };
+  App.prototype.sendToShop = function () {
+    if (this.stale()) return;
+    var e = this.state.editor, D = this.state.data || {}, week = (D.shop && D.shop.week) || ymd(new Date());
+    var have = this.shopHave();   /* シートを開いている間にリストが変わっていても、ここでもう一度確かめる */
+    var items = e.rows.filter(function (r) { return !r.onList && r.cat !== AT_HOME && !have[shopKey(r.name)]; })
+      .map(function (r) { return { id: uid('s'), name: r.name, qty: r.qty || '', cat: r.cat, week: week }; });
+    var homeN = e.rows.filter(function (r) { return !r.onList && r.cat === AT_HOME; }).length;
+    this.setState({ editor: null });
+    if (!items.length) { this.showToast(homeN ? '送る物はありませんでした（家にある ' + homeN + '品）' : '材料はもう全部リストにあります', null); return; }
     this.mutate(function (d) {
       d.shop = d.shop || { week: week, groups: [] };
-      var g = d.shop.groups.filter(function (x) { return x.label === cat; })[0];
-      if (!g) { g = { label: cat, items: [] }; d.shop.groups.push(g); }
-      items.forEach(function (x) { g.items.push([x.id, x.name, x.qty]); });
+      items.forEach(function (x) {
+        var g = d.shop.groups.filter(function (y) { return y.label === x.cat; })[0];
+        if (!g) { g = { label: x.cat, items: [] }; d.shop.groups.push(g); }
+        g.items.push([x.id, x.name, x.qty]);
+      });
+      d.shopSuggest = (d.shopSuggest || []).filter(function (s) { return !items.some(function (x) { return shopKey(x.name) === shopKey(s.name); }); });
     });
     this.send('addShopMany', { items: items }, this.snapshot());
-    this.showToast(dm.dish + 'の材料を' + items.length + '品、買い物リストに足しました', null);
+    var by = {}; items.forEach(function (x) { var k = shortCat(x.cat); by[k] = (by[k] || 0) + 1; });
+    this.showToast(e.dish + 'の材料を' + items.length + '品、買い物リストに足しました（' + Object.keys(by).map(function (k) { return k + ' ' + by[k]; }).join('・') + (homeN ? '。家にある ' + homeN + '品は送っていません' : '') + '）', null);
   };
+  /* 分類の名前は短く出す（「WEBで頼む（冷凍・重いもの）」→「WEBで頼む」） */
+  function shortCat(c) { return String(c || '').replace(/[（(][^）)]*[）)]/g, '').trim() || String(c || ''); }
 
   /* 写真のスライド */
   App.prototype.media = function () {
@@ -1422,18 +1465,32 @@
         return { time: hm(d.t), task: d.task, who: d.who, rule: ruleLabel(d), badgeStyle: self.badge(d.who), open: function () { self.openDuty(d); } };
       });
 
-    /* 今週のごはん */
-    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayIdx);
+    /* 今週のごはん（来週へも送れる。来週の献立は GAS が menuTo まで返す。古い GAS なら今週だけ） */
+    var start0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayIdx);
+    var menuWeeks = D.menuTo ? Math.max(1, Math.min(2, Math.round((parseYmd(D.menuTo) - start0) / 864e5 / 7))) : 1;
+    var wkOff = Math.max(0, Math.min(menuWeeks - 1, st.menuWeek || 0));
+    var start = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + 7 * wkOff);
+    var todayInWeek = wkOff === 0 ? todayIdx : -1;
+    if (wkOff && st.day === null) dayIdx = 0;
+    var todayStrM = D.today || ymd(now);
     var menuMap = {};
     (D.menu || []).forEach(function (m) { menuMap[m.date] = m; });
     var menuByDow = dows.map(function (_, i) {
       var dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       return menuMap[ymd(dt)] || { dish: ui.noMenuDish || 'まだ決まっていません', hotcook: false, note: ui.noMenuNote || '', ingredients: [], how: '', photo: '' };
     });
+    var todayMenu = menuMap[ymd(now)];
+    var mdLabel = function (dt) { return (dt.getMonth() + 1) + '/' + dt.getDate(); };
+    var weekNav = menuWeeks < 2 ? [] : [[0, '今週'], [1, '来週']].map(function (w) {
+      var on = w[0] === wkOff;
+      return { label: w[1], pressed: on ? 'true' : 'false', style: chip(on),
+        pick: function () { if (self.state.menuWeek === w[0]) return; USAGE.add('act:menuWeek'); self.setState({ menuWeek: w[0], day: null, dayAnim: self.state.dayAnim + 1 }); } };
+    });
+    var weekRange = mdLabel(start) + '（日）〜' + mdLabel(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)) + '（土）';
     var week = dows.map(function (d, i) {
       var dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       var on = i === dayIdx;
-      var isToday = i === todayIdx;
+      var isToday = i === todayInWeek;
       return {
         dow: isToday ? '今日' : d, date: dt.getDate(), pressed: on ? 'true' : 'false',
         pick: function () { self.setState({ day: i, dayAnim: self.state.dayAnim + 1 }); },
@@ -1446,7 +1503,7 @@
     var dmDate = ymd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx)), dmReal = menuMap[dmDate] || null;
     var dayOfYear = Math.floor((new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx) - new Date(now.getFullYear(), 0, 1)) / 86400000);
     var dayMenu = {
-      label: dayIdx === todayIdx ? '今日' : dows[dayIdx] + '曜', servingsLabel: dm.servings ? '・' + dm.servings + '人分' : '', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
+      label: dayIdx === todayInWeek ? '今日' : wkOff ? '来週' + dows[dayIdx] + '曜' : dows[dayIdx] + '曜', servingsLabel: dm.servings ? '・' + dm.servings + '人分' : '', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
       ingredients: (dm.ingredients || []).map(function (x) { return { name: x[0], qty: x[1] }; }), how: dm.how || '',
       photo: dm.photo || pexels(MOOD[((dayOfYear % MOOD.length) + MOOD.length) % MOOD.length]),
       photoAlt: dm.photo ? (dm.photoBy === 'wiki' ? dm.dish + 'に近い料理の写真（ウィキペディア「' + (dm.photoTitle || '') + '」）' : dm.dish + 'の写真') : '食卓を囲むイメージ写真',
@@ -1460,14 +1517,29 @@
     /* 買い物 */
     var groups = (D.shop && D.shop.groups) || [];
     var total = 0, got = 0;
+    /* どの献立の材料か：今日から先（今週・来週）の献立の材料と品名を、画面の側で突き合わせる（シートの列は増やさない） */
+    var ingKey = function (n) { var t = String(n || ''); try { t = t.normalize('NFKC'); } catch (e) { /* 古い端末 */ } return t.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s　]/g, '').toLowerCase(); };
+    var forMenu = {};
+    (D.menu || []).filter(function (m) { return m.date >= todayStrM && m.dish; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (m) {
+      (m.ingredients || []).forEach(function (x) { var k = ingKey(x[0]); if (!k) return; var l = forMenu[k] = forMenu[k] || []; if (!l.some(function (y) { return y.date === m.date; })) l.push({ date: m.date, dish: m.dish }); });
+    });
+    var nextWeek0 = ymd(new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + 7));
+    var dayWord = function (date) { var w = DOWS[parseYmd(date).getDay()]; return date === todayStrM ? '今日' : w; };
+    var forMenuOf = function (name) {
+      var l = forMenu[ingKey(name)]; if (!l) return null;
+      if (l.length === 1) return { text: (l[0].date >= nextWeek0 ? '来週' : '') + dayWord(l[0].date) + '：' + l[0].dish, aria: dayWord(l[0].date) + '（' + l[0].date.slice(5).replace('-', '/') + '）の' + l[0].dish + 'の材料' };
+      var a = l.filter(function (x) { return x.date < nextWeek0; }).map(function (x) { return dayWord(x.date); }), b = l.filter(function (x) { return x.date >= nextWeek0; }).map(function (x) { return dayWord(x.date); });
+      return { text: a.concat(b.length ? ['来週' + b.join('・')] : []).join('・'), aria: l.map(function (x) { return x.date.slice(5).replace('-', '/') + 'の' + x.dish; }).join('、') + 'の材料' };
+    };
     var shop = groups.map(function (g) {
       var items = [];
       g.items.forEach(function (x) {
-        var on = !!checked[x[0]];
+        var on = !!checked[x[0]], fm = forMenuOf(x[1]);
         total += 1; if (on) got += 1;
         if (st.hideBought && on) return;
         items.push({
           name: x[1], qty: x[2], checked: on, editing: !!st.shopEdit, isNew: !!marks['shop:' + x[0]],
+          forMenu: fm ? fm.text : '', forMenuAria: fm ? fm.aria : '',
           toggle: function () {
             if (self.state.shopEdit) { self.openShop(x, g.label); return; }
             var v = !on;
@@ -1614,9 +1686,9 @@
 
     /* 編集シート（担当・買い物・話題） */
     var E = st.editor;
-    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', menu: !!E && E.kind === 'menu', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew) };
+    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', menu: !!E && E.kind === 'menu', toshop: !!E && E.kind === 'toShop', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew), saveLabel: '保存する' };
     if (E) {
-      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'] };
+      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'], toShop: ['材料を買い物リストへ', '材料を買い物リストへ'] };
       ed.heading = HEAD[E.kind][E.isNew ? 0 : 1];
       var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how', 'servings'];
       FIELDS.forEach(function (k) { ed[k] = E[k] || ''; });
@@ -1660,6 +1732,19 @@
         ed.hotcookStyle = chip(!!E.hotcook, '#8A6A0E') + '; align-self: flex-start';
         ed.toggleHotcook = function () { self.editSet('hotcook', !self.state.editor.hotcook); };
         ed.save = function () { self.saveMenu(); }; ed.del = function () { self.deleteMenu(); };
+      } else if (E.kind === 'toShop') {
+        /* 材料ごとに行き先を選ぶ：買い物リストの分類＋「家にある」。リストにある物は選べない */
+        var tsCats = self.shopCatList().concat([AT_HOME]), nSend = 0;
+        ed.dish = E.dish; ed.dateLabel = E.dateLabel;
+        ed.tsRows = E.rows.map(function (r, i) {
+          if (!r.onList && r.cat !== AT_HOME) nSend += 1;
+          return { name: r.name, qty: r.qty, onList: r.onList, canPick: !r.onList,
+            aria: r.name + 'をどこで買うか',
+            chips: r.onList ? [] : tsCats.map(function (c) { var on = r.cat === c; return { label: shortCat(c), aria: c, pressed: on ? 'true' : 'false', style: chip(on, c === AT_HOME ? '#55605A' : '#2C6B52'), pick: function () { self.setToShopCat(i, c); } }; }) };
+        });
+        ed.tsNote = E.rows.some(function (r) { return r.onList; }) ? '「リストにある」品は、まだ買っていない物がリストに入っているので送りません。' : '';
+        ed.saveLabel = nSend ? nSend + '品をまとめて送る' : '送る物はありません';
+        ed.save = function () { self.sendToShop(); }; ed.del = function () {};
       } else if (E.kind === 'outing') {
         ed.okindChips = ['公園', '行くところ', 'イベント'].map(function (k) { var on = E.okind === k; return { label: k, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('okind', k); } }; });
         ed.save = function () { self.saveOuting(); }; ed.del = function () { self.deleteOuting(); };
@@ -1853,6 +1938,7 @@
     var secByKey = {}; secCfg.forEach(function (c) { secByKey[c.key] = c; });
     var title = {}, sections = [];
     SEC_DEF.forEach(function (x) { title[x[0]] = (secByKey[x[0]] && secByKey[x[0]].title) || x[1]; });
+    if (wkOff && /今週/.test(title.week)) title.week = title.week.replace('今週', '来週');   /* 来週を見ている時は見出しも来週に */
     var secAll = secCfg.concat(SEC_DEF.filter(function (x) { return !secByKey[x[0]]; }).map(function (x, k) { return { key: x[0], title: x[1], all: true, person: true, order: 50 + k, evening: 50 + k, travel: true }; }));
     /* 夜（設定の時刻から）は「夜の順番」、旅行中は話題を一番上に */
     var ordOf = function (c) {
@@ -1958,7 +2044,7 @@
       var tid = TAB_ID[curTab] || '';
       var soon = (D.deadlines || []).filter(function (x) { return !x.done && x.due && Math.round((parseYmd(x.due) - parseYmd(todayStr)) / 864e5) <= 3; }).length;
       var sum = tid === 'two' ? [turn ? 'あなたの番 ' + turn + '件' : 'あなたの番はありません', soon ? '3日以内の期限 ' + soon + '件' : '']
-        : tid === 'food' ? ['今日：' + (todayIdx >= 0 && menuByDow[todayIdx] ? menuByDow[todayIdx].dish : (ui.noMenuDish || 'まだ決まっていません')), total ? '買い物 のこり' + (total - got) + '品' : '']
+        : tid === 'food' ? ['今日：' + (todayMenu ? todayMenu.dish : (ui.noMenuDish || 'まだ決まっていません')), total ? '買い物 のこり' + (total - got) + '品' : '']
         : tid === 'plan' ? [planTotal ? (planN >= 14 ? '2週間' : planN + '日') + 'の予定 ' + planTotal + '件' : (planN >= 14 ? '2週間' : planN + '日') + 'の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
@@ -1988,8 +2074,9 @@
       decisions: decisions, decisionsEmpty: decisions.length === 0, decArchive: decArchive, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
       outings: outings, outingsEmpty: outings.length === 0, addOuting: function () { self.openOuting(null); },
-      menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, ingredients: dayMenu.ingredients }); },
-      editMenu: function () { self.openMenu(dmDate, dmReal); }, editMenuLabel: dmReal ? '献立を直す' : '献立を入れる', hasMenu: !!dmReal, hasIngredients: dayMenu.ingredients.length > 0 && dayIdx >= todayIdx,   /* 過ぎた日の材料は送らない */
+      menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, date: dmDate, ingredients: dayMenu.ingredients }); },
+      editMenu: function () { self.openMenu(dmDate, dmReal); }, editMenuLabel: dmReal ? '献立を直す' : '献立を入れる', hasMenu: !!dmReal, hasIngredients: dayMenu.ingredients.length > 0 && dmDate >= todayStrM,   /* 過ぎた日の材料は送らない */
+      weekNav: weekNav, hasWeekNav: weekNav.length > 0, weekRange: weekRange,
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
       flowEditLabel: st.flowEdit ? '完了' : '直す',
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
@@ -2361,6 +2448,13 @@
         ['テイクアウト', false, '金曜は作らない日。', [], '帰り道で受け取る。', 17597420],
         ['鍋', false, '食卓で家族みんなで。', [['鶏肉', '400g'], ['豆腐', '1丁'], ['白菜', '1/4株']], '卓上で。', 35132136]
       ];
+      /* 来週の見本（日・火・木・金） */
+      var nextDishes = [
+        [7, '見本：親子丼', false, '見本の献立です。', [['鶏もも肉', '300g'], ['卵', '4個'], ['玉ねぎ', '1個']], '見本の作り方。'],
+        [9, '見本：豚汁', true, '見本の献立です。', [['豚こま肉', '200g'], ['大根', '1/3本'], ['にんじん', '1本'], ['みそ', '大さじ3']], '見本の作り方。'],
+        [11, '見本：筑前煮', true, '見本の献立です。', [['鶏もも肉', '300g'], ['にんじん', '1本'], ['ごぼう', '1本'], ['冷凍いんげん', '1袋']], '見本の作り方。'],
+        [12, '見本：焼きそば', false, '見本の献立です。', [['焼きそば麺', '3玉'], ['キャベツ', '1/4個']], '見本の作り方。']
+      ];
       demoDB = {
         me: { email: 'demo@example.com', who: 'とと' }, today: ymd(t),
         duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
@@ -2368,8 +2462,12 @@
         dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
         notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
-        menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; }),
+        menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; })
+          .concat(nextDishes.map(function (x) { return { date: dd(x[0]), dish: x[1], hotcook: x[2], note: x[3], ingredients: x[4], how: x[5], photo: '' }; })),
+        menuFrom: dd(0), menuTo: dd(13),
         shop: { week: dd(0), groups: [{ label: 'お店で買う', items: [['e', '大根', '1本'], ['f', 'じゃがいも', '4個']] }, { label: 'WEBで頼む（冷凍・重いもの）', items: [['a', '鶏もも肉', '600g'], ['c', '冷凍ブロッコリー', '1袋']] }] },
+        shopCats: ['お店で買う', 'WEBで頼む（冷凍・重いもの）'],
+        shopLastCat: { '豚こま肉': 'WEBで頼む（冷凍・重いもの）', '冷凍いんげん': 'WEBで頼む（冷凍・重いもの）', 'にんじん': 'お店で買う' },
         plans: (function () {
           var t0 = new Date(), td = function (n) { return ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + n)); };
           var out = [{ date: td(0), time: '17:00', what: '保育園お迎え', who: 'まま' }, { date: td(1), time: '9:00', what: 'インフルワクチン', who: '家族' }, { date: td(1), time: '', what: '燃えるゴミ', who: '家族' },
@@ -2409,6 +2507,11 @@
         if (a === 'deleteDiary') db.diary = db.diary.filter(function (x) { return x.id !== p.id; });
         if (a === 'saveMenu') { db.menu = db.menu.filter(function (x) { return x.date !== p.menu.date; }).concat([{ date: p.menu.date, dish: p.menu.dish, servings: p.menu.servings, hotcook: p.menu.hotcook, note: p.menu.note, ingredients: p.menu.ingredients.map(function (x) { return [x.name, x.qty]; }), how: p.menu.how, photo: '' }]); }
         if (a === 'deleteMenu') db.menu = db.menu.filter(function (x) { return x.date !== p.date; });
+        if (a === 'addShopMany') (p.items || []).forEach(function (x) {
+          var g = db.shop.groups.filter(function (y) { return y.label === x.cat; })[0];
+          if (!g) { g = { label: x.cat, items: [] }; db.shop.groups.push(g); }
+          g.items.push([x.id, x.name, x.qty]);
+        });
         if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text, parent: p.reply.parent || '' });
         if (a === 'addPhoto') { db.uploaded = (db.uploaded || 0) + 1; }
         if (a === 'deleteReply') db.replies = db.replies.filter(function (x) { return x.id !== p.id; });

@@ -306,7 +306,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 12 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -382,6 +382,26 @@ ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版'
   post(env, { action: 'addShopMany', session: S, items: [{ id: 'm1', name: '大根', qty: '1本', cat: 'お店で買う', week: wk(0) }, { id: 'm2', name: '鶏もも', qty: '300g', cat: 'お店で買う', week: wk(0) }] });
   let bd = post(env, { action: 'boot', session: S, today }).data;
   ok(bd.shop.groups.some(g => g.items.some(x => x[1] === '大根')) && bd.shop.groups.some(g => g.items.some(x => x[1] === '鶏もも')), '献立の材料をまとめて買い物へ');
+}
+// 材料ごとに行き先（分類）を選んで送る・来週の献立・前に入れた分類
+{
+  const r = post(env, { action: 'addShopMany', session: S, items: [{ id: 'm3', name: '冷凍うどん', qty: '5玉', cat: 'WEB', week: wk(0) }, { id: 'm4', name: ' 大根', qty: '1本', cat: 'WEB', week: wk(0) }, { id: 'm5', name: 'ねぎ', cat: 'お店で買う', week: wk(0) }, { id: 'm6', name: 'ねぎ', cat: 'WEB', week: wk(0) }] });
+  let bd = post(env, { action: 'boot', session: S, today }).data;
+  const items = bd.shop.groups.flatMap(g => g.items.map(x => [g.label, x[1]]));
+  ok(r.ok && items.some(x => x[0] === 'WEB' && x[1] === '冷凍うどん') && items.some(x => x[0] === 'お店で買う' && x[1] === 'ねぎ'), 'addShopMany: 品ごとの分類で入る');
+  ok(items.filter(x => x[1] === '大根').length === 1 && items.filter(x => x[1] === 'ねぎ').length === 1 && r.skipped.includes('大根') && r.skipped.includes('ねぎ'), 'addShopMany: まだ買っていない同じ品名・同じ送りの重なりは足さない');
+  ok(bd.shopCats[0] === bd.shop.groups[0].label && bd.shopCats.includes('WEB') && bd.shopCats.includes('お店で買う'), 'boot: 買い物の分類の一覧（今のリストの順が先）' + JSON.stringify(bd.shopCats));
+  const day = n => { const t = new Date(today + 'T00:00:00'); t.setDate(t.getDate() + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
+  const dow = new Date(today + 'T00:00:00').getDay();
+  const nextSun = day(7 - dow), nextSat = day(13 - dow), after = day(14 - dow);
+  post(env, { action: 'saveMenu', session: S, menu: { date: nextSun, dish: '来週の豚汁', ingredients: [{ name: 'オムツ', qty: '' }, { name: '冷凍うどん' }, { name: 'しめじ' }] } });
+  post(env, { action: 'saveMenu', session: S, menu: { date: nextSat, dish: '来週の土曜', ingredients: [] } });
+  post(env, { action: 'saveMenu', session: S, menu: { date: after, dish: '再来週', ingredients: [] } });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(bd.menu.some(x => x.date === nextSun && x.dish === '来週の豚汁') && bd.menu.some(x => x.date === nextSat) && !bd.menu.some(x => x.date === after), 'boot: 来週の献立も返す（再来週は返さない）');
+  ok(bd.menuFrom === day(-dow) && bd.menuTo === nextSat && bd.menu.every((x, i, a) => !i || a[i - 1].date <= x.date), 'boot: menuFrom〜menuTo は今週の日曜〜来週の土曜・日付順');
+  ok(bd.shopLastCat['オムツ'] === 'WEB' && bd.shopLastCat['冷凍うどん'] === 'WEB' && !('しめじ' in bd.shopLastCat) && !('牛乳' in bd.shopLastCat), 'boot: 献立の材料ごとに前に入れた分類（献立に出る品だけ）' + JSON.stringify(bd.shopLastCat));
+  ['来週の豚汁', '来週の土曜', '再来週'].forEach((_, i) => post(env, { action: 'deleteMenu', session: S, date: [nextSun, nextSat, after][i] }));
 }
 // 使われ方とふりかえり
 {

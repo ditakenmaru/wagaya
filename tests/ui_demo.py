@@ -1,4 +1,4 @@
-import asyncio
+import asyncio, os
 from playwright.async_api import async_playwright
 async def main():
     async with async_playwright() as p:
@@ -7,7 +7,7 @@ async def main():
         page = await ctx.new_page()
         errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
-        await page.goto('http://localhost:8765/index.html?demo=1')
+        await page.goto('http://localhost:%s/index.html?demo=1' % os.environ.get('WAGAYA_PORT', '8765'))
         await page.wait_for_timeout(1500)
         # flow edit
         await page.get_by_role('button', name='直す', exact=True).first.click(); await page.wait_for_timeout(400)

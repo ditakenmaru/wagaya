@@ -1,9 +1,9 @@
 """新しいセクション（ふたりで決めること・期限・今週末・献立→買い物・夜の並び・旅行中）を見本モードで確かめる。
-python3 -m http.server 8765 を立ててから実行する。"""
-import asyncio
+python3 -m http.server 8765 を立ててから実行する（ポートは環境変数 WAGAYA_PORT で変えられる）。"""
+import asyncio, os
 from playwright.async_api import async_playwright
 
-URL = 'http://localhost:8765/index.html?demo=1'
+URL = 'http://localhost:%s/index.html?demo=1' % os.environ.get('WAGAYA_PORT', '8765')
 
 
 async def main():
@@ -61,13 +61,52 @@ async def main():
         print('food: week+shop visible:', await page.locator('[data-sec=week]').is_visible() and await page.locator('[data-sec=shop]').is_visible())
         await page.screenshot(path='/tmp/s_nav_food.png')
         wk = page.locator('#w-week'); await wk.scroll_into_view_if_needed(); await page.wait_for_timeout(1200)
-        btn = page.get_by_role('button', name='材料を買い物リストへ')
-        if await btn.count():
-            await btn.click(); await page.wait_for_timeout(400)
-            toast = await page.locator('[role=status][aria-live]').inner_text()
-            print('menu to shop toast:', '買い物リストに足しました' in toast or 'もう全部リストにあります' in toast, toast.strip()[:40])
-        else:
-            print('menu to shop: no ingredients today (ok)')
+        # 来週の献立：週を「来週」に送る → 来週の火曜（見本：豚汁）
+        wsec = page.locator('section[aria-labelledby=sec-week]')
+        await wsec.get_by_role('group', name='週を選ぶ').get_by_role('button', name='来週').click(); await page.wait_for_timeout(400)
+        await wsec.get_by_role('group', name='曜日を選ぶ').get_by_role('button').nth(2).click(); await page.wait_for_timeout(500)
+        t = await wsec.inner_text()
+        print('next week menu shown:', '見本：豚汁' in t and '来週火曜の夕ごはん' in t)
+        # 来週の日にも献立を入れられる（水曜は空き）
+        await wsec.get_by_role('group', name='曜日を選ぶ').get_by_role('button').nth(3).click(); await page.wait_for_timeout(300)
+        await wsec.get_by_role('button', name='献立を入れる').click(); await page.wait_for_timeout(300)
+        await page.fill('#ed-dish', '見本：焼き魚'); await page.fill('#ed-ings', '見本の魚 2切れ')
+        await page.get_by_role('button', name='保存する').click(); await page.wait_for_timeout(500)
+        print('next week menu saved:', '見本：焼き魚' in await wsec.inner_text())
+        # 材料を送る前のシート：品ごとに行き先を選ぶ
+        await wsec.get_by_role('group', name='曜日を選ぶ').get_by_role('button').nth(2).click(); await page.wait_for_timeout(400)
+        await wsec.get_by_role('button', name='材料を買い物リストへ').click(); await page.wait_for_timeout(500)
+        sheet = page.locator('section[aria-labelledby=ed-title]')
+        rows = sheet.locator('[data-toshop]')
+        rtext = [ (await rows.nth(i).inner_text()) for i in range(await rows.count()) ]
+        daikon = [x for x in rtext if '大根' in x]
+        print('sheet: 大根 is on list, no choice:', len(daikon) == 1 and 'リストにある' in daikon[0] and await sheet.get_by_role('group', name='大根をどこで買うか').count() == 0)
+        pork = sheet.get_by_role('group', name='豚こま肉をどこで買うか')
+        carrot = sheet.get_by_role('group', name='にんじんをどこで買うか')
+        miso = sheet.get_by_role('group', name='みそをどこで買うか')
+        print('sheet defaults: last category / shop:', await pork.get_by_role('button', name='WEBで頼む（冷凍・重いもの）').get_attribute('aria-pressed') == 'true'
+              and await carrot.get_by_role('button', name='お店で買う').get_attribute('aria-pressed') == 'true'
+              and await miso.get_by_role('button', name='お店で買う').get_attribute('aria-pressed') == 'true')
+        await miso.get_by_role('button', name='家にある').click(); await page.wait_for_timeout(300)
+        await page.screenshot(path='/tmp/s_toshop.png')
+        print('send label counts 2:', await sheet.get_by_role('button', name='2品をまとめて送る').count() == 1)
+        await sheet.get_by_role('button', name='2品をまとめて送る').click(); await page.wait_for_timeout(500)
+        toast = await page.locator('[role=status][aria-live]').inner_text()
+        print('menu to shop toast:', '2品' in toast and '家にある 1品' in toast, toast.strip()[:60])
+        shop = page.locator('section[aria-labelledby=sec-shop]')
+        groups = await shop.evaluate('''el => { const o = {}; el.querySelectorAll('button[aria-pressed]').forEach(b => { const box = b.parentElement, p = box && box.querySelector(':scope > p'); if (!p) return; const n = b.querySelector('span:nth-of-type(2)'); if (n) (o[p.textContent.trim()] = o[p.textContent.trim()] || []).push(n.textContent.trim()); }); return o; }''')
+        print('sent to chosen categories, home item not sent:', '豚こま肉' in groups.get('WEBで頼む（冷凍・重いもの）', []) and 'にんじん' in groups.get('お店で買う', []) and not any('みそ' in v for v in groups.values()), groups)
+        # 買い物の品名の横に、どの献立の材料か
+        tags = shop.locator('[data-formenu]')
+        tag_text = [ (await tags.nth(i).inner_text()) for i in range(await tags.count()) ]
+        print('shop shows which menu:', any('豚汁' in x for x in tag_text) and any(x.startswith('来週火・木') or '・来週火・木' in x for x in tag_text), tag_text)
+        await page.screenshot(path='/tmp/s_shop_formenu.png')
+        await wsec.get_by_role('group', name='週を選ぶ').get_by_role('button', name='今週').click(); await page.wait_for_timeout(300)
+        print('back to this week shows 今日:', '今日' in await wsec.get_by_role('group', name='曜日を選ぶ').inner_text())
+        dow = await page.evaluate('new Date().getDay()')
+        if dow >= 2:   # 今週の月曜（過ぎた日）には「材料を買い物リストへ」を出さない
+            await wsec.get_by_role('group', name='曜日を選ぶ').get_by_role('button').nth(1).click(); await page.wait_for_timeout(300)
+            print('past day hides send button:', await wsec.get_by_role('button', name='材料を買い物リストへ').count() == 0 and '鶏と大根の煮物' in await wsec.inner_text())
 
         # 今週末
         await go('予定')

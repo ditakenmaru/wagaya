@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 11;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 12;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -309,7 +309,8 @@ function bootFor(req, me) {
 function buildBoot(today) {
   var t = parseYmd(today);
   var weekStart = new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay());
-  var weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+  /* 献立は今週と来週（日〜土を MENU_WEEKS 週）。金曜に来週を考えられるように */
+  var menuEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7 * MENU_WEEKS - 1);
   var dow = t.getDay();
   var s = settings();
 
@@ -344,9 +345,9 @@ function buildBoot(today) {
     return { id: String(r.id), date: today, time: normTime(r['時刻']), by: whoOf(r['誰']), text: text(r.text), target: text(r['対象']) };
   });
 
-  var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(weekEnd); }).map(function (r) {
+  var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(menuEnd); }).map(function (r) {
     return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']), servings: text(r['人数']) };
-  });
+  }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });   /* 日付順（写真を探すのも今週の分から） */
   /* 写真URLが空の献立は、料理名に合うウィキペディアの写真を付ける（見つからなければ空のまま） */
   try {
     var auto = dishPhotos(menu.filter(function (m) { return !m.photo && m.dish; }).map(function (m) { return m.dish; }));
@@ -399,7 +400,8 @@ function buildBoot(today) {
     topics: topics, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
-    menu: menu, replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
+    menu: menu, menuFrom: ymd(weekStart), menuTo: ymd(menuEnd), shopCats: shopCatsOf(shop), shopLastCat: shopLastCat(menu),
+    replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
     photosReady: photoFolders().length > 0, photos: photoList(),
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
     ui: {
@@ -511,9 +513,30 @@ function shopFor(weekStart) {
   return { week: week, groups: groups };
 }
 
+/* 買い物リストの分類（シートの値）：今のリストの順に、ほかは最近使った順。献立の材料を送る時の選択肢 */
+function shopCatsOf(shop) {
+  var out = shop.groups.map(function (g) { return g.label; }), last = {};
+  rowsOf('買い物').forEach(function (r) { var c = text(r['分類']), w = normDate(r['週']) || ''; if (c && (!last[c] || w >= last[c])) last[c] = w || '0'; });
+  Object.keys(last).sort(function (a, b) { return last[a] < last[b] ? 1 : last[a] > last[b] ? -1 : 0; }).forEach(function (c) { if (out.indexOf(c) < 0) out.push(c); });
+  return out.slice(0, 6);
+}
+/* 献立の材料ごとに、前にその品を入れた分類（品名をそろえた名前 → 分類）。献立に出てくる品だけ返す */
+function shopLastCat(menu) {
+  var want = {}, res = {}, wk = {};
+  menu.forEach(function (m) { (m.ingredients || []).forEach(function (x) { if (x[0]) want[normName(x[0])] = 1; }); });
+  if (!Object.keys(want).length) return res;
+  rowsOf('買い物').forEach(function (r) {
+    var k = normName(r['品名']), c = text(r['分類']), w = normDate(r['週']) || '';
+    if (!want[k] || !c) return;
+    if (wk[k] == null || w >= wk[k]) { wk[k] = w; res[k] = c; }   /* 同じ週なら下の行（あとで足した方） */
+  });
+  return res;
+}
+
 /* 予定：今日から PLAN_DAYS 日。何日も続く予定（終日・時刻つき）は、見える日ごとに1件ずつ出し、
  * key（同じ予定の印）・from・to（最初と最後の日）を付ける。時刻は最初の日だけ、最後の日は「〜H:mm」 */
 var PLAN_DAYS = 14;
+var MENU_WEEKS = 2;   /* 献立を返す週の数（今週と来週） */
 function plansFor(rangeStart, rangeEnd, calendarId) {
   var from = ymd(rangeStart), to = ymd(rangeEnd);
   if (!calendarId) {
@@ -1058,14 +1081,28 @@ function logUsage(counts, date, me, batch) {
   return { ok: true };
 }
 
-/* 献立の材料をまとめて買い物リストへ（1回で書く） */
+/* 献立の材料をまとめて買い物リストへ（1回で書く）。分類（どこで買うか）は品ごとに選んだもの。
+ * その週にまだ買っていない同じ品名と、同じ送りの中の重なりは足さない */
 function addShopMany(items) {
-  var add = items.slice(0, 40).map(function (x) {
+  var have = {}, skipped = [];
+  var add = (items || []).slice(0, 40).map(function (x) {
     var name = String(x.name || '').slice(0, 60).trim();
-    return name && x.id ? { id: String(x.id), '週': normDate(x.week) || ymd(new Date()), '分類': String(x.cat || '').slice(0, 30).trim() || 'その他', '品名': name, '量': String(x.qty || '').slice(0, 30).trim() } : null;
+    if (!name || !x.id) return null;
+    var week = normDate(x.week) || ymd(new Date()), k = normName(name);
+    if (!have[week]) have[week] = unboughtNames(week);
+    if (have[week][k]) { skipped.push(name); return null; }
+    have[week][k] = true;
+    return { id: String(x.id), '週': week, '分類': String(x.cat || '').slice(0, 30).trim() || 'その他', '品名': name, '量': String(x.qty || '').slice(0, 30).trim() };
   }).filter(Boolean);
   appendRows('買い物', add);
-  return { ok: true };
+  return { ok: true, added: add.map(function (a) { return a['品名']; }), skipped: skipped };
+}
+/* その週の買い物リストで、まだ買っていない品名（そろえた名前 → true） */
+function unboughtNames(week) {
+  var bought = {}, have = {};
+  rowsOf('チェック').forEach(function (r) { if (r['種類'] === '買い物' && truthy(r['済']) && normDate(r['日付']) === week) bought[String(r['対象ID'])] = true; });
+  rowsOf('買い物').forEach(function (r) { if (text(r['品名']) && normDate(r['週']) === week && !bought[idOf(r, SHOP_KEYS)]) have[normName(r['品名'])] = true; });
+  return have;
 }
 
 /* 毎週金曜の夜（setupで予約）：1週間の使われ方を「ふりかえり」に1行まとめる */
