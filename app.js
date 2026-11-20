@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '57';
+  var APP_VERSION = '59';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -325,6 +325,10 @@
     this.timer = setInterval(function () {
       var s = self.state, upd = null;
       if (Math.floor(Date.now() / 60000) !== Math.floor(s.now / 60000)) upd = { now: Date.now() };
+      /* 日が変わったら、すぐ読み直す（昨日の流れ・申し送りを出したままにしない）。読み込み中なら次の秒に */
+      if (s.data && s.data.today && ymd(new Date()) !== s.data.today && !s.loading && !self.dayRolling && document.visibilityState === 'visible') {
+        self.dayRolling = true; setTimeout(function () { self.dayRolling = false; }, 20000); self.refresh(true);
+      }
       var n = self.order().length;
       if (n && self.showPhotos() && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd = upd || {}; upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
       if (upd) self.setState(upd);
@@ -1758,7 +1762,11 @@
       var isDone = kids.length ? kidsDone === kids.length : !!done[d.id];
       var past = d.t != null && d.t < nowMin;
       var c = self.person(d.who);
-      var tnotes = notesAll.filter(function (n) { return n.taskId === d.id; });
+      /* 今日の流れに出す申し送りは「今日のもの」だけ（今日書いた物と、今日の担当についての頼み）。前の日の物は申し送りの一覧で見る */
+      var todayStr = D.today || ymd(now);
+      /* ふつうの申し送りは「昨日のこの担当の時刻より後」に書いた物まで今日の分（夜に書いた明日の朝の分を朝に出す）。時刻のない担当は今日書いた物だけ */
+      var t0d = parseYmd(todayStr), since = d.t != null ? t0d.getTime() - 864e5 + d.t * 60000 : t0d.getTime();
+      var tnotes = notesAll.filter(function (n) { return n.taskId === d.id && (n.ask === 'swap' ? n.askDate === todayStr : n.createdAt >= since); });
       return {
         id: d.id, time: hm(d.t), task: d.task, who: d.who, done: isDone, once: !!d.once, isNew: !!marks['flow:' + d.id],
         toggle: function () {
@@ -2783,7 +2791,7 @@
       loginLabel: st.loggingIn ? 'ログインしています…' : 'Googleでログイン',
       login: function () { self.login(); },
       syncLabel: syncLabel,
-      accountAria: 'アカウントと更新（' + syncLabel + '）',
+      accountAria: 'メニュー（' + syncLabel + '。アカウント・通知・更新）',
       syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: var(--r-chip); border: none; font-size: var(--t-cap); font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: var(--danger-soft); color: var(--danger)' : 'background: var(--fill); color: var(--label)'),
       openAccount: function () { self.setState({ accountOpen: true }); },
       push: (function () {
