@@ -21,7 +21,7 @@
 |---|---|---|
 | `list` | なし | 今の買い物リスト・献立・担当・予定・期限・相談・お出かけ・私宛ての申し送りを見る |
 | `shop.add` | `items:[{name, qty?, cat?}]` | 買い物リストに足す。まだ買っていない同じ品名は自動で飛ばす |
-| `menu.add` | `dish, ingredients:[{name, qty?}], date?, how?, note?, url?, hotcook?, toShop?, replace?` | 献立に入れる。`toShop:true` で、材料のうちリストに無い物を買い物に足す。`date` を省くと今日から7日で空いている最初の日 |
+| `menu.add` | `dish, ingredients:[{name, qty?}], servings?, date?, how?, note?, url?, hotcook?, toShop?, replace?` | 献立に入れる。`toShop:true` で、材料のうちリストに無い物を買い物に足す。`date` を省くと今日から7日で空いている最初の日 |
 | `duty.add` | `task, time?, who?, date?` か `repeat?` | 担当（やること）を足す。`date` ならその日だけ、`repeat` は「毎日・平日・土日・月水金」など |
 | `note.add` | `text, to?` | 相手への申し送り（`to` を省くと相手） |
 | `feedback.add` | `text, screen?` | アプリへの要望・不具合（「ここ直しといて」） |
@@ -45,7 +45,7 @@
 ## 例
 
 - 「牛乳と卵を買い物に足しといて」→ `list` で確かめて `shop.add`
-- Instagram のレシピを見せて「これ作りたい」→ 料理名・材料・分量・作り方を読み取り、`menu.add`（`url` に投稿のURL、`toShop:true`）。日を聞かれていなければ空いている日に入れ、入れた日と、買い物に足した材料を返す
+- Instagram のレシピを見せて「これ作りたい」→ 料理名・材料・分量・何人分・作り方を読み取り、`menu.add`（`url` に投稿のURL、`toShop:true`）。日を聞かれていなければ空いている日に入れ、入れた日と、買い物に足した材料を返す
 - 「ニュースの文字が小さい、直しといて」→ `feedback.add`
 - 「ととに、明日の送りを代わってほしいって伝えて」→ `note.add`
 - 週末の相談をして決まりかけたら → `outing.add` や `decision.add` で、2人が見られるようにする

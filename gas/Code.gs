@@ -29,7 +29,7 @@ var SHEETS = {
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人'],
   '日記': ['id', '日付', '時刻', '誰', 'text', '対象'],
-  '献立': ['日付', '料理', 'ホットクック', 'メモ', '材料', '作り方', '写真URL'],
+  '献立': ['日付', '料理', 'ホットクック', 'メモ', '材料', '作り方', '写真URL', '人数'],
   '買い物': ['週', 'id', '分類', '品名', '量'],
   '予定': ['日付', '時刻', '内容', '誰'],
   '中期': ['id', '名前', '次の一手', '期限'],
@@ -340,7 +340,7 @@ function buildBoot(today) {
   });
 
   var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(weekEnd); }).map(function (r) {
-    return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']) };
+    return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']), servings: text(r['人数']) };
   });
 
   var replies = rowsOf('返信').filter(function (r) { return r.id && text(r['本文']); }).slice(-400).map(function (r) {
@@ -731,7 +731,7 @@ function saveMenu(m) {
     var n = String(x.name || '').replace(/[:：\/／\n]/g, ' ').slice(0, 40).trim(), q = String(x.qty || '').replace(/[:：\/／\n]/g, ' ').slice(0, 20).trim();
     return n ? n + (q ? ':' + q : '') : '';
   }).filter(String);
-  var obj = { '日付': date, '料理': dish, 'ホットクック': !!m.hotcook, 'メモ': String(m.note || '').slice(0, 300).trim(), '材料': ings.join(' / '), '作り方': String(m.how || '').slice(0, 3000).trim() };
+  var obj = { '日付': date, '料理': dish, 'ホットクック': !!m.hotcook, 'メモ': String(m.note || '').slice(0, 300).trim(), '材料': ings.join(' / '), '作り方': String(m.how || '').slice(0, 3000).trim(), '人数': String(m.servings || '').replace(/[^0-9０-９]/g, '').slice(0, 2) };
   var rows = rowsOf('献立');
   for (var i = 0; i < rows.length; i++) if (normDate(rows[i]['日付']) === date) { setCells('献立', rows[i]._row, obj); return { ok: true }; }
   appendObj('献立', obj);
@@ -1099,7 +1099,7 @@ function addToShop(list, cat) {
 var MUSE_HELP = {
   list: '今の一覧を見る（買い物・献立・担当・予定・期限・相談・お出かけ・自分宛ての申し送り）',
   'shop.add': 'items:[{name, qty?, cat?}] 買い物リストに足す（まだ買っていない同じ品名は足さない）',
-  'menu.add': 'date?(yyyy-mm-dd。省くと今日から7日で献立が空いている最初の日), dish, ingredients:[{name, qty?}], how?, note?, url?(https), hotcook?(true/false), toShop?(true＝材料のうちリストに無い物を買い物に足す), replace?(true＝その日の献立を置きかえる)',
+  'menu.add': 'servings?(何人分), date?(yyyy-mm-dd。省くと今日から7日で献立が空いている最初の日), dish, ingredients:[{name, qty?}], how?, note?, url?(https), hotcook?(true/false), toShop?(true＝材料のうちリストに無い物を買い物に足す), replace?(true＝その日の献立を置きかえる)',
   'duty.add': 'task, time?(H:mm), who?(呼び名・家族。省くと自分), date?(その日だけ) か repeat?(毎日・平日・土日・月水金 など。省くと毎日)',
   'note.add': 'text, to?(省くと相手) 相手への申し送り',
   'feedback.add': 'text, screen? アプリの要望・不具合（「ここ直しといて」）',
@@ -1130,7 +1130,7 @@ var MUSE_OPS = {
     var ings = (q.ingredients || []).slice(0, 40).map(function (x) { return { name: String(x.name || '').replace(/[:：\/／\n]/g, ' ').slice(0, 40).trim(), qty: String(x.qty || '').replace(/[:：\/／\n]/g, ' ').slice(0, 20).trim() }; }).filter(function (x) { return x.name; });
     var url = safeUrl(q.url), note = String(q.note || '').slice(0, 200).trim();
     var obj = { '日付': date, '料理': dish, 'ホットクック': !!q.hotcook, 'メモ': (note + (url ? (note ? ' ' : '') + url : '')).trim(),
-      '材料': ings.map(function (x) { return x.name + (x.qty ? ':' + x.qty : ''); }).join(' / '), '作り方': String(q.how || '').slice(0, 1500).trim() };
+      '材料': ings.map(function (x) { return x.name + (x.qty ? ':' + x.qty : ''); }).join(' / '), '作り方': String(q.how || '').slice(0, 1500).trim(), '人数': String(q.servings || '').replace(/[^0-9]/g, '').slice(0, 2) };
     if (used[date]) setCells('献立', used[date]._row, obj); else appendObj('献立', obj);
     var log = [['献立', 'menu:' + date, dish]], res = { ok: true, date: date, dish: dish, replaced: !!used[date] };
     if (q.toShop && ings.length) { var s = addToShop(ings); res.shopAdded = s.added; res.shopSkipped = s.skipped; log = log.concat(s.log); }

@@ -415,10 +415,10 @@ ok(b3.api === 11 && b3.v, 'boot に api の版と、変わったかを見る版'
 
 // 献立をアプリから入れる・直す・消す、返信
 {
-  let r = post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'テスト丼', hotcook: true, note: 'メモ', ingredients: [{ name: '米', qty: '2合' }, { name: 'た/まご', qty: '2' }], how: '炊く' } });
+  let r = post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'テスト丼', servings: '２人', hotcook: true, note: 'メモ', ingredients: [{ name: '米', qty: '2合' }, { name: 'た/まご', qty: '2' }], how: '炊く' } });
   let bd = post(env, { action: 'boot', session: S, today }).data;
   let mm = bd.menu.filter(x => x.date === today);
-  ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼' && mm[0].hotcook && mm[0].ingredients.length === 2 && mm[0].ingredients[1][0] === 'た まご', 'saveMenu: 入れる（その日を置きかえ、材料の区切り文字は消す）');
+  ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼' && mm[0].hotcook && mm[0].ingredients.length === 2 && mm[0].ingredients[1][0] === 'た まご' && mm[0].servings === '２', 'saveMenu: 入れる（その日を置きかえ、材料の区切り文字は消す）');
   r = post(env, { action: 'saveMenu', session: S, menu: { date: today, dish: 'テスト丼2', ingredients: [] } });
   bd = post(env, { action: 'boot', session: S, today }).data; mm = bd.menu.filter(x => x.date === today);
   ok(r.ok && mm.length === 1 && mm[0].dish === 'テスト丼2', 'saveMenu: 直す（同じ日は1つ）');

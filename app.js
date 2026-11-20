@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '29';
+  var APP_VERSION = '30';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1126,17 +1126,17 @@
   }
   App.prototype.openMenu = function (date, m) {
     var d = parseYmd(date), lbl = (d.getMonth() + 1) + '/' + d.getDate() + '（' + DOWS[d.getDay()] + '）';
-    this.setState({ editor: { kind: 'menu', isNew: !m, id: date, date: date, dateLabel: lbl, dish: m ? m.dish : '', hotcook: m ? !!m.hotcook : false, note: m ? m.note || '' : '', ings: m ? ingLines(m.ingredients) : '', how: m ? m.how || '' : '' } });
+    this.setState({ editor: { kind: 'menu', isNew: !m, id: date, date: date, dateLabel: lbl, dish: m ? m.dish : '', servings: m ? m.servings || '' : '', hotcook: m ? !!m.hotcook : false, note: m ? m.note || '' : '', ings: m ? ingLines(m.ingredients) : '', how: m ? m.how || '' : '' } });
   };
   App.prototype.saveMenu = function () {
     if (this.stale()) return;
     var e = this.state.editor, dish = (e.dish || '').trim();
     if (!dish) { this.showToast('料理の名前を入れてください', null); return; }
     var ings = parseIngLines(e.ings);
-    var m = { date: e.date, dish: dish, hotcook: !!e.hotcook, note: (e.note || '').trim(), ingredients: ings, how: (e.how || '').trim() };
+    var m = { date: e.date, dish: dish, servings: String(e.servings || '').replace(/[^0-9０-９]/g, '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 65248); }).slice(0, 2), hotcook: !!e.hotcook, note: (e.note || '').trim(), ingredients: ings, how: (e.how || '').trim() };
     var revert = this.snapshot();
     this.mutate(function (d) {
-      var row = { date: m.date, dish: m.dish, hotcook: m.hotcook, note: m.note, ingredients: ings.map(function (x) { return [x.name, x.qty]; }), how: m.how, photo: '' };
+      var row = { date: m.date, dish: m.dish, servings: m.servings, hotcook: m.hotcook, note: m.note, ingredients: ings.map(function (x) { return [x.name, x.qty]; }), how: m.how, photo: '' };
       var old = (d.menu || []).filter(function (x) { return x.date === m.date; })[0];
       if (old) row.photo = old.photo || '';
       d.menu = (d.menu || []).filter(function (x) { return x.date !== m.date; }).concat([row]);
@@ -1335,7 +1335,7 @@
     var dmDate = ymd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx)), dmReal = menuMap[dmDate] || null;
     var dayOfYear = Math.floor((new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIdx) - new Date(now.getFullYear(), 0, 1)) / 86400000);
     var dayMenu = {
-      label: dayIdx === todayIdx ? '今日' : dows[dayIdx] + '曜', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
+      label: dayIdx === todayIdx ? '今日' : dows[dayIdx] + '曜', servingsLabel: dm.servings ? '・' + dm.servings + '人分' : '', dish: dm.dish, hotcook: !!dm.hotcook, note: dm.note || '',
       ingredients: (dm.ingredients || []).map(function (x) { return { name: x[0], qty: x[1] }; }), how: dm.how || '',
       photo: dm.photo || pexels(MOOD[((dayOfYear % MOOD.length) + MOOD.length) % MOOD.length]),
       photoAlt: dm.photo ? dm.dish + 'のイメージ写真' : '食卓を囲むイメージ写真',
@@ -1463,7 +1463,7 @@
     if (E) {
       var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'] };
       ed.heading = HEAD[E.kind][E.isNew ? 0 : 1];
-      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how'];
+      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how', 'servings'];
       FIELDS.forEach(function (k) { ed[k] = E[k] || ''; });
       ed.set = {};
       FIELDS.forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
@@ -2140,7 +2140,7 @@
         if (a === 'ackNote') db.notes.forEach(function (x) { if (x.id === p.id) x.read = p.read; });
         if (a === 'addDiary') db.diary.push(p.entry);
         if (a === 'deleteDiary') db.diary = db.diary.filter(function (x) { return x.id !== p.id; });
-        if (a === 'saveMenu') { db.menu = db.menu.filter(function (x) { return x.date !== p.menu.date; }).concat([{ date: p.menu.date, dish: p.menu.dish, hotcook: p.menu.hotcook, note: p.menu.note, ingredients: p.menu.ingredients.map(function (x) { return [x.name, x.qty]; }), how: p.menu.how, photo: '' }]); }
+        if (a === 'saveMenu') { db.menu = db.menu.filter(function (x) { return x.date !== p.menu.date; }).concat([{ date: p.menu.date, dish: p.menu.dish, servings: p.menu.servings, hotcook: p.menu.hotcook, note: p.menu.note, ingredients: p.menu.ingredients.map(function (x) { return [x.name, x.qty]; }), how: p.menu.how, photo: '' }]); }
         if (a === 'deleteMenu') db.menu = db.menu.filter(function (x) { return x.date !== p.date; });
         if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text });
         if (a === 'deleteReply') db.replies = db.replies.filter(function (x) { return x.id !== p.id; });
