@@ -1071,7 +1071,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       </div>
     </sc-if>
     <sc-if value="{{canAsk}}" hint-placeholder-val="{{ false }}">
-      <button type="button" aria-pressed="{{askPressed}}" onClick="{{toggleAsk}}" style="{{askStyle}}">今日の担当を代わってほしい</button>
+      <button type="button" aria-pressed="{{askPressed}}" onClick="{{toggleAsk}}" style="{{askStyle}}">{{askBtnLabel}}</button>
     </sc-if>
     <label for="kizuki-input" class="lbl">{{sheetLabel}}</label>
     <textarea id="kizuki-input" rows="4" value="{{noteDraft}}" onChange="{{setNoteDraft}}" placeholder="{{sheetPlaceholder}}" class="field" style="box-sizing: border-box; width: 100%; padding: 12px; line-height: 1.6; resize: none"></textarea>
@@ -1142,6 +1142,11 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <sc-for list="{{ed.whoActs}}" as="wa" hint-placeholder-count="2">
         <button type="button" onClick="{{wa.go}}" class="{{wa.cls}}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 16px; text-align: left"><span style="font-size: var(--t-sub); font-weight: 600">{{wa.label}}</span><span style="font-size: var(--t-cap); font-weight: 400; opacity: .85; line-height: 1.4">{{wa.sub}}</span></button>
       </sc-for>
+      <sc-if value="{{ed.hasAskDays}}" hint-placeholder-val="{{ false }}">
+        <span class="lbl" style="margin-top: 8px">別の日を代わってほしい</span>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap"><sc-for list="{{ed.askDays}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.go}}" style="{{c.style}}"><span style="font-size: var(--t-sub); font-weight: 600">{{c.label}}</span><span style="font-size: var(--t-cap); font-weight: 400">{{c.sub}}</span></button></sc-for></div>
+        <span style="font-size: var(--t-cap); color: var(--label2); line-height: 1.5">{{ed.askDaysHint}}</span>
+      </sc-if>
     </sc-if>
     <sc-if value="{{ed.depart}}" hint-placeholder-val="{{ false }}">
       <label for="ed-depart" class="lbl">朝、家を出る時刻</label>
@@ -1181,6 +1186,9 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       </sc-if>
       <sc-if value="{{ed.isRoutine}}" hint-placeholder-val="{{ false }}">
         <button type="button" onClick="{{ed.toggleSkip}}" style="min-height: 48px; border-radius: var(--r-btn); border: 1.5px solid var(--attn); background: var(--attn-soft); color: var(--attn-ink); font-size: var(--t-sub); font-weight: 700; cursor: pointer">{{ed.skipLabel}}</button>
+      </sc-if>
+      <sc-if value="{{ed.canAskOther}}" hint-placeholder-val="{{ false }}">
+        <button type="button" onClick="{{ed.askOther}}" class="btn btn-tint" style="min-height: 48px">別の日を代わってほしいと頼む</button>
       </sc-if>
     </sc-if>
     <sc-if value="{{ed.shop}}" hint-placeholder-val="{{ false }}">
@@ -1335,7 +1343,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=54"></script>
-<script src="app.js?v=54"></script>
+<script src="config.js?v=55"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>

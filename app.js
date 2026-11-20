@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '54';
+  var APP_VERSION = '55';
   var API_EXPECTED = 15;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -784,9 +784,9 @@
     var p = secs.filter(function (s) { return s.key === 'photos'; })[0];
     return p ? (all ? p.all : p.person) : all;
   };
-  App.prototype.openNoteFor = function (target, taskId, mode, to) {
-    var upd = { noteOpen: true, noteMode: mode === 'swap' ? 'handover' : (mode || 'diary'), noteTarget: target, noteTaskId: taskId, noteDraft: '', noteAsk: mode === 'swap' };
-    if (mode === 'swap') upd.noteDraft = '今日の「' + target + '」、代わってもらえる？';
+  App.prototype.openNoteFor = function (target, taskId, mode, to, date) {
+    var upd = { noteOpen: true, noteMode: mode === 'swap' ? 'handover' : (mode || 'diary'), noteTarget: target, noteTaskId: taskId, noteDraft: '', noteAsk: mode === 'swap', noteAskDate: mode === 'swap' ? (date || '') : '' };
+    if (mode === 'swap') upd.noteDraft = this.askDraft(target, date);
     if (mode === 'handover') upd.draftTo = to && to !== this.meWho() && to !== '家族' ? to : this.otherWho();
     this.setState(upd);
   };
@@ -813,10 +813,10 @@
       this.showToast('マイクが使えませんでした。キーボードのマイクで話してください', null);
     }
   };
-  App.prototype.addNote = function (to, text, taskId, task, ask) {
+  App.prototype.addNote = function (to, text, taskId, task, ask, askDate) {
     var self = this;
     var note = { id: uid('n'), createdAt: Date.now(), from: this.meWho(), to: to, taskId: taskId || '', task: task || '', text: text, read: false };
-    if (ask && taskId) { note.ask = 'swap'; note.askDate = (this.state.data || {}).today || ymd(new Date()); note.answer = ''; }
+    if (ask && taskId) { note.ask = 'swap'; note.askDate = askDate || (this.state.data || {}).today || ymd(new Date()); note.answer = ''; }
     this.mutate(function (d) { d.notes = [note].concat(d.notes || []); });
     var revert = function () { self.mutate(function (d) { d.notes = (d.notes || []).filter(function (x) { return x.id !== note.id; }); }); };
     this.send('addNote', { note: note }, revert);
@@ -829,7 +829,7 @@
     if (!text) { this.showToast(handover ? '申し送りの内容を入力してください' : '気づきの内容を入力してください', null); return; }
     try { if (this.rec) this.rec.stop(); } catch (e) {}
     this.setState({ noteOpen: false, noteDraft: '', listening: false });
-    if (handover) { this.addNote(this.state.draftTo || this.otherWho(), text, this.state.noteTaskId, this.state.noteTarget, !!this.state.noteAsk && this.canAskSwap(this.state.noteTaskId)); return; }
+    if (handover) { this.addNote(this.state.draftTo || this.otherWho(), text, this.state.noteTaskId, this.state.noteTarget, !!this.state.noteAsk && this.canAskSwap(this.state.noteTaskId, this.state.noteAskDate), this.state.noteAskDate); return; }
     var d0 = new Date();
     var k = { id: uid('k'), date: ymd(d0), time: d0.getHours() + ':' + pad(d0.getMinutes()), by: this.meWho(), text: text, target: this.state.noteTarget || '今日の日記' };
     this.mutate(function (d) { d.diary = (d.diary || []).concat([k]); });
@@ -917,7 +917,40 @@
   /* ---------- 今日だけ担当を替える ---------- */
   App.prototype.todayDuty = function (id) { return ((this.state.data || {}).duties || []).filter(function (x) { return x.id === id; })[0] || null; };
   /* 「代わってほしい」と頼めるのは、今日の自分の担当だけ */
-  App.prototype.canAskSwap = function (id) { var d = id && this.todayDuty(id); return !!(d && d.who === this.meWho()); };
+  App.prototype.canAskSwap = function (id, date) {
+    var today = (this.state.data || {}).today;
+    if (date && date !== today) return this.askDates(id).indexOf(date) >= 0;
+    var d = id && this.todayDuty(id); return !!(d && d.who === this.meWho());
+  };
+  /* 「この日はお願い」：自分のいつもの担当を、明日から ASK_DAYS 日先までのその担当の日を選んで頼む（GAS は依頼の日にその日の担当替えを書く） */
+  var ASK_DAYS = 7;
+  App.prototype.dutyRow = function (id) { return ((this.state.data || {}).dutiesAll || []).filter(function (x) { return x.id === id; })[0] || null; };
+  App.prototype.askDates = function (id) {
+    var D = this.state.data || {}, row = id && this.dutyRow(id), out = [];
+    if (!row || row.who !== this.meWho()) return out;
+    var t0 = parseYmd(D.today || ymd(new Date()));
+    for (var i = 1; i <= ASK_DAYS; i++) {
+      var x = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + i), k = ymd(x);
+      if (row.date ? row.date === k : dayMatch(row.rule, x.getDay())) out.push(k);
+    }
+    return out;
+  };
+  /* その日について自分が出した頼みの状態：'' まだ／'asked' 返事待ち／'ok' 代わってもらう（'ng' の後はまた頼める） */
+  App.prototype.askState = function (id, date) {
+    var me = this.meWho(), st0 = '';
+    ((this.state.data || {}).notes || []).forEach(function (n) {
+      if (n.ask !== 'swap' || n.from !== me || n.taskId !== id || n.askDate !== date) return;
+      if (n.answer === 'ok') st0 = 'ok'; else if (!n.answer && st0 !== 'ok') st0 = 'asked';
+    });
+    return st0;
+  };
+  App.prototype.askDayWord = function (date) {
+    var today = (this.state.data || {}).today || ymd(new Date());
+    if (!date || date === today) return '今日';
+    var x = parseYmd(date), t0 = parseYmd(today), md = (x.getMonth() + 1) + '/' + x.getDate() + '（' + DOWS[x.getDay()] + '）';
+    return Math.round((x - t0) / 864e5) === 1 ? '明日 ' + md : md;
+  };
+  App.prototype.askDraft = function (task, date) { return this.askDayWord(date).replace(/^明日 /, '') + 'の「' + task + '」、代わってもらえる？'; };
   App.prototype.swapToMe = function (d, take) {
     if (this.stale()) return;
     var self = this, me = this.meWho(), D = this.state.data;
@@ -1942,6 +1975,8 @@
         ed.ruleText = ruleWords(E.rule || '毎日');
         ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: pill(on), pick: function () { self.editSet('rule', r[0]); } }; });
         ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
+        ed.canAskOther = !E.isNew && self.askDates(E.id).length > 0;
+        ed.askOther = function () { self.setState({ editor: { kind: 'who', isNew: false, id: E.id, task: E.task, dutyId: E.id } }); };
         /* 出発に合わせる：時刻の代わりに「出発のN分前」で持つ */
         var dep0 = self.departMin();
         ed.showTime = !E.relOn;
@@ -1964,7 +1999,16 @@
           if (wd.who === me0 && !wd.orig) acts.push({ label: '代わってほしいと頼む', sub: '申し送りで' + self.otherWho() + 'に頼みます。「代わる」を押してもらえたら替わります', go: function () { self.setState({ editor: null }); self.openNoteFor(wd.task, wd.id, 'swap', wd.who); }, primary: true });
           if (wd.orig) acts.push({ label: 'いつもの担当に戻す', sub: '今日の入れ替えをやめて、' + wd.orig + 'に戻します', go: function () { self.swapToMe(wd, false); } });
           acts.push({ label: 'いつもの担当を変える', sub: 'くり返しの決まりを変えます（明日からも）', go: function () { var x = wd; self.setState({ editor: null }); setTimeout(function () { self.openDuty(x); }, 0); } });
-        } else { ed.whoNow = '今日の担当ではありません'; }
+        } else { ed.whoNow = '今日はこの担当の日ではありません'; }
+        var row0 = self.dutyRow(E.dutyId);
+        ed.askDays = self.askDates(E.dutyId).map(function (k) {
+          var s0 = self.askState(E.dutyId, k), w = self.askDayWord(k);
+          return { label: w, sub: s0 === 'ok' ? '代わってもらう' : s0 === 'asked' ? '返事待ち' : '頼む', pressed: s0 ? 'true' : 'false',
+            style: pill(!!s0) + '; display: flex; flex-direction: column; align-items: center; gap: 0; min-height: 52px; line-height: 1.3' + (s0 ? '; opacity: .6' : ''),
+            go: function () { if (s0) { self.showToast(s0 === 'ok' ? w + 'は' + self.otherWho() + 'が代わってくれます' : w + 'はもう頼んであります（返事待ち）', null); return; } self.setState({ editor: null }); self.openNoteFor(E.task, E.dutyId, 'swap', self.otherWho(), k); } };
+        });
+        ed.hasAskDays = ed.askDays.length > 0;
+        ed.askDaysHint = '日を押すと、' + self.otherWho() + 'への申し送りで頼めます。「代わる」を押してもらえたら、その日だけ替わります' + (row0 && !row0.date ? '（いつもの担当はそのまま）' : '');
         ed.whoActs = acts.map(function (a) { return { label: a.label, sub: a.sub, go: a.go, cls: a.primary ? 'btn btn-fill' : 'btn btn-gray' }; });
       } else if (E.kind === 'topic') {
         ed.highPressed = E.high ? 'true' : 'false'; ed.highStyle = pill(!!E.high) + '; align-self: flex-start';
@@ -2441,9 +2485,10 @@
       pickPhotos: function () { self.pickPhotos(); }, uploadPhotos: function (e) { self.uploadPhotos(e); },
       noteTarget: st.noteTarget, noteDraft: st.noteDraft,
       isHandover: st.noteMode === 'handover',
-      canAsk: st.noteMode === 'handover' && self.canAskSwap(st.noteTaskId),
+      canAsk: st.noteMode === 'handover' && self.canAskSwap(st.noteTaskId, st.noteAskDate),
+      askBtnLabel: self.askDayWord(st.noteAskDate) + 'の担当を代わってほしい',
       askPressed: st.noteAsk ? 'true' : 'false', askStyle: pill(!!st.noteAsk) + '; align-self: flex-start',
-      toggleAsk: function () { var on = !self.state.noteAsk, u = { noteAsk: on }; if (on && !String(self.state.noteDraft || '').trim()) u.noteDraft = '今日の「' + self.state.noteTarget + '」、代わってもらえる？'; self.setState(u); },
+      toggleAsk: function () { var on = !self.state.noteAsk, u = { noteAsk: on }; if (on && !String(self.state.noteDraft || '').trim()) u.noteDraft = self.askDraft(self.state.noteTarget, self.state.noteAskDate); self.setState(u); },
       sheetKicker: st.noteMode === 'handover' ? '申し送りを書く' : '気づきを残す',
       sheetLabel: st.noteMode === 'handover' ? '伝えたいこと' : '気づいたこと',
       sheetPlaceholder: st.noteMode === 'handover' ? '例：お迎えのとき、上履きを持ち帰ってください' : '例：今日はお風呂を嫌がらずに入れた',
