@@ -208,6 +208,11 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   ok(trip.length === 3 && trip[0].date === today && trip[0].from === dd(-1) && trip[0].to === dd(2), '予定: 続く終日予定は見える日ごとに from/to 付き ' + JSON.stringify(trip.map(p => p.date)));
   ok(hotel.length === 3 && hotel[0].time === '10:40' && hotel[1].time === '' && hotel[2].time === '〜10:30', '予定: 何日も続く時刻つき ' + JSON.stringify(hotel.map(p => p.time)));
   ok(b2.data.plansFrom === today && b2.data.plansTo === dd(13), '予定: 範囲は今日から2週間');
+  const setSh = env.ss.getSheetByName('設定'); const alRow = setSh.data.find(r => r[0] === '人1の別名'); if (alRow) alRow[1] = 'XA, ケンB'; else setSh.data.push(['人1の別名', 'XA, ケンB', '']);
+  env.calItems = [{ summary: 'XA: 病院', start: { dateTime: at(0, 9) } }, { summary: 'XB：美容院', start: { dateTime: at(0, 10) } }];
+  env.onEdit();
+  b2 = post(env, { action: 'boot', session: S, today });
+  ok(b2.data.plans[0].who === 'ケン' && b2.data.plans[0].what === '病院' && b2.data.plans[1].who === '家族', '予定: 別名（人1の別名）で担当 ' + JSON.stringify(b2.data.plans.map(p => p.who)));
 }
 
 // 担当：アプリから足す（今日だけ・くり返し）、直す、消す

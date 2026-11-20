@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '32';
+  var APP_VERSION = '33';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1663,7 +1663,7 @@
     var nb = /^\d{4}-\d{2}-\d{2}$/.test(ui.kidsBirth || '') ? parseYmd(ui.kidsBirth) : null;
 
     /* セクションの見出し・表示・順番（スプレッドシートの「画面」） */
-    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['decide', 'ふたりで決めること'], ['deadline', '期限があるもの'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['weekend', '今週末'], ['plan', '今週の予定'], ['news', 'ピックアップニュース']];
+    var SEC_DEF = [['photos', '写真'], ['hero', 'つぎの担当'], ['flow', '今日の流れ'], ['decide', 'ふたりで決めること'], ['deadline', '期限があるもの'], ['topics', '話題'], ['diary', '今日の日記'], ['week', '今週のごはん'], ['shop', '買い物リスト'], ['weekend', '今週末'], ['plan', 'これからの予定'], ['news', 'ピックアップニュース']];
     var todayStr = ymd(now);
     var travel = !!(ui.tripFrom && ui.tripTo && todayStr >= ui.tripFrom && todayStr <= ui.tripTo);
     /* 時刻で並びを変える：朝（朝の並びにする時刻〜終える時刻）・日中（ふだんの順番）・夜（夜の並びにする時刻〜）。
