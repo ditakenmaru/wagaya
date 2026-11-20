@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 15;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 16;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -129,6 +129,7 @@ function doPost(e) {
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
       case 'swapDuty': return out(withLock(function () { return swapDuty(req.date, req.id, req.take, me); }));
       case 'answerSwap': return out(withLock(function () { return answerSwap(req.id, !!req.ok, me); }));
+      case 'cancelSwap': return out(withLock(function () { return cancelSwap(req.date, req.id, me); }));
       case 'skipDuty': return out(withLock(function () { return setCheck(req.date, '休み', req.id, !!req.skip, me); }));
       case 'setDepart': return out(withLock(function () { return setDepart(req.time); }));
       case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
@@ -340,6 +341,15 @@ function buildBoot(today) {
   var duties = dutyRows.filter(function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; })
     .map(function (d) { var sw = swaps[d.id] && swaps[d.id] !== d.who ? swaps[d.id] : ''; return { id: d.id, t: d.t, rel: d.rel, task: d.task, who: sw || d.who, orig: sw ? d.who : '', once: !!d.date }; });
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
+  /* 先の日の担当替え（明日から SWAP_AHEAD_DAYS 日先まで）。「別の日を代わってほしい」の状態と取り消しに使う */
+  var aheadTo = ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + SWAP_AHEAD_DAYS));
+  var dutyWho = {}; dutyRows.forEach(function (d) { dutyWho[d.id] = d.who; });
+  var swapsAhead = [];
+  rowsOf('チェック').forEach(function (r) {
+    var d = normDate(r['日付']), id = String(r['対象ID']), w = whoOf(r['誰']);
+    if (r['種類'] !== '担当替え' || !truthy(r['済']) || !d || d <= today || d > aheadTo || !dutyWho[id] || w === dutyWho[id]) return;
+    swapsAhead.push({ date: d, id: id, who: w, orig: dutyWho[id] });
+  });
 
   var shop = shopFor(weekStart);
   var done = {}, checked = {}, doneBy = {}, skipBy = {}, firstDay = today;
@@ -426,7 +436,7 @@ function buildBoot(today) {
   return {
     topics: topics, topicsArchived: topicsArchived, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
-    today: today, duties: duties, dutiesAll: dutiesAll, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
+    today: today, duties: duties, dutiesAll: dutiesAll, swapsAhead: swapsAhead, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, menuFrom: ymd(weekStart), menuTo: ymd(menuEnd), shopCats: shopCatsOf(shop), shopLastCat: shopLastCat(menu),
     replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
     photosReady: photoFolders().length > 0, photos: photoList(),
@@ -563,6 +573,7 @@ function shopLastCat(menu) {
 /* 予定：今日から PLAN_DAYS 日。何日も続く予定（終日・時刻つき）は、見える日ごとに1件ずつ出し、
  * key（同じ予定の印）・from・to（最初と最後の日）を付ける。時刻は最初の日だけ、最後の日は「〜H:mm」 */
 var PLAN_DAYS = 14;
+var SWAP_AHEAD_DAYS = 8;   /* 画面は明日から7日先まで頼める（app.js の ASK_DAYS）。1日余裕を持たせる */
 var MENU_WEEKS = 2;   /* 献立を返す週の数（今週と来週） */
 function plansFor(rangeStart, rangeEnd, calendarId) {
   var from = ymd(rangeStart), to = ymd(rangeEnd);
@@ -918,6 +929,38 @@ function addNote(n, me) {
 /* 今日だけ担当を変える。自分が引き受ける（who＝自分）か、元に戻す（who 空）だけ。相手に回す時は申し送りで頼む */
 function swapDuty(date, id, take, me) { return setCheck(date, '担当替え', id, !!take, me); }
 
+/* 引き受けてもらった担当替えを取り消す（今日か先の日）。いつもの担当の人（やっぱり自分でやる）だけ。
+   引き受けた人は一方的に戻さず、「戻してもらえる？」と申し送りで頼み返す（片方で決めない）。
+   その日の担当を済にした後は取り消さない。取り消しは申し送りとして相手に残し、通知もそこから出す */
+function cancelSwap(date, id, me) {
+  var d = normDate(date), today = ymd(new Date());
+  if (!d || !id) return { ok: false, code: 'bad_request' };
+  if (d < today) return { ok: false, code: 'past' };
+  var duty = rowsOf('担当').filter(function (r) { return text(r['やること']) && idOf(r, DUTY_KEYS) === String(id); })[0];
+  if (!duty) return { ok: false, code: 'not_found' };
+  var orig = whoOf(duty['担当']), task = text(duty['やること']), taker = '', done = false;
+  rowsOf('チェック').forEach(function (r) {
+    if (normDate(r['日付']) !== d || String(r['対象ID']) !== String(id) || !truthy(r['済'])) return;
+    if (r['種類'] === '担当替え') taker = whoOf(r['誰']);
+    if (r['種類'] === '担当') done = true;
+  });
+  if (!taker || taker === orig) return { ok: false, code: 'not_found' };
+  if (me.who !== orig) return { ok: false, code: 'not_yours' };
+  if (done) return { ok: false, code: 'done' };
+  setCheck(d, '担当替え', id, false, me);
+  var dw = dayWord(d);
+  addNote({ id: 'nc' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), to: taker, taskId: String(id), task: task,
+    text: dw + 'の「' + task + '」は自分でやることにしました。代わらなくて大丈夫です（アプリで取り消し）' }, me);
+  return { ok: true };
+}
+/* 「今日」「明日 11/21（土）」「11/23（月）」 */
+function dayWord(d) {
+  var today = ymd(new Date()), x = parseYmd(d), t = parseYmd(today);
+  if (d === today) return '今日';
+  var md = (x.getMonth() + 1) + '/' + x.getDate() + '（' + DOWS[x.getDay()] + '）';
+  return Math.round((x - t) / 864e5) === 1 ? '明日 ' + md : md;
+}
+
 /* 「代わってほしい」への答え。頼まれた人だけが答えられる。代わる時は、その日のその担当を自分に替える */
 function answerSwap(noteId, ok, me) {
   var rows = rowsOf('申し送り');
@@ -926,9 +969,15 @@ function answerSwap(noteId, ok, me) {
     if (String(r.id) !== String(noteId)) continue;
     if (text(r['依頼']) !== 'swap') return { ok: false, code: 'bad_request' };
     if (whoOf(r.to) !== me.who) return { ok: false, code: 'not_yours' };
-    if (ok) setCheck(normDate(r['依頼の日']) || ymd(new Date()), '担当替え', text(r.taskId), true, me);
+    var day = normDate(r['依頼の日']) || ymd(new Date());
+    if (day < ymd(new Date())) return { ok: false, code: 'past' };   /* 過ぎた日の頼みには答えない */
+    if (ok) setCheck(day, '担当替え', text(r.taskId), true, me);
     setCells('申し送り', r._row, { '依頼の答え': ok ? 'ok' : 'ng', '確認': true, '確認した人': me.who });
-    notify(whoOf(r.from), ok ? me.who + 'が代わってくれます' : me.who + 'は今日はむずかしいそうです', text(r.task) ? '「' + text(r.task) + '」' : '', 'notes');
+    var dw = dayWord(day);
+    /* 頼み返し（引き受けた人が「戻してもらえる？」）への答えなら、言葉を「自分でやります」に */
+    var dRow = rowsOf('担当').filter(function (x) { return text(x['やること']) && idOf(x, DUTY_KEYS) === text(r.taskId); })[0];
+    var back = ok && dRow && whoOf(dRow['担当']) === me.who;
+    notify(whoOf(r.from), back ? me.who + 'が自分でやります（' + dw + '、担当が戻りました）' : ok ? me.who + 'が代わってくれます' + (day === ymd(new Date()) ? '' : '（' + dw + '）') : me.who + 'は' + dw + 'はむずかしいそうです', text(r.task) ? dw + '「' + text(r.task) + '」' : '', 'notes');
     return { ok: true };
   }
   return { ok: false, code: 'not_found' };

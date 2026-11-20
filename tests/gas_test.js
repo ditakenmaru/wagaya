@@ -354,7 +354,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 15 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 16 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -571,7 +571,7 @@ ok(b3.api === 15 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 15 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 16 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';
@@ -617,6 +617,49 @@ ok(b3.api === 15 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(pk.items[0].title === 'ととから：担当を代わってほしい' && /お風呂/.test(pk.items[0].body), '通知: 代わってほしい');
   post(e, { action: 'answerSwap', session: M, id: 'pn2', ok: true });
   ok(post(e, { action: 'pushPeek', session: T }).items[0].title === 'ままが代わってくれます', '通知: 代わる答え');
+  // 別の日を前もって頼む → 答え（日付つきの通知）→ 先の日の担当替え → 取り消し
+  { /* GAS の「今日」は日本時間。テストの日付も日本時間で作る */
+    const J = Date.now() + 9 * 3600e3, tm = new Date(J + 864e5), y0 = new Date(J - 864e5);
+    const f = x => x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0');
+    const TM = f(tm), YD = f(y0), md = (tm.getUTCMonth() + 1) + '/' + tm.getUTCDate();
+    e.ss.getSheetByName('担当').data.push(['d1', '6:30', '起こして朝ごはん', 'とと', '毎日', '']);
+    post(e, { action: 'addNote', session: T, note: { id: 'pa1', to: 'まま', text: '明日お願い', ask: 'swap', askDate: TM, taskId: 'd1', task: '起こして朝ごはん' } });
+    post(e, { action: 'pushPeek', session: M });
+    post(e, { action: 'answerSwap', session: M, id: 'pa1', ok: true });
+    pk = post(e, { action: 'pushPeek', session: T });
+    ok(pk.items[0].title.indexOf('ままが代わってくれます（明日 ' + md + '（') === 0 && pk.items[0].body.indexOf('明日 ' + md) === 0, '先の日: 代わる答えに日付');
+    let bb = post(e, { action: 'boot', session: T, fresh: true }).data;
+    ok(bb.swapsAhead.length === 1 && bb.swapsAhead[0].date === TM && bb.swapsAhead[0].id === 'd1' && bb.swapsAhead[0].who === 'まま' && bb.swapsAhead[0].orig === 'とと', '先の日: boot の swapsAhead に出る');
+    ok(post(e, { action: 'cancelSwap', session: M, date: YD, id: 'd1' }).code === 'past', '先の日: 過ぎた日は取り消せない');
+    ok(post(e, { action: 'cancelSwap', session: M, date: TM, id: 'd1' }).code === 'not_yours', '先の日: 引き受けた人は一方的に取り消せない');
+    post(e, { action: 'cancelSwap', session: T, date: TM, id: 'd1' });
+    pk = post(e, { action: 'pushPeek', session: M });
+    ok(pk.items[0].title === 'ととから申し送り' && pk.items[0].body.indexOf('明日 ' + md) === 0 && /自分でやることにしました/.test(pk.items[0].body)
+      && e.ss.getSheetByName('申し送り').data.some(r => r.includes('d1') && String(r.join('|')).indexOf('自分でやることにしました') >= 0), '先の日: 頼んだ人が取り消すと申し送りで相手に知らせる');
+    bb = post(e, { action: 'boot', session: T, fresh: true }).data;
+    ok(bb.swapsAhead.length === 0 && post(e, { action: 'cancelSwap', session: T, date: TM, id: 'd1' }).code === 'not_found', '先の日: 取り消すと消え、二度目は not_found');
+    // 引き受けた人は「戻してもらえる？」と頼み返す → いつもの担当の人が「代わる」→ その日は元に戻る
+    post(e, { action: 'addNote', session: T, note: { id: 'pa2', to: 'まま', text: 'もう一度', ask: 'swap', askDate: TM, taskId: 'd1', task: '起こして朝ごはん' } });
+    post(e, { action: 'answerSwap', session: M, id: 'pa2', ok: true });
+    post(e, { action: 'pushPeek', session: T });
+    post(e, { action: 'addNote', session: M, note: { id: 'pa2b', to: 'とと', text: '戻してもらえる？', ask: 'swap', askDate: TM, taskId: 'd1', task: '起こして朝ごはん' } });
+    post(e, { action: 'answerSwap', session: T, id: 'pa2b', ok: true });
+    ok(post(e, { action: 'pushPeek', session: M }).items[0].title.indexOf('ととが自分でやります（明日 ') === 0, '先の日: 頼み返しへの答えは「自分でやります」と知らせる');
+    bb = post(e, { action: 'boot', session: T, fresh: true }).data;
+    ok(bb.swapsAhead.length === 0, '先の日: 頼み返しを受けると、その日はいつもの担当に戻る');
+    // 済にした後は取り消せない（今日）
+    { const TD = f(new Date(J));
+      post(e, { action: 'addNote', session: T, note: { id: 'pa4', to: 'まま', text: '今日', ask: 'swap', askDate: TD, taskId: 'd1', task: '起こして朝ごはん' } });
+      post(e, { action: 'answerSwap', session: M, id: 'pa4', ok: true });
+      post(e, { action: 'setDone', session: M, date: TD, taskId: 'd1', done: true });
+      const cs = post(e, { action: 'cancelSwap', session: T, date: TD, id: 'd1' });
+      ok(cs.code === 'done', '今日: 済にした後は取り消せない'); }
+    post(e, { action: 'pushPeek', session: T }); post(e, { action: 'pushPeek', session: M });
+    // 過ぎた日の頼みには答えられない
+    post(e, { action: 'addNote', session: T, note: { id: 'pa3', to: 'まま', text: '昨日の', ask: 'swap', askDate: YD, taskId: 'd1', task: '起こして朝ごはん' } });
+    ok(post(e, { action: 'answerSwap', session: M, id: 'pa3', ok: true }).code === 'past', '先の日: 過ぎた日の頼みには答えない');
+    post(e, { action: 'pushPeek', session: T }); post(e, { action: 'pushPeek', session: M });
+  }
   // 自分宛ての申し送り（家族宛て）は送らない
   e.pushReqs = [];
   post(e, { action: 'addNote', session: T, note: { id: 'pn3', to: '家族', text: 'メモ' } });

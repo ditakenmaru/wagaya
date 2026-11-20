@@ -19,10 +19,12 @@ async def main():
         row = page.locator('button[aria-label^="担当：とと"]').first
         await row.scroll_into_view_if_needed(); await row.click(); await page.wait_for_timeout(400)
         t = await page.locator('body').inner_text()
-        print('who sheet has other days:', '別の日を代わってほしい' in t and '明日' in t)
+        print('who sheet has other days:', '別の日を代わってほしい' in t and '明日' in t, '| tomorrow already taken:', '代わってもらう' in t)
         await page.screenshot(path='/tmp/ask_sheet.png')
         # 明日を押す → 申し送りの下書き
-        await page.get_by_role('button', name=re.compile('^明日 ')).first.click(); await page.wait_for_timeout(400)
+        chip = page.get_by_role('button', name=re.compile('頼む$')).first
+        chipName = (await chip.inner_text()).split('\n')[0]
+        await chip.click(); await page.wait_for_timeout(400)
         draft = await page.locator('#kizuki-input').input_value()
         print('draft:', draft)
         btn = page.get_by_role('button', name='の担当を代わってほしい')
@@ -31,9 +33,34 @@ async def main():
         await page.get_by_role('button', name='送る', exact=True).click(); await page.wait_for_timeout(600)
         # 送った頼みは、もう一度開くと「返事待ち」
         await row.scroll_into_view_if_needed(); await row.click(); await page.wait_for_timeout(400)
-        t2 = await page.get_by_role('button', name=re.compile('^明日 ')).first.inner_text()
+        t2 = await page.get_by_role('button', name=chipName).first.inner_text()
         print('second open shows waiting:', '返事待ち' in t2)
         await page.screenshot(path='/tmp/ask_sheet2.png')
+        # 見本：明日の「起こして朝ごはん」は まま が引き受け済み → 申し送りの「やっぱり自分でやる」を2回押して取り消す
+        await page.keyboard.press('Escape'); await page.wait_for_timeout(300)
+        await page.goto(URL); await page.wait_for_timeout(1500)
+        await page.locator('nav[aria-label=画面の切り替え] button', has_text='相談・連絡').click(); await page.wait_for_timeout(500)
+        await page.get_by_role('button', name='申し送り').first.click(); await page.wait_for_timeout(500)
+        cbtn = page.get_by_role('button', name='やっぱり自分でやる')
+        print('cancel button shown:', await cbtn.count() == 1)
+        await cbtn.scroll_into_view_if_needed(); await cbtn.click(); await page.wait_for_timeout(200)
+        armed = page.get_by_role('button', name='もう一度で取り消す')
+        print('armed:', await armed.count() == 1)
+        await page.screenshot(path='/tmp/ask_cancel_armed.png')
+        await armed.click(); await page.wait_for_timeout(600)
+        body = await page.locator('body').inner_text()
+        print('canceled text:', 'ととの担当に戻りました' in body, '| toast:', '自分でやります' in body)
+        await page.screenshot(path='/tmp/ask_cancel_done.png')
+        # 引き受けた側：見本の「寝かしつけ」（ままから、今日）を「代わる」→「戻してもらえる？と頼む」が出る（一方的には戻せない）
+        await page.get_by_role('button', name='代わる', exact=True).first.click(); await page.wait_for_timeout(600)
+        back = page.get_by_role('button', name='戻してもらえる？と頼む')
+        print('ask-back shown:', await back.count() >= 1, '| no unilateral cancel for helper:', await page.get_by_role('button', name='やっぱりむずかしい').count() == 0)
+        await back.first.scroll_into_view_if_needed(); await back.first.click(); await page.wait_for_timeout(500)
+        print('ask-back draft:', await page.locator('#kizuki-input').input_value())
+        await page.screenshot(path='/tmp/ask_back.png')
+        await page.get_by_role('button', name='送る', exact=True).last.click(); await page.wait_for_timeout(700)
+        body = await page.locator('body').inner_text()
+        print('ask-back sent, toast:', '返事があるまでは自分の担当のままです' in body, '| waiting shown:', '戻してもらえるか頼み中' in body, '| no 2nd ask-back:', await page.get_by_role('button', name='戻してもらえる？と頼む').count() == 0)
         print('errors:', errs)
         await b.close()
 

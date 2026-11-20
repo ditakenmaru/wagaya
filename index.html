@@ -1017,10 +1017,13 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
         <sc-if value="{{n.canAnswer}}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; gap: 8px">
             <button type="button" onClick="{{n.swapOk}}" class="btn btn-fill" style="flex: 1; min-height: 48px; font-size: var(--t-sub)">代わる</button>
-            <button type="button" onClick="{{n.swapNg}}" class="btn btn-gray" style="flex: 1; min-height: 48px; font-size: var(--t-sub)">今日はむずかしい</button>
+            <button type="button" onClick="{{n.swapNg}}" class="btn btn-gray" style="flex: 1; min-height: 48px; font-size: var(--t-sub)">{{n.ngLabel}}</button>
           </div>
         </sc-if>
-        <sc-if value="{{n.answerText}}" hint-placeholder-val="{{ false }}"><span style="{{n.answerStyle}}">{{n.answerText}}</span></sc-if>
+        <sc-if value="{{n.answerText}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span style="{{n.answerStyle}}">{{n.answerText}}</span>
+          <sc-if value="{{n.backWait}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); color: var(--label2)">戻してもらえるか頼み中（返事待ち）</span></sc-if>
+          <sc-if value="{{n.canCancel}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{n.cancelSwap}}" class="btn btn-link" style="min-height: 44px; padding: 0 8px; font-size: var(--t-foot); font-weight: 600; color: var(--danger)">{{n.cancelLabel}}</button></sc-if>
+        </div></sc-if>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
           <sc-if value="{{n.unread}}" hint-placeholder-val="{{ true }}">
             <button type="button" onClick="{{n.ack}}" class="btn btn-fill" style="min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">確認しました</button>
@@ -1343,7 +1346,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=55"></script>
-<script src="app.js?v=55"></script>
+<script src="config.js?v=56"></script>
+<script src="app.js?v=56"></script>
 </body>
 </html>
