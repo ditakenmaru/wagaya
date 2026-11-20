@@ -494,6 +494,23 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <sc-if value="{{more.decisions.show}}" hint-placeholder-val="{{ false }}">
       <button type="button" onClick="{{more.decisions.go}}" style="{{more.decisions.style}}">{{more.decisions.label}}</button>
     </sc-if>
+    <sc-if value="{{decArchive.show}}" hint-placeholder-val="{{ false }}">
+      <button type="button" data-dec-archive="1" aria-expanded="{{decArchive.expanded}}" onClick="{{decArchive.toggle}}" style="align-self: flex-start; min-height: 44px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 14px; font-weight: 700; cursor: pointer">{{decArchive.label}}</button>
+      <sc-if value="{{decArchive.open}}" hint-placeholder-val="{{ false }}">
+        <div role="list" aria-label="決まったこと" style="display: flex; flex-direction: column; gap: 8px">
+          <sc-for list="{{decArchive.items}}" as="da" hint-placeholder-count="1">
+            <div role="listitem" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 16px; background: #F4F6F2">
+              <span style="{{da.qStyle}}">{{da.q}}</span>
+              <span style="font-size: 14px; font-weight: 700; color: #2C6B52">決まった：{{da.decidedText}}</span>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button type="button" onClick="{{da.more.go}}" style="{{da.more.style}}">{{da.more.label}}</button>
+                <button type="button" onClick="{{da.reopen}}" style="min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">相談に戻す</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </sc-if>
   </section>
   </div></sc-if>
 
@@ -1162,7 +1179,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=44"></script>
-<script src="app.js?v=44"></script>
+<script src="config.js?v=45"></script>
+<script src="app.js?v=45"></script>
 </body>
 </html>

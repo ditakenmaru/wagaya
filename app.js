@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '44';
+  var APP_VERSION = '45';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1509,7 +1509,8 @@
       var decided = x.state === '決まった';
       var mine = me1 ? x.a1 : x.a2;
       var both = x.a1 && x.a1 === x.a2 && x.a1 !== '話したい';
-      var opts = (x.options && x.options.length ? x.options : ['賛成', '反対']).concat(['話したい']).map(function (o) {
+      var base = (x.options || []).filter(function (o) { return o && o !== '話したい'; });   /* シートに「話したい」があっても2つ出さない */
+      var opts = (base.length ? base : ['賛成', '反対']).concat(['話したい']).map(function (o) {
         var picks = [];
         if (x.a1 === o) picks.push({ label: names[0], style: self.badge(names[0]) });
         if (x.a2 === o) picks.push({ label: names[1], style: self.badge(names[1]) });
@@ -1551,6 +1552,21 @@
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 20px; background: ' + (decided ? '#F4F6F2' : '#FFFFFF') };
     });
+
+    /* 決まった相談はアーカイブへ。一覧には決まっていないものだけ出し、下の「決まったこと」で広げる（新しく決まった順＝シートの下から） */
+    var decDone = (D.decisions || []).filter(function (x) { return x.state === '決まった'; }).reverse();
+    var decArchiveOpen = !!st.decArchiveOpen;
+    var decArchive = {
+      show: decDone.length > 0, open: decArchiveOpen, expanded: decArchiveOpen ? 'true' : 'false',
+      label: decArchiveOpen ? '決まったことを閉じる ⌃' : '決まったこと（アーカイブ ' + decDone.length + '件）⌄',
+      toggle: function () { self.setState({ decArchiveOpen: !self.state.decArchiveOpen }); USAGE.add('act:decide_archive'); },
+      items: decDone.map(function (x) {
+        return { q: x.q, decidedText: x.decided, qStyle: clamp(2, 'font-size: 14px; font-weight: 800; line-height: 1.45; color: #17201B'),
+          more: moreOf('decide', x.id),
+          reopen: function () { self.decideNow(x, true); } };
+      })
+    };
+    decisions = decisions.filter(function (x) { return !x.decided; });
 
     /* 期限があるもの */
     var deadlines = (D.deadlines || []).filter(function (x) { return whoSel === 'all' || !x.who || x.who === whoSel || x.who === '家族'; }).sort(function (a, b) { return (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0); }).map(function (x) {
@@ -1951,7 +1967,7 @@
       notesCardText: myUnread.length || newReplies.length ? [myUnread.length ? 'あなた宛てが ' + myUnread.length + '件' : '', newReplies.length ? '新しい返信が ' + newReplies.length + '件' : ''].filter(String).join('、') + 'あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
       notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: 20px; text-align: left; cursor: pointer; font-family: inherit; color: #17201B; border: ' + (myUnread.length || newReplies.length ? '2px solid #F2A33A' : '1.5px solid #DDE3DA') + '; background: #FFFFFF',
       travelText: travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）' : '',
-      decisions: decisions, decisionsEmpty: decisions.length === 0, addDecision: function () { self.openDecision(null); },
+      decisions: decisions, decisionsEmpty: decisions.length === 0, decArchive: decArchive, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
       outings: outings, outingsEmpty: outings.length === 0, addOuting: function () { self.openOuting(null); },
       menuToShop: function () { self.menuToShop({ dish: dayMenu.dish, ingredients: dayMenu.ingredients }); },
@@ -2344,7 +2360,8 @@
         })(), plansFrom: ymd(new Date()), plansTo: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 13)),
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
-        decisions: [{ id: 'q1', q: '見本：週末の朝ごはん、どうする？', options: ['見本：A案', '見本：B案'], due: dd(5), state: '相談中', a1: '見本：A案', a2: '', decided: '', note: '' }],
+        decisions: [{ id: 'q0', q: '見本：夏の旅行はどこにする？', options: ['見本：海', '見本：山'], due: '', state: '決まった', a1: '見本：海', a2: '見本：海', decided: '見本：海', note: '' },
+          { id: 'q1', q: '見本：週末の朝ごはん、どうする？', options: ['見本：A案', '見本：B案', '話したい'], due: dd(5), state: '相談中', a1: '見本：A案', a2: '', decided: '', note: '' }],
         deadlines: [{ id: 'k1', what: '見本：保育園の書類を出す', due: ymd(t), who: 'まま', done: false, url: '', note: '' }, { id: 'k2', what: '見本：ペットホテルの予約', due: dd(9), who: 'とと', done: false, url: '', note: '' }],
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
         weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
