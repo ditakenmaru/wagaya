@@ -264,6 +264,30 @@ ok(r2.ok && b3.ui.depart === 510 && b3.duties.some(d => d.id === 'dep1' && d.t =
 ok(post(env, { action: 'setDepart', session: S, time: 'あさ' }).code === 'bad_request', '出発: 時刻でない値は断る');
 ok(JSON.stringify(env.dutyTime('出発', 480)) === '{"t":480,"rel":0}' && JSON.stringify(env.dutyTime('7:15', 480)) === '{"t":435,"rel":null}', '出発: 時刻の読み方');
 post(env, { action: 'deleteDuty', session: S, id: 'dep1' });
+// 今日だけ担当を替える：自分が引き受ける・戻す。「代わってほしい」の申し送りに答えると替わる
+r2 = post(env, { action: 'saveDuty', session: S, duty: { id: 'sw1', task: '寝かしつけ', time: '19:30', who: lg.me.who === 'とと' ? 'まま' : 'とと', rule: '日月火水木金土' } });
+r2 = post(env, { action: 'swapDuty', session: S, date: today, id: 'sw1', take: true });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+const meW = b3.duties.find(d => d.id === 'sw1');
+ok(r2.ok && meW.orig && meW.who !== meW.orig, '担当替え: 今日だけ自分がやる（orig に元の担当）');
+ok(b3.dutiesAll.find(d => d.id === 'sw1').who === meW.orig, '担当替え: いつもの担当は変わらない');
+post(env, { action: 'swapDuty', session: S, date: today, id: 'sw1', take: false });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(!b3.duties.find(d => d.id === 'sw1').orig, '担当替え: 元に戻す');
+r2 = post(env, { action: 'addNote', session: S, note: { id: 'nsw1', to: meW.orig, taskId: 'sw1', task: '寝かしつけ', text: '代わって', ask: 'swap', askDate: today } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(r2.ok && b3.notes.some(n => n.id === 'nsw1' && n.ask === 'swap' && n.askDate === today && n.answer === ''), '代わってほしい: 申し送りに依頼が残る');
+ok(post(env, { action: 'answerSwap', session: S, id: 'nsw1', ok: true }).code === 'not_yours', '代わってほしい: 頼まれた人しか答えられない');
+post(env, { action: 'deleteDuty', session: S, id: 'sw1' });
+// 話題の優先度：高を先に
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpA', title: '話題A', url: '', note: '' } });
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpB', title: '話題B', url: '', note: '', high: true } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(b3.topics[0].id === 'tpB' && b3.topics[0].high === true && b3.topics.find(x => x.id === 'tpA').high === false, '話題: 優先度高が一番前');
+post(env, { action: 'saveTopic', session: S, topic: { id: 'tpB', title: '話題B', url: '', note: '', high: false } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(b3.topics.find(x => x.id === 'tpB').high === false, '話題: 優先度を戻せる');
+post(env, { action: 'deleteTopic', session: S, id: 'tpA' }); post(env, { action: 'deleteTopic', session: S, id: 'tpB' });
 // 買い物：前の週の履歴から買うかも
 const ws = (d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - t.getDay()); return t; })(today);
 const wk = n => { const t = new Date(ws); t.setDate(t.getDate() - 7 * n); return t.toISOString().slice(0, 10); };
@@ -317,7 +341,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 12 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 13 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);

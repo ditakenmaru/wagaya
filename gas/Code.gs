@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 12;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 13;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -27,14 +27,14 @@ var SHEETS = {
   '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明', '下のタブ', '朝の順番'],
   '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
-  '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人'],
+  '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人', '依頼', '依頼の日', '依頼の答え'],
   '日記': ['id', '日付', '時刻', '誰', 'text', '対象'],
   '献立': ['日付', '料理', 'ホットクック', 'メモ', '材料', '作り方', '写真URL', '人数'],
   '買い物': ['週', 'id', '分類', '品名', '量'],
   '予定': ['日付', '時刻', '内容', '誰'],
   '中期': ['id', '名前', '次の一手', '期限'],
   'ニュース': ['id', '中期ID', '出どころ', '発信元', '日付', '見出し', 'なぜ今', '本文', 'URL'],
-  '話題': ['id', '見出し', 'URL', '説明', '日付', '表示'],
+  '話題': ['id', '見出し', 'URL', '説明', '日付', '表示', '優先'],
   '要望': ['id', '日時', '誰', '内容', '画面', '状態', 'メモ'],
   '相談': ['id', '問い', '選択肢', '期限', '状態', '決まったこと', '人1の答え', '人2の答え', 'メモ', '作成'],
   '期限': ['id', '内容', '期限', '担当', '済', 'URL', 'メモ'],
@@ -126,6 +126,8 @@ function doPost(e) {
       case 'deleteNote': return out(withLock(function () { return deleteOwn('申し送り', req.id, 'from', me); }));
       case 'addDiary': return out(withLock(function () { return addDiary(req.entry, me); }));
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
+      case 'swapDuty': return out(withLock(function () { return swapDuty(req.date, req.id, req.take, me); }));
+      case 'answerSwap': return out(withLock(function () { return answerSwap(req.id, !!req.ok, me); }));
       case 'skipDuty': return out(withLock(function () { return setCheck(req.date, '休み', req.id, !!req.skip, me); }));
       case 'setDepart': return out(withLock(function () { return setDepart(req.time); }));
       case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
@@ -323,9 +325,14 @@ function buildBoot(today) {
     return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
   });
   var skipped = {};
-  rowsOf('チェック').forEach(function (r) { if (r['種類'] === '休み' && truthy(r['済']) && normDate(r['日付']) === today) skipped[String(r['対象ID'])] = true; });
+  var swaps = {};   /* 今日だけの担当替え（チェックの種類「担当替え」。誰＝代わった人） */
+  rowsOf('チェック').forEach(function (r) {
+    if (normDate(r['日付']) !== today || !truthy(r['済'])) return;
+    if (r['種類'] === '休み') skipped[String(r['対象ID'])] = true;
+    if (r['種類'] === '担当替え') swaps[String(r['対象ID'])] = whoOf(r['誰']);
+  });
   var duties = dutyRows.filter(function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; })
-    .map(function (d) { return { id: d.id, t: d.t, rel: d.rel, task: d.task, who: d.who, once: !!d.date }; });
+    .map(function (d) { var sw = swaps[d.id] && swaps[d.id] !== d.who ? swaps[d.id] : ''; return { id: d.id, t: d.t, rel: d.rel, task: d.task, who: sw || d.who, orig: sw ? d.who : '', once: !!d.date }; });
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
 
   var shop = shopFor(weekStart);
@@ -342,7 +349,8 @@ function buildBoot(today) {
 
   var since = Date.now() - 14 * 864e5;
   var notes = rowsOf('申し送り').filter(function (r) { return r.id; }).map(function (r) {
-    return { id: String(r.id), createdAt: new Date(r['作成']).getTime(), from: whoOf(r.from), to: whoOf(r.to), taskId: text(r.taskId), task: text(r.task), text: text(r.text), read: truthy(r['確認']) };
+    return { id: String(r.id), createdAt: new Date(r['作成']).getTime(), from: whoOf(r.from), to: whoOf(r.to), taskId: text(r.taskId), task: text(r.task), text: text(r.text), read: truthy(r['確認']),
+      ask: text(r['依頼']) === 'swap' ? 'swap' : '', askDate: normDate(r['依頼の日']), answer: text(r['依頼の答え']) };
   }).filter(function (n) { return !n.read || n.createdAt >= since; });
 
   var diary = rowsOf('日記').filter(function (r) { return r.id && normDate(r['日付']) === today; }).map(function (r) {
@@ -376,8 +384,12 @@ function buildBoot(today) {
 
   var topics = rowsOf('話題').filter(function (r) { return text(r['見出し']) && (r['表示'] === '' || r['表示'] == null || truthy(r['表示'])); }).map(function (r) {
     var d = r['日付'];
-    return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: safeUrl(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d) };
+    var pr = text(r['優先']);
+    return { id: idOf(r, TOPIC_KEYS), title: text(r['見出し']), url: safeUrl(r['URL']), note: text(r['説明']), date: d instanceof Date ? (d.getMonth() + 1) + '/' + d.getDate() : text(d),
+      high: pr === '高' || truthy(r['優先']) };
   }).reverse();
+  /* 優先度が高い話題を先に（その中は新しい順のまま） */
+  topics = topics.filter(function (x) { return x.high; }).concat(topics.filter(function (x) { return !x.high; }));
 
   /* ふたりで決めること：相談中のものと、決まって2週間以内のもの */
   var dsince = ymd(new Date(t.getTime() - 14 * 864e5));
@@ -884,8 +896,28 @@ function addNote(n, me) {
   n = n || {};
   var body = String(n.text || '').slice(0, 1000).trim();
   if (!body || !n.id) return { ok: false, code: 'bad_request' };
-  appendObj('申し送り', { id: String(n.id), '作成': new Date(), from: me.who, to: whoOf(n.to), taskId: String(n.taskId || ''), task: String(n.task || ''), text: body, '確認': '', '確認した人': '' });
+  var o = { id: String(n.id), '作成': new Date(), from: me.who, to: whoOf(n.to), taskId: String(n.taskId || ''), task: String(n.task || ''), text: body, '確認': '', '確認した人': '' };
+  if (n.ask === 'swap' && n.taskId) { o['依頼'] = 'swap'; o['依頼の日'] = normDate(n.askDate) || ymd(new Date()); o['依頼の答え'] = ''; }   /* 「代わってほしい」の頼み */
+  appendObj('申し送り', o);
   return { ok: true };
+}
+
+/* 今日だけ担当を変える。自分が引き受ける（who＝自分）か、元に戻す（who 空）だけ。相手に回す時は申し送りで頼む */
+function swapDuty(date, id, take, me) { return setCheck(date, '担当替え', id, !!take, me); }
+
+/* 「代わってほしい」への答え。頼まれた人だけが答えられる。代わる時は、その日のその担当を自分に替える */
+function answerSwap(noteId, ok, me) {
+  var rows = rowsOf('申し送り');
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r.id) !== String(noteId)) continue;
+    if (text(r['依頼']) !== 'swap') return { ok: false, code: 'bad_request' };
+    if (whoOf(r.to) !== me.who) return { ok: false, code: 'not_yours' };
+    if (ok) setCheck(normDate(r['依頼の日']) || ymd(new Date()), '担当替え', text(r.taskId), true, me);
+    setCells('申し送り', r._row, { '依頼の答え': ok ? 'ok' : 'ng', '確認': true, '確認した人': me.who });
+    return { ok: true };
+  }
+  return { ok: false, code: 'not_found' };
 }
 
 function ackNote(id, read, me) {
@@ -944,6 +976,7 @@ function saveTopic(t) {
   var title = String(t.title || '').slice(0, 100).trim(), url = String(t.url || '').trim();
   if (!title || !t.id || (url && !/^https:\/\/[^\s]+$/.test(url))) return { ok: false, code: 'bad_request' };
   var obj = { id: String(t.id), '見出し': title, 'URL': url, '説明': String(t.note || '').slice(0, 200).trim() };
+  if (t.high != null) obj['優先'] = t.high ? '高' : '';
   var r = findById('話題', t.id, TOPIC_KEYS);
   if (r) setCells('話題', r._row, obj);
   else {
