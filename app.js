@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '26';
+  var APP_VERSION = '27';
   var API_EXPECTED = 10;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -198,6 +198,21 @@
       .catch(function (err) { if (action !== 'logUsage') USAGE.add('err:' + String((err && err.code) || 'network').replace(/[^\w]/g, '').slice(0, 30)); throw err; });
   }
 
+  /* ログインの控え：localStorage だけが消える時に備え、同じ端末の Cache Storage にも置く（ほかの場所には出さない）。
+     ログアウトで消す。DEMO では使わない */
+  var AUTH = {
+    key: 'auth', cache: 'wagaya-auth',
+    save: function (session, email) {
+      if (DEMO || !window.caches || !session) return;
+      try { caches.open(this.cache).then(function (c) { return c.put(new Request('./__auth'), new Response(JSON.stringify({ s: session, e: email || '', t: Date.now() }))); }).catch(function () {}); } catch (e) {}
+    },
+    load: function () {
+      if (DEMO || !window.caches) return Promise.resolve(null);
+      try { return caches.open(this.cache).then(function (c) { return c.match('./__auth'); }).then(function (r) { return r ? r.json() : null; }).catch(function () { return null; }); } catch (e) { return Promise.resolve(null); }
+    },
+    clear: function () { try { if (window.caches) caches.delete(this.cache); } catch (e) {} }
+  };
+
   /* 新しい版があるか確かめる（ホーム画面のアプリは、戻ってきただけでは読み直さないため）。
      新しい版が入ると controllerchange で、入力中でなければ読み直す */
   function checkUpdate() {
@@ -279,7 +294,7 @@
     /* 開いている間は15秒ごとに「変わったか」だけ確かめ、変わった時だけ読み直す（Museや相手の書き込みがすぐ出る）。
        予定（カレンダー）などシートの外のものもあるので、5分ごとには必ず読み直す */
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.pollVer(); }, 15000);
-    this.handleRedirect().then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
+    this.handleRedirect().then(function () { return self.restoreLogin(); }).then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
     if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
     this.setupPull();
   };
@@ -324,27 +339,60 @@
   };
 
   /* ログイン：Googleの画面へ移動し、戻ってきたらGASで確かめる */
-  App.prototype.login = function () {
+  /* silent：Googleの画面を出さずに確かめる（prompt=none）。だめならログインの画面に戻る */
+  App.prototype.login = function (silent) {
     if (!CFG.clientId) { this.setState({ loginError: 'ログインの設定（クライアントID）がまだです。config.js を確かめてください。' }); return; }
-    var nonce = uid('n');
+    var nonce = uid('n'), hint = LS.get('hint');
     LS.set('nonce', nonce);
+    if (silent === true) LS.set('silent', 1); else LS.del('silent');
     var redirect = location.origin + location.pathname;
     var q = 'client_id=' + encodeURIComponent(CFG.clientId) + '&redirect_uri=' + encodeURIComponent(redirect) +
-      '&response_type=id_token&scope=' + encodeURIComponent('openid email') + '&nonce=' + encodeURIComponent(nonce) + '&prompt=select_account';
+      '&response_type=id_token&scope=' + encodeURIComponent('openid email') + '&nonce=' + encodeURIComponent(nonce) +
+      (silent === true ? '&prompt=none' : '&prompt=select_account') + (hint ? '&login_hint=' + encodeURIComponent(hint) : '');
     this.setState({ loggingIn: true });
     location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
+  };
+  /* ログインが手元から消えていたら：①同じ端末の控えから戻す ②Googleにまだログインしていれば、画面を出さずに入り直す（1回だけ）。
+     どちらでもだめならログインの画面。何が起きたかは「使われ方」に回数だけ残す（原因を調べるため） */
+  App.prototype.restoreLogin = function () {
+    var self = this;
+    if (DEMO || LS.get('session') || LS.get('loggedOut') || /id_token=|error=/.test(location.hash)) return Promise.resolve();
+    return AUTH.load().then(function (b) {
+      var photosLeft = window.caches ? caches.has('wagaya-photos') : Promise.resolve(false);
+      return photosLeft.then(function (hasPhotos) {
+        USAGE.add('diag:lost_' + (b ? 'ls_only' : (hasPhotos ? 'ls_and_auth' : 'all')));
+        if (b && b.s) {
+          LS.set('session', b.s); if (b.e) LS.set('hint', b.e);
+          USAGE.add('diag:restored');
+          self.setState({ needLogin: false });
+          return;
+        }
+        var tried = false; try { tried = sessionStorage.getItem('silentTried') === '1'; } catch (e) {}
+        if (!tried && !self.redirected && navigator.onLine !== false) { try { sessionStorage.setItem('silentTried', '1'); } catch (e) {} self.login(true); }
+      });
+    });
   };
   App.prototype.handleRedirect = function () {
     var self = this;
     var h = location.hash.replace(/^#/, '');
     if (!/id_token=|error=/.test(h)) return Promise.resolve();
+    this.redirected = true;   // Googleから戻った直後は、自動で入り直さない
     var p = {};
     h.split('&').forEach(function (kv) { var i = kv.indexOf('='); p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); });
     history.replaceState(null, '', location.pathname + location.search);
-    if (p.error) { this.setState({ needLogin: true, loginError: 'ログインできませんでした（' + p.error + '）。もう一度お試しください。' }); return Promise.resolve(); }
+    var wasSilent = !!LS.get('silent'); LS.del('silent');
+    if (p.error) {
+      USAGE.add('diag:' + (wasSilent ? 'silent_ng' : 'login_error'));
+      this.setState({ needLogin: true, loggingIn: false, loginError: wasSilent ? '' : 'ログインできませんでした（' + p.error + '）。もう一度お試しください。' });
+      return Promise.resolve();
+    }
     this.setState({ loggingIn: true });
     return api('login', { idToken: p.id_token, nonce: LS.get('nonce') }).then(function (res) {
-      LS.set('session', res.session); LS.del('nonce');
+      LS.set('session', res.session); LS.del('nonce'); LS.del('loggedOut');
+      if (res.me && res.me.email) LS.set('hint', res.me.email);
+      AUTH.save(res.session, res.me && res.me.email);
+      USAGE.add('diag:' + (wasSilent ? 'silent_ok' : 'login_ok'));
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(function (g) { USAGE.add('diag:persist_' + (g ? 'yes' : 'no')); }); } catch (e) {}
       self.setState({ needLogin: false, loginError: '', loggingIn: false });
     }).catch(function (err) {
       var msg = err && err.code === 'not_allowed' ? 'このアカウントは登録されていません。家族のGoogleアカウントでログインしてください。' : 'ログインを確かめられませんでした。時間をおいてもう一度お試しください。';
@@ -355,6 +403,7 @@
     var self = this;
     USAGE.flush();
     api('logout', {}).catch(function () {});
+    AUTH.clear(); LS.set('loggedOut', 1); LS.del('hint');
     LS.del('session'); LS.del('boot'); LS.del('seen'); LS.del('seenPending'); LS.del('usage'); LS.del('usagePending'); LS.del('orderPlain');
     try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
     this.photoKey = null;
@@ -373,6 +422,7 @@
       /* 読み込みの間に書き込みがあったら、この結果は古いので捨て、書き込みが終わってから読み直す */
       if ((self.writeSeq || 0) !== seq0 || self.pending > 0) { self.setState({ syncing: false }); self.afterWrites = true; return true; }
       var data = res.data; data._at = Date.now();
+      if (!self.authSaved && data.me) { self.authSaved = true; AUTH.save(LS.get('session'), data.me.email); if (data.me.email) LS.set('hint', data.me.email); }
       if (!DEMO && data.api !== API_EXPECTED && !self.apiWarned) { self.apiWarned = true; setTimeout(function () { self.showToast('Google側の更新がまだのようです（版のずれ）。アプリを管理している人に伝えてください', null); }, 800); }
       LS.set('boot', data);
       var first = !self.state.data;
@@ -382,7 +432,7 @@
       self.loadPhotos(data.photos);
       return true;
     }).catch(function (err) {
-      if (err && (err.code === 'no_session' || err.code === 'not_allowed')) { LS.del('session'); self.setState({ needLogin: true, syncing: false }); return false; }
+      if (err && (err.code === 'no_session' || err.code === 'not_allowed')) { AUTH.clear(); LS.del('session'); self.setState({ needLogin: true, syncing: false }); return false; }
       self.setState({ syncing: false, offline: true });
       if (!quiet) self.showToast(err && err.code === 'not_configured' ? 'つなぎ先（GASのURL）の設定がまだです' : '新しいデータを取れませんでした。通信を確かめてください', null);
       return false;
@@ -525,7 +575,7 @@
     USAGE.add('act:' + action);
     var run = function () {
       return api(action, payload).then(function (r) { return r; }).catch(function (err) {
-        if (err && err.code === 'no_session') { LS.del('session'); self.setState({ needLogin: true }); return; }
+        if (err && err.code === 'no_session') { AUTH.clear(); LS.del('session'); self.setState({ needLogin: true }); return; }
         if (revert) revert();
         var why = { not_agreed: '2人の答えがそろっていないので、まだ決まりにできません', not_both: '2人とも「行きたい」を押すと、行く日を決められます', already_decided: 'もう決まった相談です。変える時は「相談に戻す」を押してください' }[err && err.code];
         self.showToast(why || '保存できませんでした。通信を確かめて、もう一度お試しください', null);

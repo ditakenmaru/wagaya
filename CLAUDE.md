@@ -47,6 +47,8 @@
   - すぐ反映：開いている間は15秒ごとに action:'ver'（版だけ）を確かめ、変わった時だけ boot で読み直す。5分ごとには必ず読み直す（カレンダーなどシートの外の変更のため）
   - 「要望」シート：アプリの「要望・不具合を書く」から入る。持ち主に「要望を見て」と言われたら、内蔵ブラウザでこのシートを読んで直し、状態を更新する
 - ログイン：Googleの id_token をリダイレクトで受け取り（ポップアップなし）、GASが tokeninfo で確かめ、設定の2人なら180日のセッションを発行（_sessionsにはハッシュだけ保存）
+  - 手元からログインが消えた時：①同じ端末の Cache Storage `wagaya-auth` の控えから戻す ②だめなら Google に prompt=none（画面なし、login_hint 付き）で1回だけ確かめる ③それもだめならログイン画面。Googleから戻った直後とログアウト後（localStorage `loggedOut`）は自動で行かない。サーバーが断った時（no_session）は控えも消す
+  - 調べるための記録（使われ方、回数だけ）：diag:lost_ls_only（localStorageだけ消えた）／lost_ls_and_auth／lost_all、restored、silent_ok／silent_ng、login_ok、persist_yes／no
 
 ## GASのコードを変えた時（ブラウザでの手作業が要る）
 1. Apps Script の `コード.gs`（と必要なら appsscript.json）を `https://raw.githubusercontent.com/ditakenmaru/wagaya/main/gas/…` の中身に貼り替えて保存
