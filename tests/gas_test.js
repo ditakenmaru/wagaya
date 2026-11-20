@@ -7,6 +7,7 @@ function fmt(d, tz, f) {
   const g = t => p.find(x => x.type === t).value;
   if (f === 'yyyy-MM-dd') return `${g('year')}-${g('month')}-${g('day')}`;
   if (f === 'H:mm') return `${Number(g('hour')) % 24}:${g('minute')}`;
+  if (f === 'M/d H:mm') return `${Number(g('month'))}/${Number(g('day'))} ${Number(g('hour')) % 24}:${g('minute')}`;
   throw new Error('fmt ' + f);
 }
 class Range {
@@ -53,9 +54,12 @@ function makeEnv(sheets) {
     Utilities: {
       formatDate: fmt, getUuid: () => crypto.randomUUID(),
       computeDigest: (a, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map(b => b > 127 ? b - 256 : b),
-      DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64'), base64Decode: s => Array.from(Buffer.from(s, 'base64')), newBlob: (b, m, n) => ({ bytes: b, mime: m, name: n })
+      DigestAlgorithm: { SHA_256: 1 }, Charset: { UTF_8: 1 }, base64Encode: b => Buffer.from(b).toString('base64'),
+      computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', Buffer.from(k.map(x => x & 255))).update(Buffer.from(v.map(x => x & 255))).digest()).map(x => x > 127 ? x - 256 : x),
+      base64EncodeWebSafe: (d) => (typeof d === 'string' ? Buffer.from(d, 'utf8') : Buffer.from(d.map(x => x & 255))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'), base64Decode: s => Array.from(Buffer.from(s, 'base64')), newBlob: (b, m, n) => ({ bytes: b, mime: m, name: n })
     },
-    UrlFetchApp: { fetch: (u) => { if (/[|\s]/.test(u.split('?')[1] || '')) throw new Error('Invalid argument: ' + u); return ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/commons\.wikimedia/.test(u) ? (env.commons || {}) : /wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }); }, fetchAll: () => [] },
+    UrlFetchApp: { fetch: (u) => { if (/[|\s]/.test(u.split('?')[1] || '')) throw new Error('Invalid argument: ' + u); return ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/commons\.wikimedia/.test(u) ? (env.commons || {}) : /wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }); },
+      fetchAll: (reqs) => { if (!reqs.length || !/push/.test(reqs[0].url)) return []; env.pushReqs = (env.pushReqs || []).concat(reqs); return reqs.map(r => ({ getResponseCode: () => (env.pushCodes || {})[r.url] || 201, getContentText: () => '' })); } },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
     Drive: { Files: {
       list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
@@ -91,9 +95,9 @@ ok(env.ss.getSheetByName('設定').data.find(r => r[0] === '人1のメール')[1
 ok(env.ss.getSheetByName('画面').data.length === 13, 'setup: 画面シートに12行');
 ok(env.ss.getSheetByName('チェック').data[0].length === 6, 'setup: 空のシートに見出し');
 ok(env.ss.getSheetByName('献立').getLastRow() === 1, 'setup: 見本の行を入れない');
-ok(env.triggers.length === 3, 'setup: トリガー3つ（写真・ふりかえり・バックアップ）');
+ok(env.triggers.length === 4, 'setup: トリガー4つ（写真・ふりかえり・バックアップ・通知）');
 env.setup();
-ok(env.ss.getSheetByName('画面').data.length === 13 && env.triggers.length === 3, 'setup: 2回目も増えない');
+ok(env.ss.getSheetByName('画面').data.length === 13 && env.triggers.length === 4, 'setup: 2回目も増えない');
 
 // ログイン
 env.token = { iss: 'accounts.google.com', aud: 'cid', email: 'p1@example.com', email_verified: 'true', exp: Date.now() / 1000 + 600, nonce: 'n1' };
@@ -350,7 +354,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 14 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 15 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -554,6 +558,102 @@ ok(b3.api === 14 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp3', target: 'notes:n1', text: '了解' } }).ok && post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp3' && x.target === 'notes:n1'), 'addReply: 申し送りへの返信');
   ok(post(env, { action: 'addReply', session: S, reply: { id: 'rp3', target: 'decide:q1', text: '  ' } }).code === 'bad_request', 'addReply: 空は断る');
   ok(post(env, { action: 'deleteReply', session: S, id: 'rp1' }).ok && !post(env, { action: 'boot', session: S, today }).data.replies.some(x => x.id === 'rp1'), 'deleteReply: 自分の返信を消す');
+}
+
+// 通知（Web Push）：署名・届け先・相手だけに送る・止める時間
+{
+  const e = makeEnv({ '設定': [['項目', '値', '説明'], ['クライアントID', 'cid', ''], ['人1のメール', 'p1@example.com', ''], ['人2のメール', 'p2@example.com', ''], ['通知を止める時間', '', '']] });
+  e.setup();
+  // RFC 6979 A.2.5（P-256, SHA-256, "sample"）と同じ署名になる
+  const sig = e.es256('sample', BigInt('0xC9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721'));
+  ok(Buffer.from(sig).toString('hex').toUpperCase() === 'EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8', '通知: ES256の署名が RFC 6979 の答えと同じ');
+  const setQ = (v) => { e.ss.getSheetByName('設定').data.find(r => r[0] === '通知を止める時間')[1] = v; e.onEdit(); e._cfg = null; e._tables = {}; [...e.store.keys()].forEach(k => { if (k.indexOf('cfg_') === 0) e.store.delete(k); }); };
+  const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
+  const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
+  const bt = post(e, { action: 'boot', session: T, today }).data;
+  ok(bt.api === 15 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
+  ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
+  const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';
+  ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: epM, keys: {} } }).subs === 1 && post(e, { action: 'pushSub', session: T, sub: { endpoint: epT } }).ok, '通知: 届け先を登録');
+  // ととの申し送り → ままだけに届く。JWT を Node の crypto で確かめる
+  e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn1', to: 'まま', text: '牛乳を買ってきて' } });
+  ok(e.pushReqs.length === 1 && e.pushReqs[0].url === epM, '通知: 申し送りは宛先（まま）だけに送る');
+  const au = e.pushReqs[0].headers.Authorization, m = au.match(/^vapid t=([\w-]+)\.([\w-]+)\.([\w-]+), k=([\w-]+)$/);
+  const claims = m && JSON.parse(Buffer.from(m[2], 'base64url').toString());
+  const pub = Buffer.from(m[4], 'base64url');
+  const key = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: pub.slice(1, 33).toString('base64url'), y: pub.slice(33).toString('base64url') }, format: 'jwk' });
+  ok(m && crypto.verify('sha256', Buffer.from(m[1] + '.' + m[2]), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(m[3], 'base64url')), '通知: VAPIDのJWTの署名が正しい');
+  ok(claims.aud === 'https://web.push.apple.com' && claims.exp > Date.now() / 1000 && /^https:/.test(claims.sub) && e.pushReqs[0].headers.TTL && !e.pushReqs[0].payload, '通知: aud・exp・sub、中身は送らない');
+  let pk = post(e, { action: 'pushPeek', session: M });
+  ok(pk.items.length === 1 && pk.items[0].title === 'ととから申し送り' && pk.items[0].body === '牛乳を買ってきて' && pk.items[0].go === 'notes', '通知: 端末が中身を聞くと返す');
+  ok(post(e, { action: 'pushPeek', session: M }).items.length === 0 && post(e, { action: 'pushPeek', session: T }).items.length === 0, '通知: 2回目は空・自分（とと）には無い');
+  // 2台で受けても、どちらにも中身が出る（端末ごとに印）
+  post(e, { action: 'addNote', session: T, note: { id: 'pn1b', to: 'まま', text: 'iPadにも' } });
+  { const pa = post(e, { action: 'pushPeek', session: M, endpoint: 'https://web.push.apple.com/devA' }), pb = post(e, { action: 'pushPeek', session: M, endpoint: 'https://web.push.apple.com/devB' });
+    ok(pa.items[0].body === 'iPadにも' && pb.items[0].body === 'iPadにも' && post(e, { action: 'pushPeek', session: M, endpoint: 'https://web.push.apple.com/devA' }).items.length === 0, '通知: 端末ごとに中身を渡す'); }
+  post(e, { action: 'pushPeek', session: M });
+  // 返信：書いた人には送らない、相手に送る
+  e.pushReqs = [];
+  post(e, { action: 'addReply', session: M, reply: { id: 'pr1', target: 'notes:pn1', text: 'OK！' } });
+  ok(e.pushReqs.length === 1 && e.pushReqs[0].url === epT && post(e, { action: 'pushPeek', session: T }).items[0].title === 'ままから申し送りへの返信', '通知: 返信は相手（とと）だけ');
+  // 相談：足した・答えた
+  e.pushReqs = [];
+  post(e, { action: 'saveDecision', session: T, item: { id: 'pq1', q: '週末どこ行く？', options: ['公園', '動物園'] } });
+  post(e, { action: 'saveDecision', session: T, item: { id: 'pq1', q: '週末どこ行く？', options: ['公園', '動物園'], note: '直しただけ' } });
+  pk = post(e, { action: 'pushPeek', session: M });
+  ok(pk.items.length === 1 && pk.items[0].title === 'ととから相談' && /週末どこ行く/.test(pk.items[0].body), '通知: 新しい相談だけ（直した時は送らない）');
+  post(e, { action: 'answerDecision', session: M, id: 'pq1', answer: '公園' });
+  pk = post(e, { action: 'pushPeek', session: T });
+  ok(pk.items.length === 1 && pk.items[0].title === 'ままが相談に答えました' && /公園/.test(pk.items[0].body), '通知: 相談への答え');
+  post(e, { action: 'addReply', session: T, reply: { id: 'pr2', target: 'decide:pq1', text: 'いいね' } });
+  pk = post(e, { action: 'pushPeek', session: M });
+  ok(pk.items[0].title === 'ととから相談にコメント' && pk.items[0].body.indexOf('「週末どこ行く？」') === 0, '通知: コメントに対象の見出し');
+  // 代わってほしい → 答え
+  post(e, { action: 'addNote', session: T, note: { id: 'pn2', to: 'まま', text: 'お願い', ask: 'swap', taskId: 'd1', task: 'お風呂' } });
+  pk = post(e, { action: 'pushPeek', session: M });
+  ok(pk.items[0].title === 'ととから：担当を代わってほしい' && /お風呂/.test(pk.items[0].body), '通知: 代わってほしい');
+  post(e, { action: 'answerSwap', session: M, id: 'pn2', ok: true });
+  ok(post(e, { action: 'pushPeek', session: T }).items[0].title === 'ままが代わってくれます', '通知: 代わる答え');
+  // 自分宛ての申し送り（家族宛て）は送らない
+  e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn3', to: '家族', text: 'メモ' } });
+  ok(e.pushReqs.length === 0, '通知: 家族宛ては送らない');
+  // 続けて2つ：まだ聞きに来ていなければ2回目は送らず、1回でまとめて渡す
+  e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn4', to: 'まま', text: '1つめ' } });
+  post(e, { action: 'addNote', session: T, note: { id: 'pn5', to: 'まま', text: '2つめ' } });
+  pk = post(e, { action: 'pushPeek', session: M });
+  ok(e.pushReqs.length === 1 && pk.items.length === 2 && pk.items[0].body === '2つめ', '通知: 続いた分は1回の通知でまとめて渡す（新しい順）');
+  // 止める時間：送らずに貯める → 開いたら捨てる／時間が明けたら pushTick で送る
+  setQ('0:00〜23:59');
+  e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn6', to: 'まま', text: '夜の連絡' } });
+  ok(e.pushReqs.length === 0, '通知: 止める時間は送らない');
+  e.pushTick(); ok(e.pushReqs.length === 0, '通知: 止める時間のうちは pushTick でも送らない');
+  setQ('');
+  e.pushTick();
+  ok(e.pushReqs.length === 1 && post(e, { action: 'pushPeek', session: M }).items[0].body === '夜の連絡', '通知: 明けたら pushTick でまとめて送る');
+  setQ('0:00〜23:59');
+  e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn7', to: 'まま', text: 'もう一つ' } });
+  post(e, { action: 'boot', session: M, today });
+  setQ('');
+  e.pushTick();
+  ok(e.pushReqs.length === 0, '通知: 止めている間にアプリを開いたら、あとで送らない');
+  ok(e.quietNow(new Date('2026-11-20T14:00:00Z')) === false, '通知: 空なら止めない');
+  setQ('22:00〜6:00');
+  ok(e.quietNow(new Date('2026-11-20T14:30:00Z')) && e.quietNow(new Date('2026-11-20T20:59:00Z')) && !e.quietNow(new Date('2026-11-20T21:00:00Z')) && !e.quietNow(new Date('2026-11-20T12:59:00Z')), '通知: 22:00〜6:00（日をまたぐ）');
+  // 消えた端末（410）は外す・テスト通知は自分に
+  setQ('');
+  e.pushCodes = { [epM]: 410 }; e.pushReqs = [];
+  post(e, { action: 'addNote', session: T, note: { id: 'pn8', to: 'まま', text: 'x' } });
+  ok(e.pushReqs.length === 1 && post(e, { action: 'boot', session: M, today }).data.push.subs === 0, '通知: 410の端末は外す');
+  e.pushReqs = [];
+  const tt = post(e, { action: 'pushTest', session: T });
+  ok(tt.ok && e.pushReqs.length === 1 && e.pushReqs[0].url === epT && tt.last.codes[0] === 201, '通知: テスト通知は自分の端末へ');
+  ok(post(e, { action: 'pushUnsub', session: T, endpoint: epT }).removed === 1, '通知: 止める');
 }
 
 // ログアウト

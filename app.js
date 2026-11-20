@@ -6,8 +6,8 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '52';
-  var API_EXPECTED = 14;   // GAS の API_VERSION と同じ番号
+  var APP_VERSION = '53';
+  var API_EXPECTED = 15;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
   var LSP = DEMO ? 'demo.' : '';
@@ -223,13 +223,23 @@
     key: 'auth', cache: 'wagaya-auth',
     save: function (session, email) {
       if (DEMO || !window.caches || !session) return;
-      try { caches.open(this.cache).then(function (c) { return c.put(new Request('./__auth'), new Response(JSON.stringify({ s: session, e: email || '', t: Date.now() }))); }).catch(function () {}); } catch (e) {}
+      try { caches.open(this.cache).then(function (c) { return c.put(new Request('./__auth'), new Response(JSON.stringify({ s: session, e: email || '', t: Date.now(), g: CFG.gasUrl || '' }))); }).catch(function () {}); } catch (e) {}
     },
     load: function () {
       if (DEMO || !window.caches) return Promise.resolve(null);
       try { return caches.open(this.cache).then(function (c) { return c.match('./__auth'); }).then(function (r) { return r ? r.json() : null; }).catch(function () { return null; }); } catch (e) { return Promise.resolve(null); }
     },
     clear: function () { try { if (window.caches) caches.delete(this.cache); } catch (e) {} }
+  };
+
+  /* 通知（Web Push）：ホーム画面のアプリだけ（iPhone は iOS 16.4 以降）。鍵（公開の方）は boot の push.key。
+     通知の中身は sw.js が、上のログインの控え（g＝GASのURL）で聞きに行く */
+  function b64uBytes(s) { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+  var PUSH = {
+    can: function () { return !DEMO && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; },
+    home: function () { return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)); },
+    sub: function () { return navigator.serviceWorker.ready.then(function (r) { return r.pushManager.getSubscription().then(function (s) { return { reg: r, sub: s }; }); }); },
+    send: function (sub, key) { return api('pushSub', { sub: sub.toJSON() }).then(function () { LS.set('pushEp', sub.endpoint); LS.set('pushKey', key); LS.set('pushAt', Date.now()); }); }
   };
 
   /* 新しい版があるか確かめる（ホーム画面のアプリは、戻ってきただけでは読み直さないため）。
@@ -292,6 +302,12 @@
   App.prototype.componentDidMount = function () {
     var self = this;
     USAGE.add('open:app');
+    /* 通知から開いた時（?go=…）と、開いている時に通知を押した時（sw.js からの知らせ） */
+    try {
+      var go0 = new URLSearchParams(location.search).get('go');
+      if (go0) { history.replaceState(null, '', location.pathname + location.search.replace(/([?&])go=[^&]*&?/, '$1').replace(/[?&]$/, '') + location.hash); this.goTo(go0); }
+      if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.type === 'go') { self.refresh(true); self.goTo(e.data.go); } });
+    } catch (e) {}
     setInterval(function () { USAGE.flush(); }, 5 * 60 * 1000);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { USAGE.flush(true); self.seeAll(); } else USAGE.add('open:app'); });
     /* どのセクションが見られたか（開くたびに1回ずつ） */
@@ -425,7 +441,10 @@
   App.prototype.logout = function () {
     var self = this;
     USAGE.flush();
-    api('logout', {}).catch(function () {});
+    /* この端末の通知も止める（ログアウトした端末に家族の通知を出さない） */
+    var ep = LS.get('pushEp'), bye = function () { return api('logout', {}).catch(function () {}); };
+    if (ep) { api('pushUnsub', { endpoint: ep }).catch(function () {}).then(bye); try { PUSH.sub().then(function (x) { if (x.sub) x.sub.unsubscribe(); }).catch(function () {}); } catch (e) {} LS.del('pushEp'); LS.del('pushKey'); }
+    else bye();
     AUTH.clear(); LS.set('loggedOut', 1); LS.del('hint');
     LS.del('session'); LS.del('boot'); LS.del('seen'); LS.del('seenPending'); LS.del('usage'); LS.del('usagePending'); LS.del('orderPlain');
     try { if (window.caches) caches.delete('wagaya-photos'); } catch (e) {}
@@ -451,7 +470,9 @@
       var first = !self.state.data;
       self.setState({ data: data, loading: false, syncing: false, lastSync: data._at, offline: false });
       self.trackMarks(data);
+      self.syncPush(data);
       if (first) setTimeout(function () { self.attachLazy(); }, 60);
+      if (first && self.pendingGo) { var g0 = self.pendingGo; self.pendingGo = null; setTimeout(function () { self.goTo(g0); }, 200); }
       self.loadPhotos(data.photos);
       return true;
     }).catch(function (err) {
@@ -666,6 +687,75 @@
     };
     this.prefetchTimer = setTimeout(step, 2000);
   };
+  /* 通知 */
+  App.prototype.pushState = function () {
+    if (DEMO) return 'demo';
+    if (!PUSH.home()) return 'needHome';
+    if (!PUSH.can()) return 'unsupported';
+    if (Notification.permission === 'denied') return 'denied';
+    return Notification.permission === 'granted' && LS.get('pushEp') ? 'on' : 'off';
+  };
+  App.prototype.enablePush = function () {
+    var self = this, D = this.state.data || {}, key = D.push && D.push.key;
+    if (!key) { this.showToast('Google側の更新がまだです（通知の鍵がありません）', null); return; }
+    /* 許可を聞くのは、押したその場で（iPhone は押した操作の中でないと聞けない） */
+    var ask = Notification.requestPermission();
+    USAGE.add('act:push_on');
+    this.setState({ pushBusy: true });
+    Promise.resolve(ask).then(function (p) {
+      if (p !== 'granted') throw { code: 'denied' };
+      return PUSH.sub();
+    }).then(function (x) {
+      return x.sub || x.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) });
+    }).then(function (sub) {
+      AUTH.save(LS.get('session'), D.me && D.me.email);
+      return PUSH.send(sub, key);
+    }).then(function () { self.setState({ pushBusy: false }); self.showToast('通知をオンにしました。「テスト通知を送る」で確かめられます', null); })
+      .catch(function (e) { self.setState({ pushBusy: false }); self.showToast(e && e.code === 'denied' ? '通知が許可されていません。iPhoneの「設定」→「通知」で、このアプリを許可してください' : '通知をオンにできませんでした', null); });
+  };
+  App.prototype.disablePush = function () {
+    var self = this;
+    USAGE.add('act:push_off');
+    PUSH.sub().then(function (x) {
+      var ep = x.sub ? x.sub.endpoint : LS.get('pushEp');
+      return (x.sub ? x.sub.unsubscribe() : Promise.resolve()).then(function () { return api('pushUnsub', { endpoint: ep }); });
+    }).catch(function () {}).then(function () { LS.del('pushEp'); LS.del('pushKey'); self.setState({ now: Date.now() }); self.showToast('この端末の通知をオフにしました', null); });
+  };
+  App.prototype.testPush = function () {
+    var self = this;
+    USAGE.add('act:push_test');
+    api('pushTest', {}).then(function (r) {
+      var c = (r.last && r.last.codes) || [];
+      if (!c.length) self.showToast('この端末の登録が見つかりませんでした。いったんオフにして、もう一度オンにしてください', null);
+      else if (c.some(function (x) { return x >= 200 && x < 300; })) self.showToast('テスト通知を送りました。数秒で届きます', null);
+      else self.showToast('送れませんでした（' + c.join(',') + '）。いったんオフにして、もう一度オンにしてください', null);
+    }).catch(function () { self.showToast('送れませんでした。通信を確かめてください', null); });
+  };
+  /* 開いた時に、この端末の登録がGAS側とずれていたら直す（鍵が変わった・登録が消えた・7日たった） */
+  App.prototype.syncPush = function (D) {
+    if (this.pushSynced || !PUSH.can() || !PUSH.home() || Notification.permission !== 'granted' || !D.push || !D.push.key || !LS.get('pushEp')) return;
+    this.pushSynced = true;
+    var key = D.push.key;
+    PUSH.sub().then(function (x) {
+      var same = x.sub && LS.get('pushKey') === key;
+      if (same && D.push.subs > 0 && x.sub.endpoint === LS.get('pushEp') && Date.now() - (LS.get('pushAt') || 0) < 7 * 864e5) return;
+      var p = same ? Promise.resolve(x.sub) : (x.sub ? x.sub.unsubscribe() : Promise.resolve()).then(function () { return x.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) }); });
+      return p.then(function (sub) { return PUSH.send(sub, key); });
+    }).catch(function () {});
+  };
+  /* 通知を押して開いた時：その場所へ（申し送りはシートを開く） */
+  App.prototype.goTo = function (go) {
+    var self = this;
+    if (!go) return;
+    if (!this.state.data) { this.pendingGo = go; return; }
+    USAGE.add('act:push_open');
+    if (go === 'notes') { this.setState({ notesOpen: true }); return; }
+    var t = this.secTabMap && this.secTabMap[go];
+    if (!t) return;
+    if (this.state.nav !== t) this.setState({ nav: t });
+    setTimeout(function () { var el = document.querySelector('[data-sec="' + go + '"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 120);
+  };
+
   App.prototype.showToast = function (msg, undo) {
     var self = this;
     clearTimeout(this.toastTimer);
@@ -2132,6 +2222,7 @@
     var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
+    this.secTabMap = secTab;
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
     var rankOf = {};
@@ -2151,6 +2242,9 @@
     /* 自分の番：自分宛ての未確認の申し送りと、まだ答えていない相談 */
     var myTurnDecide = (D.decisions || []).filter(function (x) { return x.state !== '決まった' && !(me1 ? x.a1 : x.a2); }).length;
     var twoTab = tabOf(secByKey.decide || { key: 'decide' });
+    /* ホーム画面のアイコンの数字：あなたの番（自分宛ての未確認・相手からの新しい返信・まだ答えていない相談） */
+    var appBadge = myUnread.length + newReplies.length + myTurnDecide;
+    if (!DEMO && appBadge !== this.appBadge) { this.appBadge = appBadge; setTimeout(function () { try { if (appBadge && navigator.setAppBadge) navigator.setAppBadge(appBadge).catch(function () {}); else if (!appBadge && navigator.clearAppBadge) navigator.clearAppBadge().catch(function () {}); } catch (e) {} }, 0); }
     var navTabs = tabNames.map(function (t) {
       var badge = t === twoTab ? myUnread.length + newReplies.length + myTurnDecide : 0;
       var on = t === curTab;
@@ -2490,6 +2584,13 @@
       accountAria: 'アカウントと更新（' + syncLabel + '）',
       syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: var(--r-chip); border: none; font-size: var(--t-cap); font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: var(--danger-soft); color: var(--danger)' : 'background: var(--fill); color: var(--label)'),
       openAccount: function () { self.setState({ accountOpen: true }); },
+      push: (function () {
+        var ps = self.pushState(), q = (D.ui && D.ui.quiet) || '';
+        var what = '自分宛ての申し送り（「代わってほしい」も）、相手からの返信・コメント、相談が足された・答えられた時に届きます。自分で書いた物では鳴りません。' + (q ? q + 'の分は、明けてからまとめて届きます。' : '');
+        var note = { on: 'この端末で受け取っています。' + what, off: what, needHome: 'ホーム画面のアプリから開くと、通知をオンにできます。', denied: '通知が許可されていません。iPhoneの「設定」→「通知」で、このアプリを許可してください。', unsupported: 'この端末では通知を使えません（iPhoneは iOS 16.4 以降の、ホーム画面のアプリで使えます）。', demo: '見本では通知は使えません。' }[ps];
+        return { note: note, canOn: ps === 'off', isOn: ps === 'on', busy: !!st.pushBusy, onLabel: st.pushBusy ? 'オンにしています…' : 'この端末で通知を受け取る',
+          on: function () { if (!self.state.pushBusy) self.enablePush(); }, off: function () { self.disablePush(); }, test: function () { self.testPush(); } };
+      })(),
       closeAccount: function () { self.setState({ accountOpen: false }); },
       meLabel: D.me ? D.me.who + 'でログイン中' : 'ログイン中',
       meEmail: D.me ? D.me.email : '',

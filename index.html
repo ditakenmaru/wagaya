@@ -1118,6 +1118,15 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <p style="margin: 0; font-size: var(--t-sub); color: var(--label2); line-height: 1.7">{{lastSyncLabel}}（{{appVersion}}）</p>
     <p style="margin: 0; font-size: var(--t-cap); color: var(--label2); line-height: 1.7">アプリをよくするために、どこが使われたかを「回数だけ」記録しています。書いた文章は記録しません。</p>
     <button type="button" onClick="{{refreshNow}}" class="btn btn-fill" style="min-height: 48px; font-size: var(--t-sub)">いま更新する</button>
+    <div data-push="1" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-radius: var(--r-card); background: var(--fill)">
+      <p style="margin: 0; font-size: var(--t-sub); font-weight: 600">通知</p>
+      <p style="margin: 0; font-size: var(--t-foot); color: var(--label2); line-height: 1.6">{{push.note}}</p>
+      <sc-if value="{{push.canOn}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{push.on}}" class="btn btn-fill" style="min-height: 48px; font-size: var(--t-sub)">{{push.onLabel}}</button></sc-if>
+      <sc-if value="{{push.isOn}}" hint-placeholder-val="{{ false }}">
+        <button type="button" onClick="{{push.test}}" class="btn btn-tint" style="min-height: 44px; font-size: var(--t-sub)">テスト通知を送る</button>
+        <button type="button" onClick="{{push.off}}" class="btn btn-link" style="min-height: 44px; font-size: var(--t-sub)">この端末の通知をオフにする</button>
+      </sc-if>
+    </div>
     <button type="button" data-muse="1" onClick="{{openMuseAny}}" class="btn btn-tint" style="min-height: 48px; font-size: var(--t-sub)">Museに相談する</button>
     <button type="button" onClick="{{openFb}}" class="btn btn-tint" style="min-height: 48px; font-size: var(--t-sub)">要望・不具合を書く</button>
     <button type="button" onClick="{{logout}}" class="btn btn-gray" style="min-height: 48px; font-size: var(--t-sub)">ログアウト</button>
@@ -1326,7 +1335,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=52"></script>
-<script src="app.js?v=52"></script>
+<script src="config.js?v=53"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>

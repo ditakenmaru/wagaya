@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 14;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 15;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -73,6 +73,7 @@ var SETTING_ROWS = [
   ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
   ['朝の出発時刻', '8:00', '朝、家を出る時刻。担当の時刻に「出発」や「出発-30」と書くと、出発ちょうど・30分前として動き、ここを変えると一緒にずれる'],
+  ['通知を止める時間', '22:00〜6:00', 'この間に来た通知は、終わる時刻のあと（1時間以内）にまとめて届ける。空なら止めない'],
   ['朝の並びにする時刻', '5:00', 'この時刻から「朝の並びを終える時刻」までは「朝の順番」で並べる。空なら朝の並びは使わない'],
   ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」'],
   ['天気の場所', '', '例：東京 35.68,139.76（地名と緯度,経度）。上の見出しに今日の天気を出す。空なら出さない'],
@@ -136,7 +137,7 @@ function doPost(e) {
       case 'deleteShop': return out(withLock(function () { return deleteById('買い物', req.id, SHOP_KEYS); }));
       case 'saveTopic': return out(withLock(function () { return saveTopic(req.topic || {}); }));
       case 'deleteTopic': return out(withLock(function () { return deleteById('話題', req.id, TOPIC_KEYS); }));
-      case 'saveDecision': return out(withLock(function () { return saveDecision(req.item || {}); }));
+      case 'saveDecision': return out(withLock(function () { return saveDecision(req.item || {}, me); }));
       case 'answerDecision': return out(withLock(function () { return answerDecision(req.id, req.answer, me); }));
       case 'decide': return out(withLock(function () { return decide(req.id, req.decided, !!req.reopen); }));
       case 'deleteDecision': return out(withLock(function () { return deleteById('相談', req.id, ['問い']); }));
@@ -154,6 +155,10 @@ function doPost(e) {
       case 'addShopMany': return out(withLock(function () { return addShopMany(req.items || []); }));
       case 'logUsage': return out(logUsage(req.counts, req.date, me, req.batch));
       case 'addFeedback': return out(withLock(function () { return addFeedback(req.feedback || {}, me); }));
+      case 'pushSub': return out(pushLock(function () { return pushSub(req.sub, me); }));
+      case 'pushUnsub': return out(pushLock(function () { return pushUnsub(req.endpoint, me); }));
+      case 'pushPeek': return out(pushLock(function () { return pushPeek(me, req.endpoint); }));
+      case 'pushTest': return out(pushLock(function () { notify(me.who, '通知のテスト', 'この端末に届きました（' + Utilities.formatDate(new Date(), TZ, 'H:mm') + '）', '', true); return { ok: true, last: pushLast() }; }));
     }
     return out({ ok: false, code: 'unknown_action' });
   } catch (err) {
@@ -307,6 +312,7 @@ function bootFor(req, me) {
   var data = req.fresh ? null : snapGet(today, v);
   if (!data) { data = buildBoot(today); snapPut(today, data, v); }
   data.me = me; data.api = API_VERSION; data.v = v;
+  data.push = pushInfo(me);   /* 通知の鍵（公開の方）と、この人の登録数。開いたら、止めていた分は届けない */
   return data;
 }
 
@@ -430,7 +436,7 @@ function buildBoot(today) {
       timeStart: minutes(s['時間帯のはじまり']) || 360, timeEnd: minutes(s['時間帯のおわり']) || 1260,
       kidsLabel: s['子どもの呼び方'] || '', kidsBirth: normDate(s['子どもの誕生日']),
       noMenuDish: s['献立がない日の料理名'] || 'まだ決まっていません', noMenuNote: s['献立がない日のメモ'] || '',
-      eveningFrom: timeOrNull(s['夜の並びにする時刻'], 1080),
+      eveningFrom: timeOrNull(s['夜の並びにする時刻'], 1080), quiet: s['通知を止める時間'] == null ? '22:00〜6:00' : s['通知を止める時間'],
       depart: departMin(s), morningFrom: timeOrNull(s['朝の並びにする時刻'], null), morningTo: timeOrNull(s['朝の並びを終える時刻'], null),
       tripFrom: trip[0] || '', tripTo: trip[1] || ''
     }
@@ -904,6 +910,8 @@ function addNote(n, me) {
   var o = { id: String(n.id), '作成': new Date(), from: me.who, to: whoOf(n.to), taskId: String(n.taskId || ''), task: String(n.task || ''), text: body, '確認': '', '確認した人': '' };
   if (n.ask === 'swap' && n.taskId) { o['依頼'] = 'swap'; o['依頼の日'] = normDate(n.askDate) || ymd(new Date()); o['依頼の答え'] = ''; }   /* 「代わってほしい」の頼み */
   appendObj('申し送り', o);
+  if (o['依頼']) notify(o.to, me.who + 'から：担当を代わってほしい', (o.task ? '「' + o.task + '」' : '') + '\n' + body, 'notes');
+  else notify(o.to, me.who + 'から申し送り', body, 'notes');
   return { ok: true };
 }
 
@@ -920,6 +928,7 @@ function answerSwap(noteId, ok, me) {
     if (whoOf(r.to) !== me.who) return { ok: false, code: 'not_yours' };
     if (ok) setCheck(normDate(r['依頼の日']) || ymd(new Date()), '担当替え', text(r.taskId), true, me);
     setCells('申し送り', r._row, { '依頼の答え': ok ? 'ok' : 'ng', '確認': true, '確認した人': me.who });
+    notify(whoOf(r.from), ok ? me.who + 'が代わってくれます' : me.who + 'は今日はむずかしいそうです', text(r.task) ? '「' + text(r.task) + '」' : '', 'notes');
     return { ok: true };
   }
   return { ok: false, code: 'not_found' };
@@ -969,6 +978,8 @@ function addReply(r, me) {
   if (!body || !r.id || !/^(topics|decide|diary|weekend|deadline|news|notes):\S{1,60}$/.test(target)) return { ok: false, code: 'bad_request' };
   var parent = /^[\w-]{1,40}$/.test(String(r.parent || '')) ? String(r.parent) : '';   /* コメントへの返信なら、そのコメントのid */
   appendObj('返信', { id: String(r.id), '対象': target, '誰': me.who, '日時': new Date(), '本文': body, '返信先': parent });
+  var tg = targetLabel(target), isNote = target.indexOf('notes:') === 0;
+  notify(otherOf(me.who), me.who + 'から' + (isNote ? '申し送りへの返信' : parent ? 'コメントへの返信' : tg.kind + 'にコメント'), (tg.label ? '「' + tg.label + '」\n' : '') + body, isNote ? 'notes' : tg.go);
   return { ok: true };
 }
 
@@ -1029,7 +1040,7 @@ function saveShop(x) {
 }
 
 /* ふたりで決めること */
-function saveDecision(x) {
+function saveDecision(x, me) {
   var q = String(x.q || '').slice(0, 200).trim();
   if (!q || !x.id) return { ok: false, code: 'bad_request' };
   var opts = (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String);
@@ -1039,7 +1050,10 @@ function saveDecision(x) {
     /* 問いか選択肢が変わったら、2人の答えを消して相談中に戻す（違う問いへの答えで決まりにならないように） */
     if (text(r['問い']) !== q || splitOptions(r['選択肢']).join('\n') !== opts.join('\n')) { obj['人1の答え'] = ''; obj['人2の答え'] = ''; obj['状態'] = '相談中'; obj['決まったこと'] = ''; }
     setCells('相談', r._row, obj);
-  } else { obj['状態'] = '相談中'; obj['作成'] = ymd(new Date()); appendObj('相談', obj); }
+  } else {
+    obj['状態'] = '相談中'; obj['作成'] = ymd(new Date()); appendObj('相談', obj);
+    if (me) notify(otherOf(me.who), me.who + 'から相談', q + (opts.length ? '\n' + opts.join('／') : ''), 'decide');
+  }
   return { ok: true };
 }
 function personCol(me) { return people().list[0].name === me.who ? '人1' : '人2'; }
@@ -1049,6 +1063,7 @@ function answerDecision(id, answer, me) {
   if (text(r['状態']) === '決まった') return { ok: false, code: 'already_decided' };   // 変えたい時は「相談に戻す」から
   var o = {}; o[personCol(me) + 'の答え'] = String(answer || '').slice(0, 60);
   setCells('相談', r._row, o);
+  if (o[personCol(me) + 'の答え']) notify(otherOf(me.who), me.who + 'が相談に答えました', '「' + text(r['問い']) + '」→ ' + o[personCol(me) + 'の答え'], 'decide');
   return { ok: true };
 }
 /* 決まったにするのは、2人の答えがそろっている時だけ（片方の判断で決定扱いにしない） */
@@ -1392,9 +1407,9 @@ var MUSE_OPS = {
     var r = saveTopic({ id: id, title: q.title, url: q.url, note: q.note });
     return r.ok ? { ok: true, id: id, log: [['話題', id, q.title]] } : r;
   },
-  'decision.add': function (q) {
+  'decision.add': function (q, me) {
     var id = museId('q');
-    var r = saveDecision({ id: id, q: q.q, options: q.options || [], due: q.due, note: q.note });
+    var r = saveDecision({ id: id, q: q.q, options: q.options || [], due: q.due, note: q.note }, me);
     return r.ok ? { ok: true, id: id, log: [['相談', id, q.q]] } : r;
   },
   'deadline.add': function (q, me) {
@@ -1567,6 +1582,211 @@ function parseIngredients(v) {
   });
 }
 
+/* ================= 通知（Web Push） =================
+ * ホーム画面のアプリに通知を出す。中身は送らない（空の通知だけ送り、受け取ったアプリがログインの控えで「何が来たか」を聞きに来る）。
+ * なので中身は Apple や Google の通知の仕組みを通らない。
+ * - 鍵（VAPID）はこのスクリプトの中で作り、秘密の方はスクリプトのプロパティにだけ置く（コードにもシートにも書かない）
+ * - 届け先（端末ごとの endpoint）もスクリプトのプロパティ。消えた端末（404・410）は自動で外す
+ * - 自分の書き込みでは自分に送らない。設定「通知を止める時間」の間は貯めておき、終わったら pushTick（1時間ごと）でまとめて送る
+ * - アプリを開いたら、止めていた分は送らない（もう見たため）
+ * 署名は ES256（P-256 の ECDSA、k は RFC 6979 で決める）。BigInt で計算する */
+var PUSH_SUB = 'https://ditakenmaru.github.io/wagaya/';   /* JWT の sub（連絡先）。メールアドレスは書かない */
+var PUSH_HOSTS = /^https:\/\/([\w-]+\.)*(push\.apple\.com|fcm\.googleapis\.com|push\.services\.mozilla\.com|notify\.windows\.com)\/[\w\-\/.~%:+=]{8,800}$/;
+var P256 = null;
+function p256() {
+  if (P256) return P256;
+  var B = BigInt;
+  P256 = {
+    p: B('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff'),
+    n: B('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551'),
+    G: [B('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'), B('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')],
+    Z: B(0), I: B(1), T2: B(2), T3: B(3), T4: B(4), T8: B(8)
+  };
+  return P256;
+}
+function bmod(a, m) { var r = a % m; return r < p256().Z ? r + m : r; }
+function binv(a, m) {   /* 拡張ユークリッドで逆数 */
+  var c = p256(), lo = c.I, hi = c.Z, low = bmod(a, m), high = m;
+  while (low > c.I) { var r = high / low, nm = hi - lo * r, nw = high - low * r; hi = lo; high = low; lo = nm; low = nw; }
+  return bmod(lo, m);
+}
+/* ヤコビ座標の点 [X,Y,Z]。a = -3 の曲線 */
+function ecDouble(P) {
+  var c = p256(), p = c.p, X = P[0], Y = P[1], Z = P[2];
+  if (Y === c.Z || Z === c.Z) return [c.Z, c.I, c.Z];
+  var d = bmod(Z * Z, p), g = bmod(Y * Y, p), be = bmod(X * g, p), al = bmod(c.T3 * (X - d) * (X + d), p);
+  var X3 = bmod(al * al - c.T8 * be, p), Z3 = bmod((Y + Z) * (Y + Z) - g - d, p), Y3 = bmod(al * (c.T4 * be - X3) - c.T8 * g * g, p);
+  return [X3, Y3, Z3];
+}
+function ecAddAffine(P, q) {   /* P（ヤコビ）＋ q（[x,y]） */
+  var c = p256(), p = c.p;
+  if (P[2] === c.Z) return [q[0], q[1], c.I];
+  var Z1Z1 = bmod(P[2] * P[2], p), U2 = bmod(q[0] * Z1Z1, p), S2 = bmod(q[1] * P[2] * Z1Z1, p);
+  var H = bmod(U2 - P[0], p), r = bmod(c.T2 * (S2 - P[1]), p);
+  if (H === c.Z) return r === c.Z ? ecDouble([q[0], q[1], c.I]) : [c.Z, c.I, c.Z];
+  var HH = bmod(H * H, p), I = c.T4 * HH, J = bmod(H * I, p), V = bmod(P[0] * I, p);
+  var X3 = bmod(r * r - J - c.T2 * V, p), Y3 = bmod(r * (V - X3) - c.T2 * P[1] * J, p), Z3 = bmod((P[2] + H) * (P[2] + H) - Z1Z1 - HH, p);
+  return [X3, Y3, Z3];
+}
+function ecMul(k, q) {
+  var c = p256(), R = [c.Z, c.I, c.Z], bits = k.toString(2);
+  for (var i = 0; i < bits.length; i++) { R = ecDouble(R); if (bits[i] === '1') R = ecAddAffine(R, q); }
+  if (R[2] === c.Z) return null;
+  var zi = binv(R[2], c.p), z2 = bmod(zi * zi, c.p);
+  return [bmod(R[0] * z2, c.p), bmod(R[1] * z2 * zi, c.p)];
+}
+function u8(a) { return a.map(function (b) { return b & 255; }); }
+function s8(a) { return a.map(function (b) { return b > 127 ? b - 256 : b; }); }
+function bigOf(bytes) { var h = u8(bytes).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); return BigInt('0x' + (h || '0')); }
+function bytesOf(n, len) { var h = n.toString(16); while (h.length < len * 2) h = '0' + h; var o = []; for (var i = 0; i < len * 2; i += 2) o.push(parseInt(h.substr(i, 2), 16)); return o; }
+function b64u(bytes) { return Utilities.base64EncodeWebSafe(s8(u8(bytes))).replace(/=+$/, ''); }
+function hmac(key, data) { return u8(Utilities.computeHmacSha256Signature(s8(data), s8(key))); }
+/* ES256 の署名（r||s の64バイト） */
+function es256(msg, d) {
+  var c = p256(), n = c.n;
+  var h = u8(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, msg, Utilities.Charset.UTF_8));
+  var z = bigOf(h), x = bytesOf(d, 32), h1 = bytesOf(bmod(z, n), 32);
+  var V = [], K = []; for (var i = 0; i < 32; i++) { V.push(1); K.push(0); }
+  K = hmac(K, V.concat([0], x, h1)); V = hmac(K, V);
+  K = hmac(K, V.concat([1], x, h1)); V = hmac(K, V);
+  for (var tries = 0; tries < 50; tries++) {
+    V = hmac(K, V);
+    var k = bigOf(V);
+    if (k > c.Z && k < n) {
+      var R = ecMul(k, c.G), r = R ? bmod(R[0], n) : c.Z;
+      if (r !== c.Z) { var s = bmod(binv(k, n) * (z + r * d), n); if (s !== c.Z) return bytesOf(r, 32).concat(bytesOf(s, 32)); }
+    }
+    K = hmac(K, V.concat([0])); V = hmac(K, V);
+  }
+  throw new Error('sign failed');
+}
+/* 鍵：無ければ作る（1回だけ）。秘密の方はプロパティだけに置く */
+function vapid() {
+  var props = PropertiesService.getScriptProperties(), pub = props.getProperty('vapidPublic'), prv = props.getProperty('vapidPrivate');
+  if (pub && prv) return { pub: pub, d: BigInt('0x' + prv) };
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    pub = props.getProperty('vapidPublic'); prv = props.getProperty('vapidPrivate');
+    if (pub && prv) return { pub: pub, d: BigInt('0x' + prv) };
+    var c = p256(), seed = u8(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid() + Date.now(), Utilities.Charset.UTF_8));
+    var d = bmod(bigOf(seed), c.n - c.I) + c.I, Q = ecMul(d, c.G);
+    pub = b64u([4].concat(bytesOf(Q[0], 32), bytesOf(Q[1], 32)));
+    props.setProperty('vapidPrivate', d.toString(16)); props.setProperty('vapidPublic', pub);
+    return { pub: pub, d: d };
+  } finally { lock.releaseLock(); }
+}
+function vapidJwt(aud) {
+  var cache = CacheService.getScriptCache(), key = 'vjwt:' + aud, hit = cache.get(key);
+  if (hit) return hit;
+  var v = vapid(), enc = function (o) { return Utilities.base64EncodeWebSafe(JSON.stringify(o), Utilities.Charset.UTF_8).replace(/=+$/, ''); };
+  var input = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: PUSH_SUB });
+  var jwt = input + '.' + b64u(es256(input, v.d));
+  try { cache.put(key, jwt, 6 * 3600); } catch (e) {}
+  return jwt;
+}
+
+/* 届け先と、人ごとの「届けるもの」の列（スクリプトのプロパティ） */
+function pushGet(k, def) { try { var v = PropertiesService.getScriptProperties().getProperty(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
+function pushSet(k, v) { PropertiesService.getScriptProperties().setProperty(k, JSON.stringify(v)); }
+function pushSubs() { return pushGet('push:subs', []); }
+function pushQKey(who) { return 'push:q:' + sha(who).slice(0, 12); }
+function pushLast() { return pushGet('push:last', null); }
+function pushLock(fn) { var lock = LockService.getScriptLock(); lock.waitLock(15000); try { return fn() || { ok: true }; } finally { lock.releaseLock(); } }
+
+function pushInfo(me) {
+  try {
+    var v = vapid(), n = pushSubs().filter(function (x) { return x.w === me.who; }).length;
+    var q = pushGet(pushQKey(me.who), []), held = q.filter(function (x) { return x.st === 'held'; });
+    if (held.length) { held.forEach(function (x) { x.st = 'seen'; }); pushSet(pushQKey(me.who), q); }   /* 開いたので、止めていた分は送らない */
+    return { key: v.pub, subs: n };
+  } catch (e) { console.error(e); return { key: '', subs: 0 }; }
+}
+function pushSub(sub, me) {
+  var ep = String(sub && sub.endpoint || '');
+  if (!PUSH_HOSTS.test(ep)) return { ok: false, code: 'bad_request' };
+  var list = pushSubs().filter(function (x) { return x.ep !== ep; });
+  list.push({ w: me.who, ep: ep, t: Date.now() });
+  var mine = list.filter(function (x) { return x.w === me.who; });
+  if (mine.length > 5) { var drop = mine.slice(0, mine.length - 5).map(function (x) { return x.ep; }); list = list.filter(function (x) { return drop.indexOf(x.ep) < 0; }); }
+  pushSet('push:subs', list);
+  return { ok: true, subs: list.filter(function (x) { return x.w === me.who; }).length };
+}
+function pushUnsub(ep, me) {
+  var list = pushSubs(), next = list.filter(function (x) { return !(x.ep === String(ep || '') && x.w === me.who); });
+  pushSet('push:subs', next);
+  return { ok: true, removed: list.length - next.length };
+}
+/* 通知を受け取った端末が「何が来たか」を聞く。この端末にまだ渡していない物（送って30分以内）を新しい順に返し、渡した印を付ける。
+   端末ごとに印を付けるので、iPhone と iPad の両方で受けても、どちらにも同じ中身が出る */
+function pushPeek(me, ep) {
+  var key = pushQKey(me.who), q = pushGet(key, []), now = Date.now(), h = ep ? sha(String(ep)).slice(0, 8) : '-';
+  var items = q.filter(function (x) { return x.st === 'sent' && now - (x.s || x.t) < 30 * 60000 && (x.pk || []).indexOf(h) < 0; });
+  items.forEach(function (x) { x.pk = (x.pk || []).concat([h]).slice(-6); });
+  pushSet(key, q);
+  return { ok: true, items: items.reverse().slice(0, 3).map(function (x) { return { id: x.id, title: x.title, body: x.body, go: x.go }; }), more: Math.max(0, items.length - 3) };
+}
+
+function quietNow(d) {
+  var v = settings()['通知を止める時間'];
+  if (v == null) v = '22:00〜6:00';
+  var m = String(v).match(/(\d{1,2})[:：](\d{2})\s*[〜～~\-－ー]\s*(\d{1,2})[:：](\d{2})/);
+  if (!m) return false;
+  var a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4], t = minutes(Utilities.formatDate(d || new Date(), TZ, 'H:mm'));
+  return a <= b ? (t >= a && t < b) : (t >= a || t < b);
+}
+/* 通知する。to は呼び名（家族・空は送らない）。書いた人には送らない（呼ぶ側で相手を渡す） */
+function notify(to, title, body, go, force) {
+  try {
+    if (!to || to === '家族' || !people().list.some(function (p) { return p.name === to; })) return;
+    var key = pushQKey(to), q = pushGet(key, []), now = Date.now();
+    q = q.filter(function (x) { return now - x.t < 2 * 864e5; }).slice(-20);
+    var quiet = !force && quietNow(new Date());
+    /* 少し前に送った通知をまだ端末が聞きに来ていなければ、送らずにそれと一緒に渡す（同じ中身の通知が2回出ないように） */
+    var waiting = !force && q.some(function (x) { return x.st === 'sent' && now - (x.s || x.t) < 120000 && !(x.pk || []).length; });
+    q.forEach(function (x) { if (!quiet && x.st === 'held') { x.st = 'sent'; x.s = now; } });
+    q.push({ id: 'p' + now.toString(36) + Math.floor(Math.random() * 1e4), t: now, s: quiet ? 0 : now, title: String(title).slice(0, 60), body: String(body || '').slice(0, 160), go: String(go || ''), st: quiet ? 'held' : 'sent' });
+    pushSet(key, q);
+    if (!quiet && !waiting) pushSend(to);
+  } catch (e) { console.error(e); }
+}
+function pushSend(to) {
+  var subs = pushSubs(), mine = subs.filter(function (x) { return x.w === to; });
+  if (!mine.length) return [];
+  var v = vapid(), reqs = mine.map(function (x) {
+    var aud = x.ep.match(/^https:\/\/[^\/]+/)[0];
+    return { url: x.ep, method: 'post', muteHttpExceptions: true, headers: { Authorization: 'vapid t=' + vapidJwt(aud) + ', k=' + v.pub, TTL: '86400', Urgency: 'high' } };
+  });
+  var res = UrlFetchApp.fetchAll(reqs), codes = [], gone = [];
+  res.forEach(function (r, i) { var c = r.getResponseCode(); codes.push(c); if (c === 404 || c === 410) gone.push(mine[i].ep); });
+  if (gone.length) pushSet('push:subs', subs.filter(function (x) { return gone.indexOf(x.ep) < 0; }));
+  pushSet('push:last', { t: Utilities.formatDate(new Date(), TZ, 'M/d H:mm'), to: to, codes: codes, msg: codes.some(function (c) { return c >= 300; }) ? String(res[codes.findIndex(function (c) { return c >= 300; })].getContentText()).slice(0, 120) : '' });
+  return codes;
+}
+/* 1時間ごと：止める時間が終わっていたら、貯めた分を送る */
+function pushTick() {
+  if (quietNow(new Date())) return;
+  pushLock(function () {
+    people().list.forEach(function (p) {
+      var key = pushQKey(p.name), q = pushGet(key, []), held = q.filter(function (x) { return x.st === 'held'; });
+      if (!held.length) return;
+      var now = Date.now();
+      held.forEach(function (x) { x.st = 'sent'; x.s = now; });
+      pushSet(key, q);
+      try { pushSend(p.name); } catch (e) { console.error(e); }
+    });
+  });
+}
+/* 返信の対象の見出し（通知の文に使う） */
+function targetLabel(target) {
+  var m = String(target).split(':'), kind = m[0], id = m.slice(1).join(':');
+  var map = { topics: ['話題', '話題', TOPIC_KEYS, '見出し', 'topics'], decide: ['相談', '相談', ['問い'], '問い', 'decide'], diary: ['日記', '日記', ['日付', 'text'], 'text', 'diary'], weekend: ['お出かけ', 'お出かけ', ['名前'], '名前', 'weekend'],
+    deadline: ['期限', '期限', ['内容', '期限'], '内容', 'deadline'], news: ['ニュース', 'ニュース', ['見出し'], '見出し', 'news'], notes: ['申し送り', '申し送り', ['text'], 'text', 'notes'] };
+  var x = map[kind]; if (!x) return { kind: 'コメント', label: '', go: '' };
+  var label = '';
+  try { var r = findById(x[0], id, x[2]); if (r) label = text(r[x[3]]).slice(0, 40); } catch (e) {}
+  return { kind: x[1], label: label, go: x[4] };
+}
+
 /* ================= シートを整える（何度実行しても、今ある行は消さない） ================= */
 
 function setup() {
@@ -1645,6 +1865,8 @@ function setup() {
   if (trig.indexOf('warmPhotos') < 0) ScriptApp.newTrigger('warmPhotos').timeBased().everyHours(1).create();
   if (trig.indexOf('weeklyReview') < 0) ScriptApp.newTrigger('weeklyReview').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(23).create();
   if (trig.indexOf('backupNow') < 0) ScriptApp.newTrigger('backupNow').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+  if (trig.indexOf('pushTick') < 0) ScriptApp.newTrigger('pushTick').timeBased().everyHours(1).create();
+  try { vapid(); } catch (e) { console.error(e); }
   var first = ss.getSheets()[0];
   if (first.getName() === 'シート1' && first.getLastRow() === 0) ss.deleteSheet(first);
   bump();
