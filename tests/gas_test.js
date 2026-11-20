@@ -253,6 +253,17 @@ ok(b3.dutiesAll.some(d => d.id === autoId && d.task === '洗濯（夜）' && d.w
 r2 = post(env, { action: 'deleteDuty', session: S, id: 'dx1' });
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(r2.ok && !b3.dutiesAll.some(d => d.id === 'dx1'), 'deleteDuty');
+// 出発の時刻：担当を「出発のN分前」で持ち、出発を変えると一緒にずれる
+r2 = post(env, { action: 'saveDuty', session: S, duty: { id: 'dep1', task: '検温して連絡', time: '', rel: 10, who: 'とと', rule: '日月火水木金土' } });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(r2.ok && b3.duties.some(d => d.id === 'dep1' && d.rel === 10 && d.t === (b3.ui.depart - 10)), '出発: 出発-10 の担当が出発の10分前に出る');
+ok(env.ss.getSheetByName('担当').data.some(row => row.includes('出発-10')), '出発: シートには「出発-10」と書く');
+r2 = post(env, { action: 'setDepart', session: S, time: '8:30' });
+b3 = post(env, { action: 'boot', session: S, today }).data;
+ok(r2.ok && b3.ui.depart === 510 && b3.duties.some(d => d.id === 'dep1' && d.t === 500), '出発: 8:30 に変えると担当も 8:20 にずれる');
+ok(post(env, { action: 'setDepart', session: S, time: 'あさ' }).code === 'bad_request', '出発: 時刻でない値は断る');
+ok(JSON.stringify(env.dutyTime('出発', 480)) === '{"t":480,"rel":0}' && JSON.stringify(env.dutyTime('7:15', 480)) === '{"t":435,"rel":null}', '出発: 時刻の読み方');
+post(env, { action: 'deleteDuty', session: S, id: 'dep1' });
 // 買い物：前の週の履歴から買うかも
 const ws = (d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() - t.getDay()); return t; })(today);
 const wk = n => { const t = new Date(ws); t.setDate(t.getDate() - 7 * n); return t.toISOString().slice(0, 10); };

@@ -72,6 +72,7 @@ var SETTING_ROWS = [
   ['動画の上限MB', '10', 'これより大きい動画は、アプリでは1コマだけ出す（最大15）'],
   ['旅行の期間', '', '例：2027-08-10〜2027-08-15。この間は「画面」の「旅行中」に印がある部分だけ出し、話題を一番上に'],
   ['夜の並びにする時刻', '18:00', 'この時刻から、画面の並びを「夜の順番」にする。空なら夜の並びは使わない'],
+  ['朝の出発時刻', '8:00', '朝、家を出る時刻。担当の時刻に「出発」や「出発-30」と書くと、出発ちょうど・30分前として動き、ここを変えると一緒にずれる'],
   ['朝の並びにする時刻', '5:00', 'この時刻から「朝の並びを終える時刻」までは「朝の順番」で並べる。空なら朝の並びは使わない'],
   ['朝の並びを終える時刻', '9:00', 'この時刻から夜の並びまでは、ふだんの「順番」'],
   ['天気の場所', '', '例：東京 35.68,139.76（地名と緯度,経度）。上の見出しに今日の天気を出す。空なら出さない'],
@@ -126,6 +127,7 @@ function doPost(e) {
       case 'addDiary': return out(withLock(function () { return addDiary(req.entry, me); }));
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
       case 'skipDuty': return out(withLock(function () { return setCheck(req.date, '休み', req.id, !!req.skip, me); }));
+      case 'setDepart': return out(withLock(function () { return setDepart(req.time); }));
       case 'saveDuty': return out(withLock(function () { return saveDuty(req.duty || {}); }));
       case 'deleteDuty': return out(withLock(function () { return deleteById('担当', req.id, DUTY_KEYS); }));
       case 'saveShop': return out(withLock(function () { return saveShop(req.item || {}); }));
@@ -315,13 +317,15 @@ function buildBoot(today) {
   var s = settings();
 
   /* 担当：日付があれば「その日だけ」、なければ曜日のくり返し */
+  var depart = departMin(s);
   var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
-    return { id: idOf(r, DUTY_KEYS), t: normTime(r['時刻']) ? minutes(r['時刻']) : null, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
+    var dt = dutyTime(r['時刻'], depart);
+    return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']) };
   });
   var skipped = {};
   rowsOf('チェック').forEach(function (r) { if (r['種類'] === '休み' && truthy(r['済']) && normDate(r['日付']) === today) skipped[String(r['対象ID'])] = true; });
   var duties = dutyRows.filter(function (d) { return (d.date ? d.date === today : dayMatch(d.rule, dow)) && !skipped[d.id]; })
-    .map(function (d) { return { id: d.id, t: d.t, task: d.task, who: d.who, once: !!d.date }; });
+    .map(function (d) { return { id: d.id, t: d.t, rel: d.rel, task: d.task, who: d.who, once: !!d.date }; });
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; });
 
   var shop = shopFor(weekStart);
@@ -410,7 +414,7 @@ function buildBoot(today) {
       kidsLabel: s['子どもの呼び方'] || '', kidsBirth: normDate(s['子どもの誕生日']),
       noMenuDish: s['献立がない日の料理名'] || 'まだ決まっていません', noMenuNote: s['献立がない日のメモ'] || '',
       eveningFrom: timeOrNull(s['夜の並びにする時刻'], 1080),
-      morningFrom: timeOrNull(s['朝の並びにする時刻'], null), morningTo: timeOrNull(s['朝の並びを終える時刻'], null),
+      depart: departMin(s), morningFrom: timeOrNull(s['朝の並びにする時刻'], null), morningTo: timeOrNull(s['朝の並びを終える時刻'], null),
       tripFrom: trip[0] || '', tripTo: trip[1] || ''
     }
   };
@@ -967,7 +971,8 @@ function deleteById(name, id, keys) {
 function saveDuty(d) {
   var task = String(d.task || '').slice(0, 100).trim();
   if (!task || !d.id) return { ok: false, code: 'bad_request' };
-  var obj = { id: String(d.id), '時刻': normTime(d.time) || '', 'やること': task, '担当': whoOf(d.who), '曜日': d.date ? '' : (String(d.rule || '毎日').trim() || '毎日'), '日付': normDate(d.date) || '' };
+  var rel = d.rel == null || d.rel === '' ? null : Math.max(0, Math.min(600, Math.round(Number(d.rel) || 0)));
+  var obj = { id: String(d.id), '時刻': rel != null ? '出発' + (rel ? '-' + rel : '') : (normTime(d.time) || ''), 'やること': task, '担当': whoOf(d.who), '曜日': d.date ? '' : (String(d.rule || '毎日').trim() || '毎日'), '日付': normDate(d.date) || '' };
   var r = findById('担当', d.id, DUTY_KEYS);
   if (r) setCells('担当', r._row, obj); else appendObj('担当', obj);
   return { ok: true };
@@ -1492,6 +1497,23 @@ function normTime(v) {
 /* 設定の時刻：行が無ければ初期値、空なら null（その並びを使わない） */
 function timeOrNull(v, dflt) { if (v === undefined) return dflt; return normTime(v) ? minutes(v) : null; }
 function minutes(v) { var t = normTime(v); if (!t) return 0; var p = t.split(':'); return Number(p[0]) * 60 + Number(p[1]); }
+/* 朝の出発時刻（分）。設定が無ければ 8:00、空なら null */
+function departMin(s) { return timeOrNull((s || settings())['朝の出発時刻'], 480); }
+/* 担当の時刻：「7:30」か「出発」「出発-30」（出発の30分前）。出発の時刻が無い時は時刻なし */
+function dutyTime(v, depart) {
+  var m = String(v instanceof Date ? '' : (v || '')).trim().match(/^出発\s*(?:[-−－ー]\s*(\d{1,3}))?/);
+  if (m) { var rel = Number(m[1] || 0); return { t: depart == null ? null : Math.max(0, depart - rel), rel: rel }; }
+  return { t: normTime(v) ? minutes(v) : null, rel: null };
+}
+/* 出発の時刻を変える（2人とも変えられる） */
+function setDepart(v) {
+  var t = normTime(v);
+  if (!t) return { ok: false, code: 'bad_request' };
+  var r = rowsOf('設定').filter(function (x) { return text(x['項目']) === '朝の出発時刻'; })[0];
+  if (r) setCells('設定', r._row, { '値': t }); else appendObj('設定', { '項目': '朝の出発時刻', '値': t, '説明': '朝、家を出る時刻' });
+  _cfg = null;
+  return { ok: true, depart: minutes(t) };
+}
 function truthy(v) { return v === true || v === 'TRUE' || v === 'true' || v === '済' || v === '○' || v === 1; }
 function dayMatch(rule, dow) {
   rule = rule.trim();

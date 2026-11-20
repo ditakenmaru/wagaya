@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '46';
+  var APP_VERSION = '47';
   var API_EXPECTED = 12;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -773,7 +773,8 @@
     this.setState({ editor: {
       kind: 'duty', isNew: !d, id: d ? d.id : uid('d'), task: d ? d.task : '', time: d ? hhmm(d.t) : pad(Math.min(23, new Date().getHours() + 1)) + ':00',
       who: d ? d.who : who, once: all ? !!all.date : true, rule: (all && !all.date && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date()),
-      routine: !!(all && !all.date), skipToday: !!(d && D.skipped && D.skipped[d.id])
+      routine: !!(all && !all.date), skipToday: !!(d && D.skipped && D.skipped[d.id]),
+      relOn: !!(all && all.rel != null), rel: all && all.rel != null ? String(all.rel) : ''
     } });
   };
   App.prototype.editSet = function (k, v) { var e = Object.assign({}, this.state.editor); e[k] = v; this.setState({ editor: e }); };
@@ -782,20 +783,40 @@
     var self = this, e = this.state.editor, task = (e.task || '').trim();
     if (!task) { this.showToast('やることを入力してください', null); return; }
     var rule = e.once ? '' : (e.rule || '毎日');
-    var d = { id: e.id, task: task, time: e.time, who: e.who, rule: rule, date: e.once ? e.date : '' };
+    var dep = this.departMin();
+    var rel = e.relOn ? Math.max(0, Math.min(600, parseInt(String(e.rel || '0').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 65248); }), 10) || 0)) : null;
+    if (rel != null && dep == null) { this.showToast('出発の時刻が決まっていません。先に「出発」の時刻を決めてください', null); return; }
+    var d = { id: e.id, task: task, time: rel != null ? hhmm(dep - rel) : e.time, rel: rel, who: e.who, rule: rule, date: e.once ? e.date : '' };
     var revert = this.snapshot();
     this.mutate(function (D) {
-      var row = { id: d.id, t: minOf(d.time), task: task, who: d.who, rule: rule || '毎日', date: d.date };
+      var row = { id: d.id, t: rel != null ? dep - rel : minOf(d.time), rel: rel, task: task, who: d.who, rule: rule || '毎日', date: d.date };
       D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== d.id; }).concat([row]);
       var today = parseYmd(D.today || ymd(new Date()));
       var on = d.date ? d.date === D.today : dayMatch(rule, today.getDay());
       D.duties = (D.duties || []).filter(function (x) { return x.id !== d.id; });
-      if (on) D.duties.push({ id: d.id, t: row.t, task: task, who: d.who, once: !!d.date });
+      if (on) D.duties.push({ id: d.id, t: row.t, rel: rel, task: task, who: d.who, once: !!d.date });
     });
     this.setState({ editor: null, lastDuty: d.id });   /* 足した担当は、ホームで8件にしぼる時も残す */
     this.send('saveDuty', { duty: d }, revert);
     var when = d.date ? (d.date === (this.state.data || {}).today ? '今日' : parseYmd(d.date).getMonth() + 1 + '/' + parseYmd(d.date).getDate()) + 'だけ' : ruleWords(rule);
     this.showToast('「' + task + '」を' + when + 'で' + (e.isNew ? '足しました' : '直しました'), null);
+  };
+  /* 朝の出発時刻（分）。担当の時刻を「出発のN分前」にしておくと、出発を変えた時に一緒にずれる */
+  App.prototype.departMin = function () { var u = this.ui(); return u.depart == null ? (u.hasOwnProperty('depart') ? null : 480) : Number(u.depart); };
+  App.prototype.openDepart = function () { var m = this.departMin(); this.setState({ editor: { kind: 'depart', isNew: false, id: 'depart', time: hhmm(m == null ? 480 : m) } }); };
+  App.prototype.saveDepart = function () {
+    if (this.stale()) return;
+    var e = this.state.editor, m = minOf(e.time);
+    if (m == null || !e.time) { this.showToast('時刻を入れてください', null); return; }
+    var revert = this.snapshot();
+    this.mutate(function (D) {
+      D.ui = Object.assign({}, D.ui, { depart: m });
+      (D.duties || []).concat(D.dutiesAll || []).forEach(function (x) { if (x.rel != null) x.t = Math.max(0, m - x.rel); });
+    });
+    this.setState({ editor: null });
+    this.send('setDepart', { time: e.time }, revert);
+    var n = ((this.state.data || {}).dutiesAll || []).filter(function (x) { return x.rel != null; }).length;
+    this.showToast('家を出る時刻を' + e.time.replace(/^0/, '') + 'にしました' + (n ? '（合わせた担当' + n + '件も動きました）' : ''), null);
   };
   App.prototype.deleteDuty = function () {
     var self = this, e = this.state.editor;
@@ -808,7 +829,7 @@
     this.setState({ editor: null });
     this.send('deleteDuty', { id: e.id }, revert);
     this.showToast('「' + e.task + '」を消しました', old ? function () {
-      revert(); self.send('saveDuty', { duty: { id: old.id, task: old.task, time: hhmm(old.t), who: old.who, rule: old.date ? '' : old.rule, date: old.date } }); self.setState({ toast: null });
+      revert(); self.send('saveDuty', { duty: { id: old.id, task: old.task, time: hhmm(old.t), rel: old.rel, who: old.who, rule: old.date ? '' : old.rule, date: old.date } }); self.setState({ toast: null });
     } : null);
   };
 
@@ -1686,11 +1707,11 @@
 
     /* 編集シート（担当・買い物・話題） */
     var E = st.editor;
-    var ed = { open: !!E, duty: !!E && E.kind === 'duty', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', menu: !!E && E.kind === 'menu', toshop: !!E && E.kind === 'toShop', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew), saveLabel: '保存する' };
+    var ed = { open: !!E, duty: !!E && E.kind === 'duty', depart: !!E && E.kind === 'depart', shop: !!E && E.kind === 'shop', topic: !!E && E.kind === 'topic', decide: !!E && E.kind === 'decide', deadline: !!E && E.kind === 'deadline', outing: !!E && E.kind === 'outing', menu: !!E && E.kind === 'menu', toshop: !!E && E.kind === 'toShop', isNew: !!(E && E.isNew), canDelete: !!(E && !E.isNew && E.kind !== 'depart'), saveLabel: '保存する' };
     if (E) {
-      var HEAD = { duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'], toShop: ['材料を買い物リストへ', '材料を買い物リストへ'] };
+      var HEAD = { depart: ['家を出る時刻', '家を出る時刻'], duty: ['担当を足す', '担当を直す'], shop: ['買い物を直す', '買い物を直す'], topic: ['話題を足す', '話題を直す'], decide: ['相談を足す', '相談を直す'], deadline: ['期限を足す', '期限を直す'], outing: ['お出かけの候補を足す', 'お出かけの候補を直す'], menu: ['献立を入れる', '献立を直す'], toShop: ['材料を買い物リストへ', '材料を買い物リストへ'] };
       ed.heading = HEAD[E.kind][E.isNew ? 0 : 1];
-      var FIELDS = ['task', 'time', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how', 'servings'];
+      var FIELDS = ['task', 'time', 'rel', 'name', 'qty', 'title', 'url', 'note', 'q', 'options', 'due', 'what', 'place', 'date', 'dish', 'ings', 'how', 'servings'];
       FIELDS.forEach(function (k) { ed[k] = E[k] || ''; });
       ed.set = {};
       FIELDS.forEach(function (k) { ed.set[k] = function (ev) { self.editSet(k, ev.target.value); }; });
@@ -1718,6 +1739,23 @@
         ed.ruleText = ruleWords(E.rule || '毎日');
         ed.rulePresets = [['毎日', '毎日'], ['平日', '平日'], ['土日', '土日']].map(function (r) { var on = (E.rule || '毎日') === r[0]; return { label: r[1], pressed: on ? 'true' : 'false', style: chip(on), pick: function () { self.editSet('rule', r[0]); } }; });
         ed.save = function () { self.saveDuty(); }; ed.del = function () { self.deleteDuty(); };
+        /* 出発に合わせる：時刻の代わりに「出発のN分前」で持つ */
+        var dep0 = self.departMin();
+        ed.showTime = !E.relOn;
+        ed.relOn = !!E.relOn; ed.relPressed = E.relOn ? 'true' : 'false';
+        ed.relStyle = chip(!!E.relOn) + '; align-self: flex-start; min-height: 44px';
+        ed.toggleRel = function () {
+          var cur = self.state.editor, on = !cur.relOn, e2 = Object.assign({}, cur, { relOn: on });
+          if (on && (cur.rel === '' || cur.rel == null)) { var tm0 = minOf(cur.time); e2.rel = String(dep0 != null && tm0 != null && tm0 <= dep0 ? dep0 - tm0 : 0); }
+          if (!on && dep0 != null) e2.time = hhmm(Math.max(0, dep0 - (parseInt(cur.rel, 10) || 0)));
+          self.setState({ editor: e2 });
+        };
+        var relN = parseInt(String(E.rel || '0'), 10) || 0;
+        ed.relHint = dep0 == null ? '家を出る時刻が決まっていません' : '家を出る ' + hhmm(dep0).replace(/^0/, '') + ' → この担当は ' + hhmm(Math.max(0, dep0 - relN)).replace(/^0/, '') + '。家を出る時刻を変えると、一緒にずれます（0分前＝出発ちょうど）';
+      } else if (E.kind === 'depart') {
+        ed.save = function () { self.saveDepart(); }; ed.del = function () {};
+        var nRel = ((self.state.data || {}).dutiesAll || []).filter(function (x) { return x.rel != null; }).length;
+        ed.departHint = nRel ? '「家を出る時刻に合わせる」にした担当（' + nRel + '件）も、一緒にずれます。' : '担当を「家を出る時刻に合わせる」にすると、ここを変えた時に一緒にずれます。';
       } else if (E.kind === 'shop') {
         ed.catChips = shopCats.map(function (c) { var on = E.cat === c; return { label: c, pressed: on ? 'true' : 'false', style: chip(on, '#2C6B52'), pick: function () { self.editSet('cat', c); } }; });
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
@@ -2079,6 +2117,9 @@
       weekNav: weekNav, hasWeekNav: weekNav.length > 0, weekRange: weekRange,
       flowEdit: !!st.flowEdit, flowNormal: !st.flowEdit, flowEditRows: flowEditRows, flowEditEmpty: flowEditRows.length === 0,
       flowEditLabel: st.flowEdit ? '完了' : '直す',
+      openDepart: function () { self.openDepart(); },
+      departLabel: (function () { var m = self.departMin(); if (m == null) return '家を出る時刻：未定'; var left = m - nowMin, wd = now.getDay() >= 1 && now.getDay() <= 5; var hm0 = hhmm(m).replace(/^0/, ''); return wd && left > 0 && left <= 180 ? '家を出る ' + hm0 + '（あと' + left + '分）' : '家を出る ' + hm0; })(),
+      departAria: (function () { var m = self.departMin(); return '朝、家を出る時刻' + (m == null ? '（未定）' : ' ' + hhmm(m)) + '。押すと変えられます'; })(),
       toggleFlowEdit: function () { self.setState({ flowEdit: !self.state.flowEdit }); },
       addDuty: function () { self.openDuty(null); },
       shopEdit: !!st.shopEdit, shopEditLabel: st.shopEdit ? '完了' : '直す・消す',
@@ -2457,9 +2498,9 @@
       ];
       demoDB = {
         me: { email: 'demo@example.com', who: 'とと' }, today: ymd(t),
-        duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2] }; }),
+        duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rel: i === 0 ? 90 : (i === 2 ? 0 : null) }; }),
         done: {}, checked: {},
-        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日'], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日'], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '' }; }),
+        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; }),
         notes: [{ id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; })
@@ -2488,7 +2529,7 @@
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,
         people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },
-        ui: Object.assign({ timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }, /[?&]trip=1/.test(location.search) ? { tripFrom: dd(t.getDay() - 1), tripTo: dd(t.getDay() + 3) } : {})   /* ?demo=1&trip=1 で旅行中の見本 */
+        ui: Object.assign({ depart: 480, timeStart: 360, timeEnd: 1260, kidsLabel: 'ふたり', kidsBirth: '2024-04-01', noMenuDish: 'まだ決まっていません', noMenuNote: '日曜の15分で決めます。' }, /[?&]trip=1/.test(location.search) ? { tripFrom: dd(t.getDay() - 1), tripTo: dd(t.getDay() + 3) } : {})   /* ?demo=1&trip=1 で旅行中の見本 */
       };
     }
     var db = demoDB;
@@ -2498,6 +2539,7 @@
         if (a === 'boot') return res({ ok: true, data: JSON.parse(JSON.stringify(db)) });
         if (a === 'photos') return res({ ok: true, photos: [] });
         if (a === 'photosBatch') return res({ ok: true, photos: {} });
+        if (a === 'setDepart') { var dm0 = minOf(p.time); db.ui.depart = dm0; db.dutiesAll.concat(db.duties).forEach(function (x) { if (x.rel != null) x.t = dm0 - x.rel; }); }
         if (a === 'setDone') { if (p.done) db.done[p.taskId] = true; else delete db.done[p.taskId]; }
         if (a === 'setShop') { if (p.checked) db.checked[p.itemId] = true; else delete db.checked[p.itemId]; }
         if (a === 'addNote') db.notes.unshift(p.note);

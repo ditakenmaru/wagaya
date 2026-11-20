@@ -355,6 +355,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <button type="button" aria-pressed="{{flowEdit}}" onClick="{{toggleFlowEdit}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{flowEditLabel}}</button>
       </span>
     </div>
+    <button type="button" onClick="{{openDepart}}" aria-label="{{departAria}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -4px 0 0 4px; padding: 0 14px; border-radius: 999px; border: none; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path><path d="M14 20v-5h-4"></path></svg>{{departLabel}}<span style="font-size: 12px; font-weight: 500; color: #55605A">変える</span></button>
 
     <div style="display: flex; align-items: center; gap: 18px; background: #FFFFFF; border-radius: 22px; padding: 16px 18px">
       <div style="position: relative; width: 104px; height: 104px; flex-shrink: 0">
@@ -1029,14 +1030,24 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <button type="button" aria-label="閉じる" onClick="{{ed.close}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
     <h2 id="ed-title" style="margin: 0; font-size: 20px; font-weight: 900">{{ed.heading}}</h2>
+    <sc-if value="{{ed.depart}}" hint-placeholder-val="{{ false }}">
+      <label for="ed-depart" style="font-size: 13px; font-weight: 700; color: #55605A">朝、家を出る時刻</label>
+      <input id="ed-depart" type="time" lang="ja" value="{{ed.time}}" onInput="{{ed.set.time}}" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
+      <span style="font-size: 12px; color: #55605A; line-height: 1.5">{{ed.departHint}}</span>
+    </sc-if>
     <sc-if value="{{ed.duty}}" hint-placeholder-val="{{ false }}">
       <label for="ed-task" style="font-size: 13px; font-weight: 700; color: #55605A">やること</label>
       <input id="ed-task" type="text" value="{{ed.task}}" onInput="{{ed.set.task}}" placeholder="例：ゴミ出し" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
-      <label for="ed-time" style="font-size: 13px; font-weight: 700; color: #55605A">時刻</label>
+      <sc-if value="{{ed.showTime}}" hint-placeholder-val="{{ true }}"><label for="ed-time" style="font-size: 13px; font-weight: 700; color: #55605A">時刻</label>
       <div style="display: flex; gap: 8px; align-items: center">
         <input id="ed-time" type="time" lang="ja" value="{{ed.time}}" onInput="{{ed.set.time}}" style="box-sizing: border-box; flex: 1; min-width: 0; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B">
         <button type="button" aria-pressed="{{ed.noTime}}" onClick="{{ed.toggleNoTime}}" style="{{ed.noTimeStyle}}">時刻なし</button>
-      </div>
+      </div></sc-if>
+      <button type="button" aria-pressed="{{ed.relPressed}}" onClick="{{ed.toggleRel}}" style="{{ed.relStyle}}">家を出る時刻に合わせる</button>
+      <sc-if value="{{ed.relOn}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; gap: 8px; align-items: center; font-size: 15px; font-weight: 700"><span>家を出る</span><input id="ed-rel" type="number" inputmode="numeric" min="0" max="600" step="5" aria-label="家を出る何分前" value="{{ed.rel}}" onInput="{{ed.set.rel}}" style="box-sizing: border-box; width: 96px; min-height: 48px; padding: 0 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; background: #FAFBF9; font-family: inherit; font-size: 16px; color: #17201B"><span>分前</span></div>
+        <span style="font-size: 12px; color: #55605A; line-height: 1.5">{{ed.relHint}}</span>
+      </sc-if>
       <sc-if value="{{ed.noTimeOn}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #55605A">時刻を決めない担当は「いつでも」として、今日の流れのいちばん下に出ます。</span></sc-if>
       <span style="font-size: 13px; font-weight: 700; color: #55605A">担当</span>
       <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{ed.whoChips}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button></sc-for></div>
@@ -1208,7 +1219,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=46"></script>
-<script src="app.js?v=46"></script>
+<script src="config.js?v=47"></script>
+<script src="app.js?v=47"></script>
 </body>
 </html>
