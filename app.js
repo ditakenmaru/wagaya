@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '35';
+  var APP_VERSION = '36';
   var API_EXPECTED = 11;   // GAS の API_VERSION と同じ番号
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -940,7 +940,7 @@
     if (!(how === 'wa' && num)) this.showToast('文をコピーしました。Museに貼って送ってください', null);
   };
 
-  /* くわしく見る・返信：話題・相談・日記・お出かけ・ニュースの全文と、ふたりのやりとり */
+  /* 詳細を見る・コメント：話題・相談・日記・お出かけ・ニュースの全文と、ふたりのやりとり */
   App.prototype.openDetail = function (kind, id) {
     USAGE.add('act:detail_' + kind);
     this.setState({ detail: { kind: kind, id: id }, replyDraft: '' });
@@ -958,7 +958,7 @@
     var revert = this.snapshot();
     this.mutate(function (d) { d.replies = (d.replies || []).filter(function (x) { return x.id !== id; }); });
     this.send('deleteReply', { id: id }, revert);
-    this.showToast('返信を消しました', null);
+    this.showToast('コメントを削除しました', null);
   };
 
   /* 話題（旅のしおりなどのリンク） */
@@ -1388,12 +1388,12 @@
     });
 
     /* 話題 */
-    /* 長い文は5行まで。続きと返信は「くわしく」の画面で */
+    /* 長い文は5行まで。全文とコメントは「詳細を見る」の画面で */
     var rCount = {}; (D.replies || []).forEach(function (r) { rCount[r.target] = (rCount[r.target] || 0) + 1; });
     var clamp = function (n, extra) { return 'display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: ' + n + '; overflow: hidden; overflow-wrap: anywhere; ' + (extra || ''); };
     var moreOf = function (kind, id) {
       var n = rCount[kind + ':' + id] || 0;
-      return { label: n ? 'くわしく・返信 ' + n + '件' : 'くわしく・返信', go: function () { self.openDetail(kind, id); },
+      return { label: n ? '詳細を見る（コメント' + n + '件）' : '詳細を見る', go: function () { self.openDetail(kind, id); },
         style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: 12px; border: none; background: ' + (n ? '#E3E7F6' : '#EEF1EC') + '; color: ' + (n ? '#22337A' : '#17201B') + '; font-size: 13px; font-weight: 700; cursor: pointer' };
     };
     var topics = (D.topics || []).map(function (t) {
@@ -1567,7 +1567,7 @@
       var web = n.src === 'Web';
       return {
         title: n.title, why: n.why, body: n.body, url: n.url, src: n.src, meta: n.from + (n.date ? '（' + n.date + '）' : ''),
-        open: false, expanded: 'false', more: (rCount['news:' + n.id] ? 'くわしく・返信 ' + rCount['news:' + n.id] + '件' : 'くわしく'),
+        open: false, expanded: 'false', more: (rCount['news:' + n.id] ? '詳細を見る（コメント' + rCount['news:' + n.id] + '件）' : '詳細を見る'),
         toggle: function () { self.openDetail('news', n.id); },
         srcStyle: 'padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 900; ' + (web ? 'background: #E3E7F6; color: #3046A6' : 'background: #F3E8D6; color: #8A5A12'),
         cardStyle: 'flex-shrink: 0; width: 290px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: 20px; background: #FFFFFF; animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
@@ -2206,7 +2206,7 @@
         outings: [{ id: 'o1', name: '見本：近くの公園', kind: '公園', date: '', place: '', url: '', note: '芝生が広い', like1: false, like2: true, state: '候補', go: '' }],
         weather: { place: '', code: 1, now: 15, max: 18, min: 9, pop: 20 }, streak: 3,
         topics: [{ id: 't1', title: '見本：旅のしおり', url: 'https://example.com', note: '持ち物と1日ずつの予定', date: '11/19' }, { id: 't2', title: '見本：年末の帰省の相談', url: '', note: '見本の長い文です。12/28の夕方に出て、実家に2泊する案。新幹線は混むので、車で行くなら途中で1回休む。おみやげは前の日に買う。ふたりの昼寝の時間に合わせて出発したい。帰りは12/30の午前。大掃除は帰ってからにするか、出る前に半分だけ済ませるか、決めたい。年賀状は今年は写真入りにする？', date: '11/20' }],
-        replies: [{ id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本の返信：出る前に半分だけ大掃除がいいと思う。' }],
+        replies: [{ id: 'r1', target: 'topics:t2', who: 'まま', at: Date.now() - 1800e3, text: '見本のコメント：出る前に半分だけ大掃除がいいと思う。' }],
         shopSuggest: [{ name: '牛乳', qty: '2本', cat: 'お店で買う', note: 'そろそろ（1週ごと）', due: true }, { name: 'バナナ', qty: '1房', cat: 'お店で買う', note: '3回買った', due: false }],
         photosReady: false,
         people: [{ name: 'とと', ink: '#3046A6' }, { name: 'まま', ink: '#A3355D' }], family: { name: '家族', ink: '#2C6B52' },

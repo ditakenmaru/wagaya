@@ -669,7 +669,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <span style="font-size: 12px; color: #55605A">{{ou.meta}}</span>
           <span style="{{ou.noteStyle}}">{{ou.note}}</span>
           <button type="button" onClick="{{ou.more.go}}" style="{{ou.more.style}}">{{ou.more.label}}</button>
-          <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 700">くわしく</a></sc-if>
+          <sc-if value="{{ou.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{ou.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 700">サイトを見る</a></sc-if>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
             <button type="button" onClick="{{ou.like}}" style="{{ou.likeStyle}}">♡ {{ou.likeLabel}}</button>
             <button type="button" data-muse="1" onClick="{{ou.muse}}" style="min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #2EC28A; background: transparent; color: #0E6B4E; font-size: 13px; font-weight: 700; cursor: pointer">Museに相談</button>
@@ -1062,7 +1062,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     <button type="button" onClick="{{sendFb}}" style="min-height: 50px; border: none; border-radius: 14px; background: #3046A6; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送る</button>
   </section>
 
-  <button type="button" aria-label="くわしくを閉じる" onClick="{{closeDetail}}" style="{{detailBackdropStyle}}"></button>
+  <button type="button" aria-label="詳細を閉じる" onClick="{{closeDetail}}" style="{{detailBackdropStyle}}"></button>
   <section role="dialog" aria-modal="true" aria-labelledby="dt-title" style="{{detailSheetStyle}}">
     <button type="button" aria-label="閉じる" onClick="{{closeDetail}}" style="position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: none; background: #EEF1EC; color: #39433D; font-size: 20px; line-height: 1; cursor: pointer">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: #C9D0C6"></div>
@@ -1075,18 +1075,18 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
       <sc-if value="{{dt.hasUrl}}" hint-placeholder-val="{{ false }}"><a href="{{dt.url}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 12px; background: #EEF1EC; color: #17201B; font-size: 14px; font-weight: 700; text-decoration: none">リンクを開く</a></sc-if>
       <sc-if value="{{dt.hasCta}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dt.cta}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 14px; font-weight: 700; cursor: pointer">{{dt.ctaLabel}}</button></sc-if>
     </div>
-    <h3 style="margin: 10px 0 0; font-size: 15px; font-weight: 900">ふたりのやりとり</h3>
-    <sc-if value="{{dt.empty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #55605A">まだ返信はありません。</p></sc-if>
+    <h3 style="margin: 10px 0 0; font-size: 15px; font-weight: 900">コメント</h3>
+    <sc-if value="{{dt.empty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; font-size: 13px; color: #55605A">まだコメントはありません。</p></sc-if>
     <sc-for list="{{dt.replies}}" as="rp" hint-placeholder-count="0">
       <div style="{{rp.style}}">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="{{rp.badgeStyle}}">{{rp.who}}</span><span style="font-size: 12px; color: #55605A">{{rp.time}}</span></div>
         <p style="margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere">{{rp.text}}</p>
-        <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="align-self: flex-end; min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">消す</button></sc-if>
+        <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="align-self: flex-end; min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
       </div>
     </sc-for>
     <sc-if value="{{dt.canReply}}" hint-placeholder-val="{{ false }}">
-      <textarea id="reply-input" aria-label="返信" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="返信を書く" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
-      <button type="button" onClick="{{sendReply}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">返信する</button>
+      <textarea id="reply-input" aria-label="コメント" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="コメントを書く" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+      <button type="button" onClick="{{sendReply}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送信</button>
     </sc-if>
   </section>
 
@@ -1104,7 +1104,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=35"></script>
-<script src="app.js?v=35"></script>
+<script src="config.js?v=36"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
