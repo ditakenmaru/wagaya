@@ -16,7 +16,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <style>
-html,body{margin:0;background:#EEF1EC;-webkit-text-size-adjust:100%}
+html,body{margin:0;background:#EEF1EC;-webkit-text-size-adjust:100%;overflow-x:clip}
+#top{overflow-x:clip}
 body{overscroll-behavior-y:none}
 *{-webkit-tap-highlight-color:transparent}
 #boot{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#55605A;font-size:14px}
@@ -27,8 +28,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 @keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
 @keyframes breathe{0%,100%{opacity:1}50%{opacity:.35}}
 @keyframes rise{0%{opacity:0;transform:translateY(18px)}100%{opacity:1;transform:none}}
-@keyframes slideA{0%{opacity:0;transform:translateX(28px)}100%{opacity:1;transform:none}}
-@keyframes slideB{0%{opacity:0;transform:translateX(28px)}100%{opacity:1;transform:none}}
+@keyframes slideA{0%{opacity:0;transform:translateX(16px)}100%{opacity:1;transform:none}}
+@keyframes slideB{0%{opacity:0;transform:translateX(16px)}100%{opacity:1;transform:none}}
 @keyframes tickA{0%{opacity:0;transform:translateY(-60%)}100%{opacity:1;transform:none}}
 @keyframes tickB{0%{opacity:0;transform:translateY(-60%)}100%{opacity:1;transform:none}}
 @keyframes shimmer{0%{background-position:-390px 0}100%{background-position:390px 0}}
@@ -92,6 +93,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
 <div id="app"><div id="boot">読み込んでいます…</div></div>
 <template id="tpl">
 <div id="top" data-theme="{{theme}}" style="width: 100%; max-width: 480px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(110px + env(safe-area-inset-bottom)); box-sizing: border-box; background: #EEF1EC; font-family: 'Zen Kaku Gothic New', system-ui, sans-serif; color: #17201B; display: flex; flex-direction: column; font-variant-numeric: tabular-nums">
+<input id="photo-pick" type="file" accept="image/*,video/*" multiple onChange="{{uploadPhotos}}" style="display: none">
 
   <sc-if value="{{needLogin}}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; inset: 0; z-index: 80; background: #EEF1EC; display: flex; flex-direction: column; justify-content: center; gap: 18px; padding: 32px 28px calc(32px + env(safe-area-inset-bottom)); box-sizing: border-box; max-width: 480px; margin: 0 auto">
@@ -169,8 +171,14 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </sc-if>
   <sc-if value="{{tiles.show}}" hint-placeholder-val="{{ false }}">
   <div style="padding: 14px 12px 0">
-    <div style="margin: 0 6px; font-size: 13px; font-weight: 700; color: #6B706B">{{tiles.date}}</div>
-    <div style="margin: 0 6px 12px; font-size: 26px; font-weight: 900; line-height: 1.25">{{tiles.greet}}</div>
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0 6px 12px">
+      <div style="min-width: 0"><div style="font-size: 13px; font-weight: 700; color: #6B706B">{{tiles.date}}</div>
+      <div style="font-size: 26px; font-weight: 900; line-height: 1.25">{{tiles.greet}}</div></div>
+      <div style="display: flex; gap: 8px; flex-shrink: 0">
+        <button type="button" aria-label="写真を足す" onClick="{{pickPhotos}}" style="width: 44px; height: 44px; border-radius: 50%; border: none; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #17201B"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="14" height="12" rx="2.5"></rect><circle cx="10" cy="12" r="2.6"></circle><path d="M19.5 3.5v5M17 6h5"></path></svg></button>
+        <button type="button" aria-label="今日の日記に気づきを残す" onClick="{{openDiaryNote}}" style="width: 44px; height: 44px; border-radius: 50%; border: none; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #17201B"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 10-10-3-3L5 16z"></path><path d="M13 7l3 3"></path></svg></button>
+      </div>
+    </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 118px; gap: 10px">
       <button type="button" aria-label="次の写真へ" onClick="{{tiles.nextPhoto}}" style="grid-row: span 2; position: relative; padding: 0; border: none; cursor: pointer; background: #FFFFFF; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05); overflow: hidden; box-sizing: border-box; background: linear-gradient(160deg, #2C6B52 0%, #3E8A6B 45%, #C99A1E 100%)">
         <sc-if value="{{tiles.hasPhoto}}" hint-placeholder-val="{{ false }}"><img src="{{tiles.photoSrc}}" alt="" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover"></sc-if>
@@ -274,7 +282,6 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="#FFFFFF"></rect><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="#FFFFFF"></rect></svg>
       </sc-if>
     </button>
-    <input id="photo-pick" type="file" accept="image/*,video/*" multiple onChange="{{uploadPhotos}}" style="display: none">
     <button type="button" aria-label="写真を足す" onClick="{{pickPhotos}}" style="position: absolute; right: 116px; top: 22px; width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(0,0,0,0.28); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #FFFFFF">
       <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="14" height="12" rx="2.5"></rect><circle cx="10" cy="12" r="2.6"></circle><path d="M19.5 3.5v5M17 6h5"></path></svg>
     </button>
@@ -315,10 +322,10 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   <sc-if value="{{sec.is_hero}}" hint-placeholder-val="{{ false }}"><div data-sec="{{sec.key}}" style="{{sec.wrapStyle}}">
   <section aria-label="{{title.hero}}" style="{{hero.bandStyle}}">
     <p style="margin: 0; font-size: 13px; font-weight: 700; opacity: 0.85">{{hero.kicker}}</p>
-    <div style="display: flex; align-items: flex-end; gap: 12px">
-      <span style="font-size: 64px; font-weight: 900; line-height: 0.95; letter-spacing: -0.02em; animation: bigTime .7s cubic-bezier(.2,.8,.2,1) .15s both">{{hero.time}}</span>
+    <div style="display: flex; align-items: flex-end; gap: 4px 12px; flex-wrap: wrap">
+      <span style="font-size: 52px; font-weight: 900; line-height: 0.95; letter-spacing: -0.02em; animation: bigTime .7s cubic-bezier(.2,.8,.2,1) .15s both">{{hero.time}}</span>
       <span style="display: flex; flex-direction: column; padding-bottom: 4px">
-        <span style="font-size: 15px; font-weight: 700">{{hero.countdown}}</span>
+        <span style="font-size: 15px; font-weight: 700; white-space: nowrap">{{hero.countdown}}</span>
       </span>
     </div>
     <p style="margin: 0; font-size: 22px; font-weight: 700; line-height: 1.35">{{hero.task}}</p>
@@ -457,12 +464,12 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="font-size: 15px; font-weight: 700; color: #2C6B52">決まった：{{dc.decidedText}}</span><button type="button" onClick="{{dc.reopen}}" style="min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: transparent; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">相談に戻す</button></div>
         </sc-if>
         <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid #ECEFE9">
-          <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.toggleAll}}" style="align-self: flex-start; min-height: 36px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
+          <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.toggleAll}}" style="align-self: flex-start; min-height: 44px; padding: 0 4px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.moreComments}}</button></sc-if>
           <sc-for list="{{dc.comments}}" as="cm" hint-placeholder-count="0">
             <div style="display: flex; flex-direction: column; gap: 6px">
               <div style="{{cm.style}}">
                 <div style="display: flex; align-items: center; gap: 8px"><span style="{{cm.badgeStyle}}">{{cm.who}}</span><span style="font-size: 12px; color: #55605A">{{cm.time}}</span>
-                  <sc-if value="{{cm.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cm.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+                  <sc-if value="{{cm.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cm.del}}" style="margin-left: auto; min-height: 44px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">{{cm.delLabel}}</button></sc-if>
                 </div>
                 <p style="{{cm.textStyle}}">{{cm.text}}</p>
                 <div style="display: flex; gap: 4px">
@@ -473,7 +480,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
               <sc-for list="{{cm.replies}}" as="cr" hint-placeholder-count="0">
                 <div style="{{cr.style}}">
                   <div style="display: flex; align-items: center; gap: 8px"><span style="{{cr.badgeStyle}}">{{cr.who}}</span><span style="font-size: 12px; color: #55605A">{{cr.time}}</span>
-                    <sc-if value="{{cr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cr.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+                    <sc-if value="{{cr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cr.del}}" style="margin-left: auto; min-height: 44px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">{{cr.delLabel}}</button></sc-if>
                   </div>
                   <p style="{{cr.textStyle}}">{{cr.text}}</p>
                   <sc-if value="{{cr.long}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cr.toggle}}" style="align-self: flex-start; min-height: 36px; padding: 0 8px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">{{cr.expandLabel}}</button></sc-if>
@@ -482,8 +489,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
             </div>
           </sc-for>
           <sc-if value="{{dc.commentOpen}}" hint-placeholder-val="{{ false }}">
-            <sc-if value="{{dc.replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{dc.replyToLabel}}</span><button type="button" onClick="{{dc.cancelReplyTo}}" aria-label="返信をやめてコメントにする" style="min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
-            <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+            <sc-if value="{{dc.replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{dc.replyToLabel}}</span><button type="button" onClick="{{dc.cancelReplyTo}}" aria-label="返信をやめてコメントにする" style="min-height: 44px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
+            <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" style="flex-shrink: 0; min-height: 76px; box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
             <button type="button" onClick="{{dc.sendComment}}" style="min-height: 44px; border: none; border-radius: 12px; background: #3046A6; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">送信</button>
           </sc-if>
           <button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #B9C3B5; background: #FFFFFF; color: #17201B; font-size: 13px; font-weight: 700; cursor: pointer">{{dc.commentLabel}}</button>
@@ -630,7 +637,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="{{dayMenu.photoStyle}}">
         <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,14,12,0.6), rgba(10,14,12,0) 60%)"></div>
         <span style="position: absolute; left: 16px; bottom: 14px; color: #FFFFFF; font-size: 15px; font-weight: 700; letter-spacing: 0.04em">{{dayMenu.label}}の食卓</span>
-        <sc-if value="{{dayMenu.hasPhotoLink}}" hint-placeholder-val="{{ true }}"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" aria-label="写真の出どころ：{{dayMenu.photoCredit}}" style="position: absolute; right: 8px; bottom: 8px; max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 8px; border-radius: 999px; background: rgba(23,32,27,0.55); color: #FFFFFF; font-size: 10px; font-weight: 500; text-decoration: none">{{dayMenu.photoCredit}}</a></sc-if>
+        <sc-if value="{{dayMenu.hasPhotoLink}}" hint-placeholder-val="{{ true }}"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" aria-label="写真の出どころ：{{dayMenu.photoCredit}}" style="position: absolute; right: 8px; bottom: 8px; max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; min-height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 999px; background: rgba(23,32,27,0.55); color: #FFFFFF; font-size: 11px; font-weight: 500; text-decoration: none">{{dayMenu.photoCredit}}</a></sc-if>
       </div>
       <p style="margin: 0; font-size: 26px; font-weight: 900; line-height: 1.3">{{dayMenu.dish}}</p>
       <p style="margin: 0; font-size: 14px; color: #55605A; line-height: 1.6">{{dayMenu.note}}</p>
@@ -904,7 +911,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <sc-for list="{{n.replies}}" as="nr" hint-placeholder-count="0">
           <div style="{{nr.style}}">
             <div style="display: flex; align-items: center; gap: 8px"><span style="{{nr.badgeStyle}}">{{nr.who}}</span><span style="font-size: 12px; color: #55605A">{{nr.time}}</span>
-              <sc-if value="{{nr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{nr.del}}" style="margin-left: auto; min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+              <sc-if value="{{nr.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{nr.del}}" style="margin-left: auto; min-height: 44px; padding: 0 8px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">{{nr.delLabel}}</button></sc-if>
             </div>
             <p style="margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere">{{nr.text}}</p>
           </div>
@@ -920,7 +927,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
           </sc-if>
         </div>
         <sc-if value="{{n.replyOpen}}" hint-placeholder-val="{{ false }}">
-          <textarea id="note-reply-input" aria-label="返信" rows="2" value="{{noteReplyDraft}}" onInput="{{setNoteReplyDraft}}" placeholder="返信を書く" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FFFFFF; color: #17201B"></textarea>
+          <textarea id="note-reply-input" aria-label="返信" rows="2" value="{{noteReplyDraft}}" onInput="{{setNoteReplyDraft}}" placeholder="返信を書く" style="flex-shrink: 0; min-height: 76px; box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FFFFFF; color: #17201B"></textarea>
           <button type="button" onClick="{{n.sendReply}}" style="min-height: 44px; border: none; border-radius: 12px; background: #3046A6; color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer">送信</button>
         </sc-if>
       </div>
@@ -983,7 +990,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
     </div>
     <img src="{{dayMenu.photo}}" alt="{{dayMenu.photoAlt}}" loading="lazy" decoding="async" style="display: block; width: 100%; height: 170px; object-fit: cover; border-radius: 16px; background: #F7F1DF">
     <sc-if value="{{dayMenu.hasPhotoLink}}" hint-placeholder-val="{{ false }}">
-      <p style="margin: -4px 0 0; font-size: 11px; color: #55605A; line-height: 1.5"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" style="color: #55605A">{{dayMenu.photoCredit}}</a><sc-if value="{{dayMenu.photoLicenseLink}}" hint-placeholder-val="{{ false }}">（<a href="{{dayMenu.photoLicenseLink}}" target="_blank" rel="noopener noreferrer" style="color: #55605A">ライセンス</a>）</sc-if></p>
+      <p style="margin: -4px 0 0; font-size: 11px; color: #55605A; line-height: 1.5"><a href="{{dayMenu.photoLink}}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 8px 0; color: #55605A">{{dayMenu.photoCredit}}</a><sc-if value="{{dayMenu.photoLicenseLink}}" hint-placeholder-val="{{ false }}">（<a href="{{dayMenu.photoLicenseLink}}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 8px 0; color: #55605A">ライセンス</a>）</sc-if></p>
     </sc-if>
     <p style="margin: 0; font-size: 13px; font-weight: 700; color: #55605A">材料</p>
     <sc-for list="{{dayMenu.ingredients}}" as="ing" hint-placeholder-count="4">
@@ -1154,13 +1161,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
         <p style="margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere">{{rp.text}}</p>
         <div style="display: flex; justify-content: flex-end; gap: 4px">
           <sc-if value="{{rp.canReply}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.reply}}" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #22337A; font-size: 13px; font-weight: 700; cursor: pointer">返信</button></sc-if>
-          <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">削除</button></sc-if>
+          <sc-if value="{{rp.mine}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{rp.del}}" style="min-height: 44px; padding: 0 10px; border: none; background: transparent; color: #7A2645; font-size: 12px; font-weight: 700; cursor: pointer">{{rp.delLabel}}</button></sc-if>
         </div>
       </div>
     </sc-for>
     <sc-if value="{{dt.canReply}}" hint-placeholder-val="{{ false }}">
-      <sc-if value="{{replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{replyToLabel}}</span><button type="button" onClick="{{cancelReplyTo}}" style="min-height: 32px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
-      <textarea id="reply-input" aria-label="コメント" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="コメントを書く" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
+      <sc-if value="{{replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #55605A"><span>{{replyToLabel}}</span><button type="button" onClick="{{cancelReplyTo}}" style="min-height: 44px; padding: 0 8px; border: none; background: transparent; color: #55605A; font-size: 12px; cursor: pointer">返信をやめる</button></div></sc-if>
+      <textarea id="reply-input" aria-label="コメント" rows="3" value="{{replyDraft}}" onInput="{{setReplyDraft}}" placeholder="コメントを書く" style="flex-shrink: 0; min-height: 76px; box-sizing: border-box; width: 100%; padding: 12px; border-radius: 14px; border: 1.5px solid #C9D0C6; font-family: inherit; font-size: 16px; line-height: 1.6; resize: vertical; background: #FAFBF9; color: #17201B"></textarea>
       <button type="button" onClick="{{sendReply}}" style="min-height: 50px; border: none; border-radius: 14px; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">送信</button>
     </sc-if>
   </section>
@@ -1179,7 +1186,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #3046A6;outline-offse
   </section>
 </div>
 </template>
-<script src="config.js?v=45"></script>
-<script src="app.js?v=45"></script>
+<script src="config.js?v=46"></script>
+<script src="app.js?v=46"></script>
 </body>
 </html>
