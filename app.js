@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '59';
+  var APP_VERSION = '60';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -333,11 +333,11 @@
       if (n && self.showPhotos() && !s.paused && !s.loading && (Date.now() - s.slideAt) / 1000 >= self.slideDur(s.slideIdx)) { upd = upd || {}; upd.slideIdx = s.slideIdx + 1; upd.slideAt = Date.now(); }
       if (upd) self.setState(upd);
     }, 1000);
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.appBadge = null; self.setState({ now: Date.now() }); self.refresh(true); checkUpdate(); } });   /* 通知で付いたアイコンの数字を、開いたら「あなたの番」の数に直す */
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { self.appBadge = null; self.setState({ now: Date.now() }); self.openRefresh(); checkUpdate(); } });   /* 通知で付いたアイコンの数字を、開いたら「あなたの番」の数に直す */
     /* 開いている間は15秒ごとに「変わったか」だけ確かめ、変わった時だけ読み直す（Museや相手の書き込みがすぐ出る）。
        予定（カレンダー）などシートの外のものもあるので、5分ごとには必ず読み直す */
     this.poll = setInterval(function () { if (document.visibilityState === 'visible') self.pollVer(); }, 15000);
-    this.handleRedirect().then(function () { return self.restoreLogin(); }).then(function () { if (!self.state.needLogin) self.refresh(!!self.state.data); });
+    this.handleRedirect().then(function () { return self.restoreLogin(); }).then(function () { if (!self.state.needLogin) self.openRefresh(true); });
     if (this.state.data) { setTimeout(function () { self.attachLazy(); }, 60); this.loadPhotos(this.state.data.photos); }
     this.setupPull();
   };
@@ -458,6 +458,16 @@
 
   /* データの読み込み（キャッシュをすぐ出して、裏で新しくする） */
   /* quiet：右上に「更新中」を出さない。fresh：GAS側のまとめを使わず、シートから読み直す */
+  /* 開いた時の読み直し：手元のデータが前の日なら「更新中」を出して読む。起動時と、前に読んでから3分以上たった時は
+     Google側のまとめも作り直す（fresh。カレンダー・写真などシートの外の物も新しくする）。それ以外はまとめを使って速く */
+  App.prototype.openRefresh = function (start) {
+    var D = this.state.data;
+    if (!D) return this.refresh(false, !!start);
+    var oldDay = !!D.today && D.today !== ymd(new Date());
+    var old = Date.now() - (D._at || 0) > 3 * 60000;
+    if (!start && !oldDay && this.inflight) return this.inflight;   /* もう読んでいる最中なら重ねない */
+    return this.refresh(!oldDay, !!start || old || oldDay);
+  };
   App.prototype.refresh = function (quiet, fresh) {
     var self = this;
     if (this.state.needLogin || this.pending > 0) return Promise.resolve(false);
@@ -1764,9 +1774,10 @@
       var c = self.person(d.who);
       /* 今日の流れに出す申し送りは「今日のもの」だけ（今日書いた物と、今日の担当についての頼み）。前の日の物は申し送りの一覧で見る */
       var todayStr = D.today || ymd(now);
-      /* ふつうの申し送りは「昨日のこの担当の時刻より後」に書いた物まで今日の分（夜に書いた明日の朝の分を朝に出す）。時刻のない担当は今日書いた物だけ */
-      var t0d = parseYmd(todayStr), since = d.t != null ? t0d.getTime() - 864e5 + d.t * 60000 : t0d.getTime();
-      var tnotes = notesAll.filter(function (n) { return n.taskId === d.id && (n.ask === 'swap' ? n.askDate === todayStr : n.createdAt >= since); });
+      /* ふつうの申し送りは今日書いた物。前の日の物は、昨日のこの担当の時刻より後に書いて、まだ確認していない物だけ
+         （夜に書いた明日の朝の分は朝に出す。確認済みの昨日の物＝「雨のためスキップ」などは出さない）。時刻のない担当は今日書いた物だけ */
+      var t0d = parseYmd(todayStr).getTime(), since = d.t != null ? t0d - 864e5 + d.t * 60000 : t0d;
+      var tnotes = notesAll.filter(function (n) { return n.taskId === d.id && (n.ask === 'swap' ? n.askDate === todayStr : (n.createdAt >= t0d || (!n.read && n.createdAt >= since))); });
       return {
         id: d.id, time: hm(d.t), task: d.task, who: d.who, done: isDone, once: !!d.once, isNew: !!marks['flow:' + d.id],
         toggle: function () {
