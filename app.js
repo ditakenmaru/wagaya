@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '79';
+  var APP_VERSION = '80';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2385,16 +2385,19 @@
     });
 
     /* 予定：今日から4週間（GAS 18 までは2週間）を、押さなくても見えるように。上は週ごとのカレンダー（何日も続く予定は帯。ホームでは2週間ぶん）、下は日ごとの一覧。
-       カレンダーの上の ‹ › で4週間ずつ先へ・戻る（先のページは plansMore で読む。今日より前へは戻らない。タブを移ると今日のページに戻る） */
+       カレンダーの上の ‹ › で先へ・戻る（予定のタブは4週間ずつ、ホームは2週間ずつ＝unit。先の分は plansMore で4週間ごとに読む。今日より前へは戻らない。タブを移ると今日のページに戻る） */
+    var planBuild = function (unit) {
     var today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     var pgs = st.planPages && st.planPages.base === D.plansTo ? st.planPages.pages : {};
-    var pg = st.planPage && pgs[st.planPage.n] ? st.planPage.n : 0;   /* 0＝今日からの4週間 */
-    var pgData = pg ? pgs[pg] : null;
-    var pStart = pg ? parseYmd(pgData.from) : today0;
+    var chunkOf = function (n) { return Math.floor(n * unit / 28); };   /* 読んだ予定は4週間（28日）ごとのかたまり。0＝boot の分、1〜＝plansMore の分 */
+    var pg = st.planPage && (chunkOf(st.planPage.n) === 0 || pgs[chunkOf(st.planPage.n)]) ? st.planPage.n : 0;   /* 0＝今日から */
+    var chunk = chunkOf(pg), ck = chunk ? pgs[chunk] : null, off = pg * unit;
+    var pStart = new Date(today0.getFullYear(), today0.getMonth(), today0.getDate() + off);
     var t0i = pg ? -999 : 0;   /* このページの中での「今日」の位置（先のページには無い） */
     var dayOf = function (s) { return Math.round((parseYmd(s) - pStart) / 864e5); };
-    var planN = pg ? Math.max(1, Math.min(28, dayOf(pgData.to) + 1)) : (D.plansTo ? Math.max(1, Math.min(28, dayOf(D.plansTo) + 1)) : 7);
-    var plansRaw = ((pg ? pgData.plans : D.plans) || []).map(function (p) { return Object.assign({}, p, { d: dayOf(p.date) }); }).filter(function (p) { return p.d >= 0 && p.d < planN && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
+    var chunkEnd = ck ? ck.to : D.plansTo;
+    var planN = chunkEnd ? Math.max(1, Math.min(unit, dayOf(chunkEnd) + 1)) : 7;
+    var plansRaw = ((ck ? ck.plans : D.plans) || []).map(function (p) { return Object.assign({}, p, { d: dayOf(p.date) }); }).filter(function (p) { return p.d >= 0 && p.d < planN && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
     var md = function (s) { var x = parseYmd(s); return (x.getMonth() + 1) + '/' + x.getDate(); };
     var byTime = function (a, b) { var ta = /^\d/.test(a.time || '') ? a.time.replace(/^(\d):/, '0$1:') : '99'; var tb = /^\d/.test(b.time || '') ? b.time.replace(/^(\d):/, '0$1:') : '99'; return ta < tb ? -1 : (ta > tb ? 1 : 0); };
     /* 続く予定をまとめる（key ごと）。帯の段（レーン）を、始まりが早い・長い順に詰めて決める */
@@ -2484,16 +2487,21 @@
     var pEnd = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + planN - 1);
     var pSpan = (pStart.getMonth() + 1) + '/' + pStart.getDate() + '〜' + (pEnd.getMonth() + 1) + '/' + pEnd.getDate();
     var planRangeLabel = pg ? pSpan : (planN >= 28 ? '4週間' : (planN >= 14 ? '2週間' : planN + '日'));
-    /* ‹ ›：4週間ずつ。先へは GAS 19 から（plansMore）。最後のページ（今日から400日）では › を止める */
-    var canNext = !!D.plansTo && Number(D.api || 0) >= 19 && !(pgData && pgData.last);
+    /* ‹ ›：unit 日ずつ。先を読むのは GAS 19 から（plansMore）。最後のかたまり（今日から400日）の終わりでは › を止める */
+    var unitLabel = unit === 14 ? '2週間' : '4週間';
+    var moreInChunk = !!chunkEnd && dayOf(chunkEnd) + 1 > unit;
+    var canNext = !!D.plansTo && Number(D.api || 0) >= 19 && (moreInChunk || !(ck && ck.last));
     var navBtn = function (on) { return 'flex-shrink: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 50%; background: var(--fill); color: var(--accent); cursor: pointer; ' + (on ? '' : 'opacity: .3; cursor: default; '); };
     var planNav = {
       can: !!D.plansTo && Number(D.api || 0) >= 19, show: false,
       label: st.planBusy ? '読み込み中…' : (pg ? pSpan : '今日から' + planRangeLabel), busy: st.planBusy ? 'true' : 'false',
+      groupAria: 'カレンダーを' + unitLabel + 'ずつ送る', prevAria: '前の' + unitLabel + 'へ', nextAria: '次の' + unitLabel + 'へ',
       prev: function () { self.planGo(-1); }, prevOff: pg === 0 ? 'true' : 'false', prevStyle: navBtn(pg > 0),
-      next: function () { self.planGo(1); }, nextOff: canNext ? 'false' : 'true', nextStyle: navBtn(canNext), canNext: canNext,
-      nextLabel: '次の4週間へ ›',
+      next: function () { self.planGo(1); }, nextOff: canNext ? 'false' : 'true', nextStyle: navBtn(canNext),
+      bottom: canNext && unit === 28, nextLabel: '次の' + unitLabel + 'へ ›',   /* 一覧の下の入口は予定のタブだけ */
       away: pg > 0, home: function () { self.planGo(0); }
+    };
+    return { planTotal: planTotal, planRangeLabel: planRangeLabel, planList: planList, planWeeks: planWeeks, planNav: planNav, pg: pg };
     };
 
     var notesSorted = notesAll.slice().sort(function (a, b) { return (a.read === b.read) ? b.createdAt - a.createdAt : (a.read ? 1 : -1); });
@@ -2563,6 +2571,10 @@
     secAll.forEach(function (c) { var t = tabOf(c); if (tabHas[t] && tabNames.indexOf(t) < 0) tabNames.push(t); });
     var curTab = tabNames.indexOf(st.nav) >= 0 ? st.nav : tabNames[0];
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
+    /* 予定：ホームは2週間ずつ、予定のタブ（とホームで広げた時）は4週間ずつ */
+    this.planUnit = isHome && !(st.expanded && st.expanded.plan) ? 14 : 28;
+    var PL = planBuild(this.planUnit);
+    var planTotal = PL.planTotal, planRangeLabel = PL.planRangeLabel, planList = PL.planList, planWeeks = PL.planWeeks, planNav = PL.planNav;
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     this.secTabMap = secTab;
     /* 右上のメニューの「移動」：タブごとに、いま見えるセクションを並べる（写真・見出しは除く）。押すとそのタブのそのセクションへ */
@@ -2808,7 +2820,7 @@
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
       goalCardStyle: 'margin: 0 16px; padding: 12px 16px; border-radius: var(--r-card); background: var(--done-soft); display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
-      planWeeks: isHome && !pg && !(st.expanded && st.expanded.plan) ? planWeeks.slice(0, 2) : planWeeks,   /* ホームのカレンダーは2週間ぶん（広げた時・先のページでは全部） */
+      planWeeks: planWeeks, planNoLimit: PL.pg > 0,   /* 先のページでは、ホームでも一覧をしぼらない（「すべて見る」は今日のページの話なので） */
       planList: planList, plansEmpty: planTotal === 0, planTotal: planTotal, planRange: planRangeLabel, planNav: planNav,
       planGridAria: planRangeLabel + 'のカレンダー。日を押すと下の一覧のその日へ',
       planCardStyle: 'margin-top: 4px; background: var(--card); border-radius: var(--r-card); padding: 2px 16px 12px; display: flex; flex-direction: column',
@@ -3022,7 +3034,7 @@
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
     this.planMore = R.more.planList && R.more.planList.show && R.more.planList.label.indexOf('少なく') < 0 ? R.more.planList.go : null;
-    R.planNav.show = R.planNav.can && !this.planMore;   /* ホームでしぼっている間は出さない（広げてから） */
+    R.planNav.show = R.planNav.can;
     /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
     R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
     R.notesTop = R.notesHere && !R.hdr.inPhoto; R.notesInHero = R.notesHere && !!R.hdr.inPhoto;   /* 申し送りの入口も写真の下へ */
@@ -3039,29 +3051,36 @@
   };
 
   /* カレンダーの日を押したら、下の一覧のその日へ。ホームでしぼっていたら広げる */
-  /* 予定のカレンダーを4週間ずつ送る（dir：1＝先へ、-1＝戻る、0＝今日のページへ）。先のページは plansMore で読んで覚える（読むだけ。日が変わったら捨てる）。
+  /* 予定のカレンダーを送る（dir：1＝先へ、-1＝戻る、0＝今日のページへ）。1ページは planUnit 日（予定のタブ28・ホーム14）。
+     予定は4週間（28日）ごとのかたまりで持つ：0＝boot の分、1〜＝plansMore で読んで覚える（読むだけ。日が変わったら捨てる）。
      今日より前へは戻らない。タブを移ると今日のページに戻る（下の setState） */
   App.prototype.planGo = function (dir) {
     var self = this, st = this.state, D = st.data || {};
     if (st.planBusy || !D.plansTo) return;
+    var unit = this.planUnit || 28, chunkOf = function (n) { return Math.floor(n * unit / 28); };
     var pages = st.planPages && st.planPages.base === D.plansTo ? st.planPages.pages : {};
-    var cur = st.planPage && pages[st.planPage.n] ? st.planPage.n : 0;
+    var cur = st.planPage && (chunkOf(st.planPage.n) === 0 || pages[chunkOf(st.planPage.n)]) ? st.planPage.n : 0;
     var n = dir === 0 ? 0 : cur + dir;
     if (n < 0 || n === cur) return;
-    if (dir > 0 && cur > 0 && pages[cur].last) return;
+    var c = chunkOf(n), cc = chunkOf(cur), t = new Date(), t0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    if (dir > 0) {
+      var ckc = cc ? pages[cc] : null, endOff = Math.round((parseYmd(ckc ? ckc.to : D.plansTo) - t0) / 864e5);
+      if (c === cc && n * unit > endOff) return;      /* このかたまりに、もう先の日が無い */
+      if (c !== cc && ckc && ckc.last) return;        /* 最後のかたまり（今日から400日） */
+    }
     USAGE.add('act:plan_page');
     var show = function () {
       self.setState({ planPage: n ? { n: n } : null });
       var el = document.getElementById('sec-plan'); if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' });
     };
-    if (n === 0 || pages[n]) { show(); return; }
-    var l = parseYmd(D.plansTo), from = ymd(new Date(l.getFullYear(), l.getMonth(), l.getDate() + 1 + (n - 1) * 28));
+    if (c === 0 || pages[c]) { show(); return; }
+    var l = parseYmd(D.plansTo), from = ymd(new Date(l.getFullYear(), l.getMonth(), l.getDate() + 1 + (c - 1) * 28));
     this.setState({ planBusy: true });
     api('plansMore', { from: from }).then(function (r) {
       var now = self.state.data || {};
       if (now.plansTo !== D.plansTo) { self.setState({ planBusy: false, planPage: null, planPages: null }); return; }
       var keep = self.state.planPages && self.state.planPages.base === D.plansTo ? self.state.planPages.pages : {};
-      var next = Object.assign({}, keep); next[n] = { from: r.from || from, to: r.to, last: !!r.last, plans: r.plans || [] };
+      var next = Object.assign({}, keep); next[c] = { from: r.from || from, to: r.to, last: !!r.last, plans: r.plans || [] };
       self.setState({ planBusy: false, planPages: { base: D.plansTo, pages: next } });
       show();
     }).catch(function () {
@@ -3094,6 +3113,7 @@
       var here = secTab[sec] === curTab;
       var open = !!(st.expanded && st.expanded[sec]);
       if (!isHome || count <= n) return;
+      if (k === 'planList' && R.planNoLimit) return;
       if ((k === 'flow' && st.flowEdit) || (k === 'shop' && st.shopEdit) || (k === 'topics' && st.topicEdit)) return;   /* 直している最中はしぼらない */
       if (here && open) {
         m.show = true; m.label = '少なく表示';
@@ -3170,7 +3190,8 @@
           var t0 = new Date(), td = function (n) { return ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + n)); };
           var out = [{ date: td(0), time: '17:00', what: '保育園お迎え', who: 'まま' }, { date: td(1), time: '9:00', what: 'インフルワクチン', who: '家族' }, { date: td(1), time: '', what: '燃えるゴミ', who: '家族' },
             { date: td(2), time: '9:30', what: 'ベビーパーク', who: 'とと' }, { date: td(4), time: '10:15', what: 'トリミング', who: 'とと' }, { date: td(9), time: '', what: '結婚記念日', who: '家族' }, { date: td(9), time: '19:00', what: 'レストラン予約', who: 'とと' }, { date: td(12), time: '8:30', what: '保育園 写真前撮り', who: 'まま' }];
-          for (var i = 6; i <= 13; i++) out.push({ date: td(i), time: i === 6 ? '' : '', what: '家族旅行', who: '家族', key: 'trip', from: td(6), to: td(15) });
+          for (var i = 6; i <= 15; i++) out.push({ date: td(i), time: '', what: '家族旅行', who: '家族', key: 'trip', from: td(6), to: td(15) });
+          out.push({ date: td(17), time: '14:00', what: '見本：3週目の予定', who: 'まま' });
           for (var j = 0; j <= 3; j++) out.push({ date: td(j), time: j === 3 ? '〜10:30' : '', what: 'まるペットホテル', who: 'とと', key: 'hotel', from: td(-1), to: td(3) });
           return out;
         })(), plansFrom: ymd(new Date()), plansTo: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 27)),

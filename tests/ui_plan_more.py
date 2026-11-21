@@ -1,4 +1,4 @@
-"""予定：4週間のカレンダーと、‹ › で4週間ずつ先へ・戻る（見本モード）"""
+"""予定：‹ › で先へ・戻る（予定のタブは4週間ずつ、ホームは2週間ずつ。見本モード）"""
 import os, sys
 from playwright.sync_api import sync_playwright
 PORT = os.environ.get('WAGAYA_PORT', '8765')
@@ -14,15 +14,31 @@ with sync_playwright() as p:
     sec = pg.locator('[data-sec=plan]')
     sec.scroll_into_view_if_needed(); pg.wait_for_timeout(700)
     grid = sec.locator('[role=group][aria-label*="のカレンダー"]')
-    # ホーム：カレンダーは2週間ぶん、送るボタンは出さない（しぼっている間）
-    ok(grid.locator('> div').count() == 2, 'ホームのカレンダーは2週間ぶん')
-    ok(sec.get_by_role('button', name='次の4週間へ').count() == 0, 'ホームでしぼっている間は ‹ › を出さない')
-    ok('4週間の予定をすべて見る' in (sec.inner_text()), 'ホームの「すべて見る」は4週間')
+    # ホーム：カレンダーは2週間ぶんで、‹ › で2週間ずつ送る
+    hnav = sec.locator('[role=group][aria-label="カレンダーを2週間ずつ送る"]')
+    hprev = hnav.get_by_role('button', name='前の2週間へ'); hnext = hnav.get_by_role('button', name='次の2週間へ')
+    ok(grid.locator('> div').count() == 2 and grid.locator('button').count() == 14, 'ホームのカレンダーは2週間ぶん')
+    ok(hnav.count() == 1 and '今日から2週間' in hnav.inner_text() and hprev.get_attribute('aria-disabled') == 'true', 'ホームにも ‹ ›（今日から2週間、‹ は止まる）')
+    ok('2週間の予定をすべて見る' in sec.inner_text() and sec.get_by_role('button', name='次の2週間へ ›').count() == 0, 'ホームの1ページ目は一覧をしぼる（下の「次へ」は出さない）')
+    h0 = grid.locator('button').first.get_attribute('aria-label')
+    hnext.click(); pg.wait_for_timeout(500)
+    h1 = grid.locator('button').first.get_attribute('aria-label')
+    ok(h1 != h0 and grid.locator('button').count() == 14 and '今日' not in grid.inner_text() and '家族旅行' in sec.inner_text() and 'すべて見る' not in sec.inner_text(), 'ホーム：次の2週間（3〜4週目。読み込みなしで出て、一覧はしぼらない）')
+    hnext.click(); pg.wait_for_timeout(800)
+    ok('見本：その先の予定' in sec.inner_text() and grid.locator('button').count() == 14, 'ホーム：さらに次の2週間（5〜6週目は読み込んで出る）')
+    hnext.click(); pg.wait_for_timeout(500)
+    ok('見本：その先の予定' not in sec.inner_text() and grid.locator('button').count() == 14, 'ホーム：7〜8週目（同じかたまりの後半）')
+    hprev.click(); pg.wait_for_timeout(400); hprev.click(); pg.wait_for_timeout(400)
+    ok(grid.locator('button').first.get_attribute('aria-label') == h1, 'ホーム：‹ で2週間ずつ戻る')
+    sec.get_by_role('button', name='今日へ').click(); pg.wait_for_timeout(400)
+    ok(grid.locator('button').first.get_attribute('aria-label') == h0 and '今日' in grid.inner_text(), 'ホーム：「今日へ」で戻る')
+    hnext.click(); pg.wait_for_timeout(400)
     # 予定のタブ：4週間ぶんと ‹ ›
     def go(name):
         pg.locator('nav[aria-label=画面の切り替え] button', has_text=name).click(); pg.wait_for_timeout(700)
     go('予定')
     sec = pg.locator('[data-sec=plan]'); grid = sec.locator('[role=group][aria-label*="のカレンダー"]')
+    ok('今日' in grid.inner_text(), 'ホームで先へ送ってからタブを移ると、今日のページから')
     nav = sec.locator('[role=group][aria-label="カレンダーを4週間ずつ送る"]')
     prev = nav.get_by_role('button', name='前の4週間へ'); nxt = nav.get_by_role('button', name='次の4週間へ')
     ok(grid.locator('> div').count() == 4 and grid.locator('button').count() == 28, '予定のタブのカレンダーは4週間（28日）')
