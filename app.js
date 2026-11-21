@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '77';
+  var APP_VERSION = '78';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -296,7 +296,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', museKind: '', museFrom: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}
+      plansExtra: null, plansBusy: false, fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', museKind: '', museFrom: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -375,6 +375,7 @@
       show(56, '更新しています…', true);
       var t0 = Date.now();
       checkUpdate();
+      self.setState({ plansExtra: null });   /* 引っぱって更新したら、「その先」で読んだ予定は捨てる（古いまま残さない。もう一度押して読む） */
       self.refresh(false, true).then(function (ok) {
         setTimeout(function () {
           show(56, ok ? '新しくしました' : '更新できませんでした', false);
@@ -2383,10 +2384,11 @@
       };
     });
 
-    /* 予定：今日から2週間を、押さなくても見えるように。上は2段×7日のカレンダー（何日も続く予定は帯）、下は日ごとの一覧 */
+    /* 予定：今日から4週間（GAS 18 までは2週間）を、押さなくても見えるように。上は週ごとのカレンダー（何日も続く予定は帯。ホームでは2週間ぶん）、下は日ごとの一覧。
+       その先は「その先の4週間を見る」（plansMore）で読んで、一覧の下に足す */
     var pStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     var dayOf = function (s) { return Math.round((parseYmd(s) - pStart) / 864e5); };
-    var planN = D.plansTo ? Math.max(1, Math.min(14, dayOf(D.plansTo) + 1)) : 7;
+    var planN = D.plansTo ? Math.max(1, Math.min(28, dayOf(D.plansTo) + 1)) : 7;
     var plansRaw = (D.plans || []).map(function (p) { return Object.assign({}, p, { d: dayOf(p.date) }); }).filter(function (p) { return p.d >= 0 && p.d < planN && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); });
     var md = function (s) { var x = parseYmd(s); return (x.getMonth() + 1) + '/' + x.getDate(); };
     var byTime = function (a, b) { var ta = /^\d/.test(a.time || '') ? a.time.replace(/^(\d):/, '0$1:') : '99'; var tb = /^\d/.test(b.time || '') ? b.time.replace(/^(\d):/, '0$1:') : '99'; return ta < tb ? -1 : (ta > tb ? 1 : 0); };
@@ -2406,7 +2408,7 @@
       g.lane = l; laneEnd[l] = g.d1;
     });
     var singles = plansRaw.filter(function (p) { return !p.key; });
-    var planWeeks = [0, 1].filter(function (w) { return w * 7 < planN; }).map(function (w) {
+    var planWeeks = [0, 1, 2, 3].filter(function (w) { return w * 7 < planN; }).map(function (w) {
       var lanes = 0;
       spanList.forEach(function (g) { if (g.lane < PLAN_LANES && g.d1 >= w * 7 && g.d0 <= w * 7 + 6) lanes = Math.max(lanes, g.lane + 1); });
       var cells = [], chips = [], bands = [];
@@ -2452,6 +2454,16 @@
     });
     /* 下の一覧：予定のある日だけ。続く予定は、見えている最初の日に「11/26〜12/3」で1回だけ */
     var planList = [];
+    var planDay = function (i, rows) {
+      var dt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + i), dw = dt.getDay();
+      rows.sort(function (a, b) { return byTime({ time: a.t }, { time: b.t }); });
+      return {
+        id: 'plan-d-' + ymd(dt),
+        label: (i === 0 ? '今日 ' : (i === 1 ? '明日 ' : '')) + (dt.getFullYear() !== pStart.getFullYear() ? dt.getFullYear() + '/' : '') + (dt.getMonth() + 1) + '/' + dt.getDate() + '（' + DOWS[dw] + '）',
+        labelStyle: 'margin: 0; padding: 12px 0 2px; font-size: var(--t-foot); font-weight: 700; color: ' + (i === 0 ? 'var(--done)' : (dw === 0 ? 'var(--danger)' : (dw === 6 ? 'var(--accent)' : 'var(--label2)'))),
+        rows: rows.map(function (r) { return { time: r.time, what: r.what, sub: r.sub, hasSub: !!r.sub, who: r.who, badgeStyle: self.badge(r.who) }; })
+      };
+    };
     for (var pi = 0; pi < planN; pi++) {
       var pdt = new Date(pStart.getFullYear(), pStart.getMonth(), pStart.getDate() + pi), pds = ymd(pdt);
       var rows = singles.filter(function (p) { return p.d === pi; }).map(function (p) { return { time: p.time || '終日', what: p.what, who: p.who, sub: '' , t: p.time }; });
@@ -2461,16 +2473,38 @@
         rows.push({ time: started ? 'つづき' : (g.time || '終日'), what: g.what, who: g.who, sub: started ? md(g.to) + 'まで' : md(g.from) + '〜' + md(g.to), t: started ? '' : g.time });
       });
       if (!rows.length) continue;
-      rows.sort(function (a, b) { return byTime({ time: a.t }, { time: b.t }); });
-      var dwi = pdt.getDay();
-      planList.push({
-        id: 'plan-d-' + pds,
-        label: (pi === 0 ? '今日 ' : (pi === 1 ? '明日 ' : '')) + (pdt.getMonth() + 1) + '/' + pdt.getDate() + '（' + DOWS[dwi] + '）',
-        labelStyle: 'margin: 0; padding: 12px 0 2px; font-size: var(--t-foot); font-weight: 700; color: ' + (pi === 0 ? 'var(--done)' : (dwi === 0 ? 'var(--danger)' : (dwi === 6 ? 'var(--accent)' : 'var(--label2)'))),
-        rows: rows.map(function (r) { return { time: r.time, what: r.what, sub: r.sub, hasSub: !!r.sub, who: r.who, badgeStyle: self.badge(r.who) }; })
-      });
+      planList.push(planDay(pi, rows));
     }
     var planTotal = singles.length + spanList.length;
+    var planRangeLabel = planN >= 28 ? '4週間' : (planN >= 14 ? '2週間' : planN + '日');
+    /* その先（plansMore で読んだ分）：一覧だけに足す。上の4週間の中で始まった続く予定は、上で「〜まで」と出ているので足さない */
+    var px = st.plansExtra && st.plansExtra.base === D.plansTo ? st.plansExtra : null;
+    var extraDays = 0;
+    if (px) {
+      var seenX = {}, byDayX = {};
+      px.items.map(function (p) { return Object.assign({}, p, { d: dayOf(p.date) }); })
+        .filter(function (p) { return p.d >= planN && (whoSel === 'all' || p.who === whoSel || p.who === '家族'); })
+        .sort(function (x, y) { return x.d - y.d; })
+        .forEach(function (p) {
+          var row;
+          if (p.key) {
+            if (seenX[p.key] || p.from <= D.plansTo) return;
+            seenX[p.key] = true;
+            var t0 = p.date === p.from && /^\d/.test(p.time || '') ? p.time : '';
+            row = { time: t0 || '終日', what: p.what, who: p.who, sub: md(p.from) + '〜' + md(p.to), t: t0 };
+          } else row = { time: p.time || '終日', what: p.what, who: p.who, sub: '', t: p.time };
+          (byDayX[p.d] = byDayX[p.d] || []).push(row);
+        });
+      Object.keys(byDayX).map(Number).sort(function (x, y) { return x - y; }).forEach(function (d) { planList.push(planDay(d, byDayX[d])); extraDays++; });
+    }
+    var nextFrom = (function () { var l = parseYmd(px ? px.to : (D.plansTo || ymd(now))); return new Date(l.getFullYear(), l.getMonth(), l.getDate() + 1); })();
+    var planFurther = {
+      can: !!D.plansTo && Number(D.api || 0) >= 19 && !(px && px.last),   /* その先を読むのは GAS 19 から */
+      show: false, busy: st.plansBusy ? 'true' : 'false',
+      label: st.plansBusy ? '読み込み中…' : (px ? 'さらに先の4週間を見る' : 'その先の4週間を見る') + '（' + (nextFrom.getMonth() + 1) + '/' + nextFrom.getDate() + '〜）',
+      note: px ? md(px.to) + 'まで読み込みました' + (extraDays || whoSel !== 'all' ? '' : '（その先の予定はありません）') : '', hasNote: !!px,
+      go: function () { self.loadPlansMore(); }
+    };
 
     var notesSorted = notesAll.slice().sort(function (a, b) { return (a.read === b.read) ? b.createdAt - a.createdAt : (a.read ? 1 : -1); });
     var myUnread = notesAll.filter(function (n) { return !n.read && n.to === meWho; });
@@ -2677,7 +2711,7 @@
       var soon = (D.deadlines || []).filter(function (x) { return !x.done && x.due && Math.round((parseYmd(x.due) - parseYmd(todayStr)) / 864e5) <= 3; }).length;
       var sum = tid === 'two' ? [turn ? 'あなたの番 ' + turn + '件' : 'あなたの番はありません', soon ? '3日以内の期限 ' + soon + '件' : '']
         : tid === 'food' ? ['今日：' + (todayMenu ? todayMenu.dish : (ui.noMenuDish || 'まだ決まっていません')), total ? '買い物 のこり' + (total - got) + '品' : '']
-        : tid === 'plan' ? [planTotal ? (planN >= 14 ? '2週間' : planN + '日') + 'の予定 ' + planTotal + '件' : (planN >= 14 ? '2週間' : planN + '日') + 'の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
+        : tid === 'plan' ? [planTotal ? planRangeLabel + 'の予定 ' + planTotal + '件' : planRangeLabel + 'の予定はまだありません', (ui.tripFrom && !tripNow && Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) > 0) ? '旅行まで あと' + Math.round((parseYmd(ui.tripFrom) - parseYmd(todayStr)) / 864e5) + '日' : '']
         : tid === 'news' ? ['いまのやることに関係するニュース', ''] : ['', ''];
       var isHomeTab = curTab === tabNames[0];
       var photoHero = isHomeTab && sections.some(function (x) { return x.key === 'photos' && x.vis; });
@@ -2784,7 +2818,9 @@
       lazy: lazy, goalChips: goalChips, news: news, newsCount: news.length, newsEmpty: news.length === 0,
       goalOn: goalId !== 'all', goalNext: curGoal.next || '', goalDue: curGoal.due || '',
       goalCardStyle: 'margin: 0 16px; padding: 12px 16px; border-radius: var(--r-card); background: var(--done-soft); display: flex; flex-direction: column; gap: 4px; animation: rise .35s cubic-bezier(.2,.8,.2,1) both',
-      planWeeks: planWeeks, planList: planList, plansEmpty: planTotal === 0, planTotal: planTotal, planRange: planN >= 14 ? '2週間' : planN + '日',
+      planWeeks: isHome && !(st.expanded && st.expanded.plan) ? planWeeks.slice(0, 2) : planWeeks,   /* ホームのカレンダーは2週間ぶん（広げたら全部） */
+      planList: planList, plansEmpty: planTotal === 0, planTotal: planTotal, planRange: planRangeLabel, planFurther: planFurther,
+      planGridAria: planRangeLabel + 'のカレンダー。日を押すと下の一覧のその日へ',
       planCardStyle: 'margin-top: 4px; background: var(--card); border-radius: var(--r-card); padding: 2px 16px 12px; display: flex; flex-direction: column',
       whoTabs: whoTabs, hero: hero, timeline: timeline, flow: flow, flowEmpty: flow.length === 0,
       prog: (function () {
@@ -2996,6 +3032,7 @@
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
     this.planMore = R.more.planList && R.more.planList.show && R.more.planList.label.indexOf('少なく') < 0 ? R.more.planList.go : null;
+    R.planFurther.show = R.planFurther.can && !this.planMore;   /* ホームでしぼっている間は出さない（広げてから） */
     /* 並びの帯：写真が見出しの時は写真の下に、それ以外は上に */
     R.orderBanner = Object.assign({}, R.orderBanner, { top: !!R.orderBanner.show && !R.hdr.inPhoto, inHero: !!R.orderBanner.show && !!R.hdr.inPhoto });
     R.notesTop = R.notesHere && !R.hdr.inPhoto; R.notesInHero = R.notesHere && !!R.hdr.inPhoto;   /* 申し送りの入口も写真の下へ */
@@ -3012,6 +3049,23 @@
   };
 
   /* カレンダーの日を押したら、下の一覧のその日へ。ホームでしぼっていたら広げる */
+  /* 予定の「その先の4週間」を読んで、一覧の下に足す（読むだけ。日が変わったら捨てる） */
+  App.prototype.loadPlansMore = function () {
+    var self = this, st = this.state, D = st.data || {};
+    if (st.plansBusy || !D.plansTo) return;
+    var px = st.plansExtra && st.plansExtra.base === D.plansTo ? st.plansExtra : null;
+    var l = parseYmd(px ? px.to : D.plansTo), from = ymd(new Date(l.getFullYear(), l.getMonth(), l.getDate() + 1));
+    USAGE.add('act:plan_further');
+    this.setState({ plansBusy: true });
+    api('plansMore', { from: from }).then(function (r) {
+      var cur = self.state.data || {};
+      if (cur.plansTo !== D.plansTo) { self.setState({ plansBusy: false, plansExtra: null }); return; }
+      self.setState({ plansBusy: false, plansExtra: { base: D.plansTo, to: r.to, last: !!r.last, items: (px ? px.items : []).concat(r.plans || []) } });
+    }).catch(function () {
+      self.setState({ plansBusy: false });
+      self.showToast('その先の予定を読み込めませんでした。少しして、もう一度押してください', null);
+    });
+  };
   App.prototype.planJump = function (day) {
     var self = this, go = function () { var el = document.getElementById('plan-d-' + day); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     USAGE.add('act:plan_day');
@@ -3057,7 +3111,7 @@
         R[k] = keep(list, [], n);
       }
       m.show = true;
-      m.label = k === 'planList' ? '2週間の予定をすべて見る（' + count + '日）' : 'すべて見る（全' + count + '件）';
+      m.label = k === 'planList' ? R.planRange + 'の予定をすべて見る（' + count + '日）' : 'すべて見る（全' + count + '件）';
       m.go = function () {
         USAGE.add('act:more_' + sec);
         if (here) { var e = Object.assign({}, self.state.expanded || {}); e[sec] = true; self.setState({ expanded: e }); return; }
@@ -3091,7 +3145,7 @@
         [12, '見本：焼きそば', false, '見本の献立です。', [['焼きそば麺', '3玉'], ['キャベツ', '1/4個']], '見本の作り方。']
       ];
       demoDB = {
-        me: { email: 'demo@example.com', who: 'とと' }, api: 18, today: ymd(t), swapsAhead: [{ date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), id: 'd1', who: 'まま', orig: 'とと' }],
+        me: { email: 'demo@example.com', who: 'とと' }, api: 19, today: ymd(t), swapsAhead: [{ date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), id: 'd1', who: 'まま', orig: 'とと' }],
         duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rel: i === 0 ? 90 : (i === 2 ? 0 : null) }; }),
         done: {}, checked: {},
         dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { var o = { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; if (o.id === 'd6') { o.priv = true; o.privAny = true; } return o; }),   /* d6 は「Museに出さない」の見本 */
@@ -3110,7 +3164,7 @@
           for (var i = 6; i <= 13; i++) out.push({ date: td(i), time: i === 6 ? '' : '', what: '家族旅行', who: '家族', key: 'trip', from: td(6), to: td(15) });
           for (var j = 0; j <= 3; j++) out.push({ date: td(j), time: j === 3 ? '〜10:30' : '', what: 'まるペットホテル', who: 'とと', key: 'hotel', from: td(-1), to: td(3) });
           return out;
-        })(), plansFrom: ymd(new Date()), plansTo: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 13)),
+        })(), plansFrom: ymd(new Date()), plansTo: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 27)),
         goals: [{ id: 'ai', label: 'AI・仕組み', next: '家族の道具をそろえる', due: '12月末' }],
         news: [{ id: 'w1', goals: ['ai'], src: 'Web', from: '見本', date: '', title: '見本のニュース', why: '見本モードです', body: '本番ではGASから読み込みます。', url: 'https://example.com' }],
         decisions: [{ id: 'q0', q: '見本：夏の旅行はどこにする？', options: ['見本：海', '見本：山'], due: '', state: '決まった', a1: '見本：海', a2: '見本：海', decided: '見本：海', note: '' },
@@ -3139,6 +3193,8 @@
       setTimeout(function () {
         var a = p.action;
         if (a === 'boot') return res({ ok: true, data: JSON.parse(JSON.stringify(db)) });
+        if (a === 'plansMore') { var f0 = parseYmd(p.from), xd = function (i) { return ymd(new Date(f0.getFullYear(), f0.getMonth(), f0.getDate() + i)); };
+          return res({ ok: true, from: p.from, to: xd(27), last: false, plans: [{ date: xd(2), time: '10:00', what: '見本：その先の予定', who: 'まま' }, { date: xd(5), time: '', what: '見本：帰省', who: '家族', key: 'home' + p.from, from: xd(5), to: xd(7) }, { date: xd(6), time: '', what: '見本：帰省', who: '家族', key: 'home' + p.from, from: xd(5), to: xd(7) }, { date: xd(7), time: '', what: '見本：帰省', who: '家族', key: 'home' + p.from, from: xd(5), to: xd(7) }] }); }
         if (a === 'photos') return res({ ok: true, photos: [] });
         if (a === 'photosBatch') return res({ ok: true, photos: {} });
         if (a === 'swapDuty') db.duties.forEach(function (x) { if (x.id !== p.id) return; if (p.take) { if (!x.orig) x.orig = x.who; x.who = 'とと'; if (x.orig === 'とと') x.orig = ''; } else if (x.orig) { x.who = x.orig; x.orig = ''; } });

@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 18;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 19;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -114,6 +114,7 @@ function doPost(e) {
     if (!me) return out({ ok: false, code: 'no_session' });
     switch (action) {
       case 'boot': return out({ ok: true, data: bootFor(req, me) });
+      case 'plansMore': return out(plansMore(req));   // 予定の「その先の4週間」。読むだけ
       case 'ver': return out({ ok: true, v: ver() });   // 変わったかだけ確かめる（軽い）。変わっていたら画面が boot で読み直す
       case 'photos': return out({ ok: true, photos: photoList() });
       case 'photosBatch': return out(photosBatch(req.ids));
@@ -456,7 +457,7 @@ function buildBoot(today) {
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
     today: today, duties: duties, dutiesAll: dutiesAll, swapsAhead: swapsAhead, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
     menu: menu, menuFrom: ymd(weekStart), menuTo: ymd(menuEnd), shopCats: shopCatsOf(shop), shopLastCat: shopLastCat(menu),
-    replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から2週間 */ goals: goals, news: news,
+    replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から4週間（PLAN_DAYS） */ goals: goals, news: news,
     photosReady: photoFolders().length > 0, photos: photoList(),
     people: ps.list.map(function (p) { return { name: p.name, ink: p.ink }; }), family: ps.family,
     ui: {
@@ -588,22 +589,47 @@ function shopLastCat(menu) {
   return res;
 }
 
-/* 予定：今日から PLAN_DAYS 日。何日も続く予定（終日・時刻つき）は、見える日ごとに1件ずつ出し、
+/* 予定：今日から PLAN_DAYS 日（その先は画面の「その先の4週間を見る」＝plansMore）。何日も続く予定（終日・時刻つき）は、見える日ごとに1件ずつ出し、
  * key（同じ予定の印）・from・to（最初と最後の日）を付ける。時刻は最初の日だけ、最後の日は「〜H:mm」 */
-var PLAN_DAYS = 14;
+var PLAN_DAYS = 28;   /* 4週間（妻の希望、2026-11-21）。その先は plansMore で4週間ずつ */
+var MUSE_PLAN_DAYS = 14;   /* Muse の list に出す予定は今日から2週間（画面を4週間にしても広げない） */
+var PLAN_MORE_MAX = 400;   /* plansMore で見られるのは今日からこの日数まで */
 var SWAP_AHEAD_DAYS = 8;   /* 画面は明日から7日先まで頼める（app.js の ASK_DAYS）。1日余裕を持たせる */
 var MENU_WEEKS = 2;   /* 献立を返す週の数（今週と来週） */
-function plansFor(rangeStart, rangeEnd, calendarId) {
+/* その先の予定：from（yyyy-mm-dd）から PLAN_DAYS 日ぶん。読むだけ。昨日より前（時差の分は通す）と、PLAN_MORE_MAX 日より先は断る。
+ * カレンダーが読めなかった時は「予定なし」にせず、エラーで返す（画面が「読み込めませんでした」と出す） */
+function plansMore(req) {
+  var from = /^\d{4}-\d{2}-\d{2}$/.test(req.from || '') ? String(req.from) : '';
+  if (!from) return { ok: false, code: 'bad_request' };
+  var t = parseYmd(ymd(new Date())), f = parseYmd(from);
+  var lo = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1), hi = new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_MORE_MAX);
+  if (isNaN(f.getTime()) || ymd(f) !== from || f < lo || f > hi) return { ok: false, code: 'bad_request' };
+  var end = new Date(f.getFullYear(), f.getMonth(), f.getDate() + PLAN_DAYS - 1);
+  if (end > hi) end = hi;
+  var plans;
+  try { plans = plansFor(f, end, settings()['カレンダーID'], true); } catch (err) { console.error(err); return { ok: false, code: 'calendar' }; }
+  return { ok: true, from: from, to: ymd(end), last: ymd(end) >= ymd(hi), plans: plans };
+}
+function plansFor(rangeStart, rangeEnd, calendarId, strict) {
   var from = ymd(rangeStart), to = ymd(rangeEnd);
   if (!calendarId) {
     return rowsOf('予定').filter(function (r) { var d = normDate(r['日付']); return d && d >= from && d <= to; })
       .map(function (r) { return { date: normDate(r['日付']), time: normTime(r['時刻']), what: text(r['内容']), who: whoOf(r['誰']) }; });
   }
   var end = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1);
-  var items;
+  var items = [];
   try {
-    items = Calendar.Events.list(calendarId, { timeMin: rangeStart.toISOString(), timeMax: end.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 250 }).items || [];
-  } catch (err) { console.error(err); return []; }
+    /* 1回250件まで。くり返しの予定が多い時に後ろの日が欠けないよう、続きを3ページまで取る */
+    var token = null;
+    for (var pg = 0; pg < 3; pg++) {
+      var opt = { timeMin: rangeStart.toISOString(), timeMax: end.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 250 };
+      if (token) opt.pageToken = token;
+      var resp = Calendar.Events.list(calendarId, opt);
+      items = items.concat(resp.items || []);
+      token = resp.nextPageToken;
+      if (!token) break;
+    }
+  } catch (err) { if (strict) throw err; console.error(err); return []; }
   var names = [];
   people().list.forEach(function (p) { names = names.concat(p.alias); });
   names.push('家族');
@@ -1507,7 +1533,7 @@ function museList(me) {
     shop: { week: D.shop.week, categories: (D.shop.groups || []).map(function (g) { return g.label; }), items: items },
     menu: (D.menu || []).map(function (m) { return { date: m.date, dish: m.dish, ingredients: m.ingredients.map(function (x) { return x[0] + (x[1] ? ' ' + x[1] : ''); }) }; }),
     duties: (D.dutiesAll || []).filter(function (d) { return !d.privAny && !d.priv; }).map(function (d) { return { task: d.task, time: d.t == null ? '' : Math.floor(d.t / 60) + ':' + pad(d.t % 60), who: d.who, repeat: d.date ? '' : d.rule, date: d.date || '' }; }),
-    plans: (D.plans || []).filter(function (p) { return p.date >= today; }),
+    plans: (function () { var t0 = parseYmd(today), lim = ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + MUSE_PLAN_DAYS - 1)); return (D.plans || []).filter(function (p) { return p.date >= today && p.date <= lim; }); })(),   /* 画面は4週間になったが、Muse に渡すのは今までどおり2週間 */
     deadlines: (D.deadlines || []).filter(function (x) { return !x.done; }).map(function (x) { return { what: x.what, due: x.due, who: x.who }; }),
     decisions: (D.decisions || []).filter(function (x) { return x.state !== '決まった'; }).map(function (x) { return { q: x.q, options: x.options, due: x.due }; }),
     outings: (D.outings || []).map(function (x) { return { name: x.name, date: x.date, place: x.place, state: x.state, go: x.go }; }),

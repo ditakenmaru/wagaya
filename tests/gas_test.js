@@ -211,7 +211,33 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   const P = b2.data.plans, trip = P.filter(p => p.key === 'trip'), hotel = P.filter(p => p.key === 'hotel');
   ok(trip.length === 3 && trip[0].date === today && trip[0].from === dd(-1) && trip[0].to === dd(2), '予定: 続く終日予定は見える日ごとに from/to 付き ' + JSON.stringify(trip.map(p => p.date)));
   ok(hotel.length === 3 && hotel[0].time === '10:40' && hotel[1].time === '' && hotel[2].time === '〜10:30', '予定: 何日も続く時刻つき ' + JSON.stringify(hotel.map(p => p.time)));
-  ok(b2.data.plansFrom === today && b2.data.plansTo === dd(13), '予定: 範囲は今日から2週間');
+  ok(b2.data.plansFrom === today && b2.data.plansTo === dd(27) && P.some(p => p.what === '遠い' && p.date === dd(20)), '予定: 範囲は今日から4週間');
+  {
+    const keep = env.calItems;
+    env.calItems = [{ id: 'later', summary: 'まま: その先の予定', start: { date: dd(30) }, end: { date: dd(31) } }, { id: 'tooEarly', summary: '範囲の前', start: { date: dd(5) }, end: { date: dd(6) } }];
+    const pm = post(env, { action: 'plansMore', session: S, from: dd(28) });
+    ok(pm.ok && pm.from === dd(28) && pm.to === dd(55) && pm.plans.length === 1 && pm.plans[0].what === 'その先の予定' && pm.plans[0].who === 'まま' && pm.plans[0].date === dd(30), '予定: その先の4週間（範囲の外は出さない） ' + JSON.stringify(pm).slice(0, 200));
+    ok(post(env, { action: 'plansMore', session: S, from: dd(-30) }).code === 'bad_request' && post(env, { action: 'plansMore', session: S, from: dd(500) }).code === 'bad_request' && post(env, { action: 'plansMore', session: S, from: 'x' }).code === 'bad_request' && post(env, { action: 'plansMore', session: S, from: '2027-02-31' }).code === 'bad_request', '予定: その先は、過ぎた日・遠すぎる日・変な日付を断る');
+    ok(post(env, { action: 'plansMore', session: 'nope', from: dd(28) }).code === 'no_session', '予定: その先はログインが要る');
+    ok(post(env, { action: 'plansMore', session: S, from: dd(-1) }).ok && post(env, { action: 'plansMore', session: S, from: dd(-2) }).code === 'bad_request' && post(env, { action: 'plansMore', session: S, from: dd(400) }).ok && post(env, { action: 'plansMore', session: S, from: dd(401) }).code === 'bad_request', '予定: その先の境目（昨日は可・おととい不可・400日は可・401日不可）');
+    // 範囲の頭をまたぐ続く予定：見える日だけ出し、from は元の日
+    env.calItems = [{ id: 'cross', summary: '帰省', start: { date: dd(26) }, end: { date: dd(31) } }];
+    const pmC = post(env, { action: 'plansMore', session: S, from: dd(28) });
+    ok(pmC.ok && pmC.plans.length === 3 && pmC.plans[0].date === dd(28) && pmC.plans[0].from === dd(26) && pmC.plans[0].to === dd(30) && pmC.plans[0].key === 'cross', '予定: その先の頭をまたぐ続く予定 ' + JSON.stringify(pmC.plans.map(p => p.date)));
+    // カレンダーが読めない時は「予定なし」にせずエラー
+    const realList = env.Calendar.Events.list;
+    env.Calendar.Events.list = () => { throw new Error('calendar down'); };
+    ok(post(env, { action: 'plansMore', session: S, from: dd(28) }).code === 'calendar', '予定: その先はカレンダーが読めない時エラーで返す');
+    // 続きのページも取る
+    let calls = 0;
+    env.Calendar.Events.list = (id, opt) => { calls++; return opt.pageToken ? { items: [{ id: 'p2', summary: '2ページ目', start: { date: dd(40) }, end: { date: dd(41) } }] } : { items: [{ id: 'p1', summary: '1ページ目', start: { date: dd(29) }, end: { date: dd(30) } }], nextPageToken: 'x' }; };
+    const pmP = post(env, { action: 'plansMore', session: S, from: dd(28) });
+    ok(pmP.ok && calls === 2 && pmP.plans.map(p => p.what).join() === '1ページ目,2ページ目', '予定: 250件を超える分は続きのページも取る');
+    env.Calendar.Events.list = realList;
+    const pmEnd = post(env, { action: 'plansMore', session: S, from: dd(390) });
+    ok(pmEnd.ok && pmEnd.last === true && pmEnd.to === dd(400), '予定: その先は400日まで（最後は last）');
+    env.calItems = keep;
+  }
   const setSh = env.ss.getSheetByName('設定'); const alRow = setSh.data.find(r => r[0] === '人1の別名'); if (alRow) alRow[1] = 'XA, ケンB'; else setSh.data.push(['人1の別名', 'XA, ケンB', '']);
   env.calItems = [{ summary: 'XA: 病院', start: { dateTime: at(0, 9) } }, { summary: 'XB：美容院', start: { dateTime: at(0, 10) } }];
   env.onEdit();
@@ -354,7 +380,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 18 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 19 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -532,6 +558,16 @@ ok(b3.api === 18 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(KK && KK !== KM && post(env, { action: 'muse', key: KK, op: 'undo', id: dy2.id }).code === 'not_found', 'Muse: 別の人の鍵では日記を取り消せない');
   env.promptAnswer = 'まま';
   ok(mpost({ op: 'undo', id: dy2.id }).ok && !env.ss.getSheetByName('日記').data.some(r => r.join('|').includes('消す日記')) && env.ss.getSheetByName('日記').data.some(r => r.join('|').includes('靴をはいた')) && !post(env, { action: 'boot', session: S, today }).data.diary.some(x => x.id === dy2.id), 'Muse: 日記の取り消し（ほかの日記は残り、アプリからも消える）');
+  {
+    // 画面の予定は4週間になったが、Muse の一覧は今までどおり今日から2週間
+    const keepCal = env.calItems; const t0 = new Date(today + 'T00:00:00+09:00'); const dOf = i => new Date(t0.getTime() + i * 864e5 + 9 * 36e5).toISOString().slice(0, 10);
+    env.calItems = [{ id: 'near', summary: '近い予定', start: { date: dOf(10) }, end: { date: dOf(11) } }, { id: 'far2', summary: '3週間先の予定', start: { date: dOf(20) }, end: { date: dOf(21) } }];
+    const calRow = env.ss.getSheetByName('設定').data.find(r => r[0] === 'カレンダーID'), calWas = calRow[1]; calRow[1] = 'cal';
+    env.onEdit();
+    const Lp = mpost({ op: 'list' }), bp = post(env, { action: 'boot', session: S, today, fresh: true }).data;
+    ok(Lp.plans.some(p => p.what === '近い予定') && !Lp.plans.some(p => p.what === '3週間先の予定') && bp.plans.some(p => p.what === '3週間先の予定'), 'Muse: 予定は今日から2週間まで（画面は4週間） ' + JSON.stringify(Lp.plans.map(p => p.what)));
+    env.calItems = keepCal; calRow[1] = calWas; env.onEdit();
+  }
   const L = mpost({ op: 'list' });
   ok(L.ok && L.me === 'まま' && L.shop.items.some(x => x.name === '豆腐') && L.menu.some(x => x.dish === 'カレー') && !('diary' in L) && !JSON.stringify(L).includes('靴') && !('photos' in L) && !JSON.stringify(L).includes('@example.com'), 'Muse: 一覧（日記・写真・メールは出さない）');
   const tofuId = env.ss.getSheetByName('Museの記録').data.find(r => r.includes('豆腐'))[4];
@@ -618,7 +654,7 @@ ok(b3.api === 18 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 18 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 19 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';

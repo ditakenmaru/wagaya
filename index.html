@@ -871,7 +871,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <h2 id="sec-plan" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{title.plan}}</h2>
       <span style="font-size: var(--t-cap); color: var(--label2)">{{planRange}} {{planTotal}}件</span>
     </div>
-    <div role="group" aria-label="2週間のカレンダー。日を押すと下の一覧のその日へ" style="display: flex; flex-direction: column; gap: 8px">
+    <div role="group" aria-label="{{planGridAria}}" style="display: flex; flex-direction: column; gap: 8px">
       <sc-for list="{{planWeeks}}" as="pw" hint-placeholder-count="2">
         <div style="{{pw.gridStyle}}">
           <sc-for list="{{pw.cells}}" as="pc" hint-placeholder-count="7">
@@ -911,6 +911,10 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     </div>
     <sc-if value="{{more.planList.show}}" hint-placeholder-val="{{ false }}">
       <button type="button" onClick="{{more.planList.go}}" style="{{more.planList.style}}">{{more.planList.label}}</button>
+    </sc-if>
+    <sc-if value="{{planFurther.show}}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{planFurther.hasNote}}" hint-placeholder-val="{{ false }}"><p role="status" style="margin: 8px 4px 0; font-size: var(--t-cap); color: var(--label2)">{{planFurther.note}}</p></sc-if>
+      <button type="button" aria-busy="{{planFurther.busy}}" onClick="{{planFurther.go}}" class="btn-link" style="align-self: flex-start; min-height: 44px; padding: 0 4px; font-size: var(--t-sub)">{{planFurther.label}}</button>
     </sc-if>
   </section>
   </sc-if>
@@ -1391,7 +1395,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=77"></script>
-<script src="app.js?v=77"></script>
+<script src="config.js?v=78"></script>
+<script src="app.js?v=78"></script>
 </body>
 </html>
