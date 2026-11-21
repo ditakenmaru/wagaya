@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '67';
+  var APP_VERSION = '68';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1842,9 +1842,9 @@
         noteCount: tnotes.filter(function (n) { return !n.read; }).length,
         noteLabel: '「' + d.task + '」の申し送りを書く',
         openNote: function () { self.openNoteFor(d.task, d.id, 'handover', d.who); },
-        noteBtnStyle: 'position: relative; width: 50px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: var(--r-btn); border: none; background: transparent; color: var(--label2); display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; cursor: pointer',
+        noteBtnStyle: 'position: relative; width: 44px; min-height: 52px; margin-right: 4px; flex-shrink: 0; border-radius: var(--r-btn); border: none; background: transparent; color: var(--label3); display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; cursor: pointer',
         markStyle: 'width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; transition: background .2s; border: 2px solid ' + inkText(c.ink) + '; background: ' + (isDone ? inkText(c.ink) : 'transparent'),
-        taskStyle: 'display: inline; font-size: var(--t-body); font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: var(--label2)' : '0% 1.5px'),
+        taskStyle: 'display: inline; font-size: var(--t-body); font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 55%; transition: background-size .35s cubic-bezier(.2,.8,.2,1), color .3s; background-size: ' + (isDone ? '100% 1.5px; color: var(--label2)' : '0% 1.5px'),
         badgeStyle: self.badge(d.who),
         whoLabel: d.who, swapped: !!d.orig, swapNote: '',
         whoAria: '担当：' + d.who + (d.orig ? '（今日の担当。いつもは' + d.orig + '）' : '') + '。押すと担当を替えられます',
@@ -1973,7 +1973,7 @@
     var moreOf = function (kind, id) {
       var n = rCount[kind + ':' + id] || 0;
       return { label: n ? '詳細を見る（コメント' + n + '件）' : '詳細を見る', go: function () { self.openDetail(kind, id); },
-        style: 'align-self: flex-start; min-height: 44px; padding: 0 12px; border-radius: var(--r-btn); border: none; background: ' + (n ? 'var(--accent-soft)' : 'var(--fill)') + '; color: ' + (n ? 'var(--accent)' : 'var(--label)') + '; font-size: var(--t-foot); font-weight: 700; cursor: pointer' };
+        style: 'align-self: flex-start; min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer' };   /* ボタンではなく文字のリンク（デザインの見直し） */
     };
     var arch = D.topicsArchived || [];
     var linksArchive = {
@@ -2621,7 +2621,8 @@
       navTabs: navTabs, navStyle: 'grid-template-columns: repeat(' + Math.max(1, navTabs.length) + ', minmax(0, 1fr))',
       notesHere: notesHere,
       notesCardText: myUnread.length || newReplies.length ? [myUnread.length ? 'あなた宛てが ' + myUnread.length + '件' : '', newReplies.length ? '新しい返信が ' + newReplies.length + '件' : ''].filter(String).join('、') + 'あります' : (unreadAll.length ? '未確認が ' + unreadAll.length + '件（相手の確認待ち）' : '未確認はありません'),
-      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: var(--r-card); text-align: left; cursor: pointer; color: var(--label); border: ' + (myUnread.length || newReplies.length ? '2px solid var(--attn)' : '2px solid transparent') + '; background: var(--card)',
+      notesCardStyle: 'display: flex; align-items: center; gap: 12px; width: calc(100% - 32px); margin: 0 16px 16px; box-sizing: border-box; min-height: 64px; padding: 12px 16px; border-radius: var(--r-card); text-align: left; cursor: pointer; color: var(--label); border: none; background: var(--card)',
+      notesIconColor: myUnread.length || newReplies.length ? 'var(--attn)' : 'var(--label3)',   /* 注意の色は枠ではなくアイコンで */
       travelText: travel ? '旅行中なので、旅行に関係するところだけ出しています（' + (function (t) { var x = parseYmd(t); return (x.getMonth() + 1) + '/' + x.getDate(); })(ui.tripTo) + 'まで）' : '',
       decisions: decisions, decisionsEmpty: decisions.length === 0, decArchive: decArchive, addDecision: function () { self.openDecision(null); },
       deadlines: deadlines, deadlinesEmpty: deadlines.length === 0, addDeadline: function () { self.openDeadline(null); },
