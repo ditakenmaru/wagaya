@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '70';
+  var APP_VERSION = '71';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2025,7 +2025,7 @@
         : !other ? otherName + 'の答え待ち'
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
-      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: var(--t-body); font-weight: 700; line-height: 1.45'), noteStyle: clamp(5, 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: var(--t-body); font-weight: 700; line-height: 1.45'), noteStyle: clamp(2, 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
         comments: (function () {
           var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
           var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); });
@@ -2040,6 +2040,13 @@
         })(),
         toggleAll: function () { var m = Object.assign({}, self.state.decAllOpen || {}); if (m[x.id]) delete m[x.id]; else m[x.id] = true; self.setState({ decAllOpen: m }); },
         commentOpen: st.decCommentId === x.id, commentLabel: st.decCommentId === x.id ? 'やめる' : 'コメントする',
+        /* コメントはふだん畳んでおく（カードを短く）。「コメント N件 ⌄」で開く。書いている間は開いたまま */
+        threadOpen: !!((st.decThreadOpen || {})[x.id] || st.decCommentId === x.id),
+        hasThread: (D.replies || []).some(function (r) { return r.target === 'decide:' + x.id; }),
+        threadLabel: (function () { var n = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).length; return ((st.decThreadOpen || {})[x.id] || st.decCommentId === x.id) ? 'コメントを閉じる ⌃' : 'コメント ' + n + '件 ⌄'; })(),
+        threadExpanded: ((st.decThreadOpen || {})[x.id] || st.decCommentId === x.id) ? 'true' : 'false',
+        showCommentBtn: !(D.replies || []).some(function (r) { return r.target === 'decide:' + x.id; }) || !!((st.decThreadOpen || {})[x.id] || st.decCommentId === x.id),   /* コメントがある時は、開いてから書く */
+        toggleThread: function () { var m = Object.assign({}, self.state.decThreadOpen || {}); if (m[x.id] || self.state.decCommentId === x.id) { delete m[x.id]; self.setState({ decThreadOpen: m, decCommentId: self.state.decCommentId === x.id ? null : self.state.decCommentId }); } else { m[x.id] = true; self.setState({ decThreadOpen: m }); } },
         commentExpanded: st.decCommentId === x.id ? 'true' : 'false',
         replyToLabel: st.decCommentId === x.id && st.decReplyTo ? st.decReplyTo.who + 'のコメントへの返信' : '',
         cancelReplyTo: function () { self.setState({ decReplyTo: null }); },
@@ -2047,7 +2054,7 @@
         sendComment: function () {
           var text = String(self.state.decCommentDraft || '').trim();
           if (!text) { self.showToast('コメントを入力してください', null); return; }
-          if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null }); }
+          if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); var m = Object.assign({}, self.state.decThreadOpen || {}); m[x.id] = true; self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null, decThreadOpen: m }); }   /* 書いた後は開いたまま（自分のコメントが見える） */
         },
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },

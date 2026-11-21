@@ -538,6 +538,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="font-size: var(--t-sub); font-weight: 700; color: var(--done)">決まった：{{dc.decidedText}}</span><button type="button" onClick="{{dc.reopen}}" class="btn btn-gray" style="min-height: 44px; padding: 0 16px; font-size: var(--t-foot)">相談に戻す</button></div>
         </sc-if>
         <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--sep)">
+          <sc-if value="{{dc.threadOpen}}" hint-placeholder-val="{{ false }}">
           <sc-if value="{{dc.moreComments}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{dc.toggleAll}}" class="btn-link" style="align-self: flex-start; min-height: 44px; padding: 0 4px; font-size: var(--t-foot)">{{dc.moreComments}}</button></sc-if>
           <sc-for list="{{dc.comments}}" as="cm" hint-placeholder-count="0">
             <div style="display: flex; flex-direction: column; gap: 8px">
@@ -562,6 +563,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
               </sc-for>
             </div>
           </sc-for>
+          </sc-if>
           <sc-if value="{{dc.commentOpen}}" hint-placeholder-val="{{ false }}">
             <sc-if value="{{dc.replyToLabel}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; font-size: var(--t-cap); font-weight: 700; color: var(--label2)"><span>{{dc.replyToLabel}}</span><button type="button" onClick="{{dc.cancelReplyTo}}" aria-label="返信をやめてコメントにする" style="min-height: 44px; padding: 0 8px; border: none; background: transparent; color: var(--label2); font-size: var(--t-cap); cursor: pointer">返信をやめる</button></div></sc-if>
             <textarea id="dec-comment-input" aria-label="コメント" rows="2" value="{{decCommentDraft}}" onInput="{{setDecCommentDraft}}" placeholder="理由や気になることを書く" class="field" style="flex-shrink: 0; min-height: 76px; box-sizing: border-box; width: 100%; padding: 12px 12px; line-height: 1.6; resize: vertical"></textarea>
@@ -569,7 +571,8 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
           </sc-if>
           <!-- 操作はカードの一番下の1行に（文字のボタン。答える所と分ける） -->
           <div class="dacts" style="display: flex; flex-wrap: wrap; column-gap: 16px">
-            <button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.commentLabel}}</button>
+            <sc-if value="{{dc.hasThread}}" hint-placeholder-val="{{ false }}"><button type="button" aria-expanded="{{dc.threadExpanded}}" onClick="{{dc.toggleThread}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.threadLabel}}</button></sc-if>
+<sc-if value="{{dc.showCommentBtn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.commentLabel}}</button></sc-if>
             <button type="button" onClick="{{dc.more.go}}" style="{{dc.more.style}}">{{dc.more.label}}</button>
             <button type="button" data-muse="1" onClick="{{dc.muse}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">Museに相談</button>
           </div>
@@ -1386,7 +1389,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=70"></script>
-<script src="app.js?v=70"></script>
+<script src="config.js?v=71"></script>
+<script src="app.js?v=71"></script>
 </body>
 </html>
