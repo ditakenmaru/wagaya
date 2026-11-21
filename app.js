@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '69';
+  var APP_VERSION = '70';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2051,7 +2051,9 @@
         },
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
-        cardStyle: 'display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); background: ' + (decided ? 'var(--card2)' : 'var(--card)') };
+        /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
+        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); box-shadow: 0 6px 18px rgba(0,0,0,.08); background: ' + (decided ? 'var(--card2)' : 'var(--card)'),
+        headStyle: 'display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; align-items: flex-start; margin: 0 -16px 4px; padding: 16px; min-height: 76px; box-sizing: border-box; color: #FFFFFF; background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(x.id || x.q, TOPIC_TONES.length)].join(', ') + ')' };
     });
 
     /* 決まった相談はアーカイブへ。一覧には決まっていないものだけ出し、下の「決まったこと」で広げる（新しく決まった順＝シートの下から） */
@@ -2938,7 +2940,7 @@
 
   /* ホームでは長い一覧を数件にしぼり、「すべて見る」を付ける。
      そのセクションの居場所が別のタブならそのタブへ、ホームの中ならその場で広げる */
-  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 10], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5], planList: ['plan', 3] };
+  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 10], deadlines: ['deadline', 4], topics: ['topics', 10], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5], planList: ['plan', 3] };
   App.prototype.homeMore = function (R, isHome, secTab, curTab, flowAll) {
     var self = this, st = this.state, more = {};
     Object.keys(HOME_LIMIT).forEach(function (k) {

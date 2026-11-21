@@ -62,7 +62,7 @@ body{overscroll-behavior-y:none;font-family:var(--font)}
 a{color:var(--accent)}
 button,input,textarea,select{font-family:inherit}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.strip::-webkit-scrollbar{display:none}.dlrow:last-of-type{border-bottom:0!important}.tcard span{color:inherit!important}.tcard span[style*='--accent'],.tcard span[style*='--label2']{opacity:.85}.tcard>button,.tcard a{background:rgba(255,255,255,.22)!important;color:#FFFFFF!important}.tcard .btn{background:rgba(255,255,255,.22)!important;color:#FFFFFF!important}
+.strip::-webkit-scrollbar{display:none}.dhead span,.dhead button{color:#FFFFFF!important}.dcard .dacts button{font-size:var(--t-foot)!important}.dlrow:last-of-type{border-bottom:0!important}.tcard span{color:inherit!important}.tcard span[style*='--accent'],.tcard span[style*='--label2']{opacity:.85}.tcard>button,.tcard a{background:rgba(255,255,255,.22)!important;color:#FFFFFF!important}.tcard .btn{background:rgba(255,255,255,.22)!important;color:#FFFFFF!important}
 
 /* ===== 部品 ===== */
 .btn{border:none;border-radius:var(--r-btn);font-weight:600;cursor:pointer;color:var(--label);background:var(--fill)}
@@ -517,9 +517,10 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <h2 id="sec-decide" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{title.decide}}</h2>
       <button type="button" onClick="{{addDecision}}" aria-label="相談を足す" class="btn btn-tint" style="min-height: 44px; padding: 0 16px; font-size: var(--t-foot)">＋ 相談</button>
     </div>
+    <div class="strip" role="list" aria-label="{{title.decide}}（横にスライド）" style="display: flex; align-items: flex-start; gap: 12px; overflow-x: auto; margin: 0 -16px; padding: 4px 16px 12px; scroll-snap-type: x mandatory; scroll-padding-left: 16px; overscroll-behavior-x: contain; scrollbar-width: none">
     <sc-for list="{{decisions}}" as="dc" hint-placeholder-count="1">
-      <article style="{{dc.cardStyle}}">
-        <div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start">
+      <article role="listitem" class="dcard" style="{{dc.cardStyle}}">
+        <div class="dhead" style="{{dc.headStyle}}">
           <button type="button" onClick="{{dc.edit}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; color: inherit; cursor: pointer"><span style="{{dc.qStyle}}">{{dc.q}}</span></button><sc-if value="{{dc.isNew}}" hint-placeholder-val="{{ false }}"><span data-new="1" style="flex-shrink: 0; align-self: center; padding: 2px 8px; border-radius: var(--r-chip); background: var(--attn); color: var(--label); font-size: var(--t-cap); font-weight: 700; animation: pop .4s ease-out">新着</span></sc-if>
           <sc-if value="{{dc.hasDue}}" hint-placeholder-val="{{ true }}"><span style="flex-shrink: 0; font-size: var(--t-cap); font-weight: 700; color: var(--attn-ink)">{{dc.due}}まで</span></sc-if>
         </div>
@@ -567,7 +568,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
             <button type="button" onClick="{{dc.sendComment}}" class="btn btn-fill" style="min-height: 44px; font-size: var(--t-sub)">送信</button>
           </sc-if>
           <!-- 操作はカードの一番下の1行に（文字のボタン。答える所と分ける） -->
-          <div style="display: flex; flex-wrap: wrap; column-gap: 20px">
+          <div class="dacts" style="display: flex; flex-wrap: wrap; column-gap: 16px">
             <button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.commentLabel}}</button>
             <button type="button" onClick="{{dc.more.go}}" style="{{dc.more.style}}">{{dc.more.label}}</button>
             <button type="button" data-muse="1" onClick="{{dc.muse}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">Museに相談</button>
@@ -575,6 +576,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
         </div>
       </article>
     </sc-for>
+    </div>
     <sc-if value="{{decisionsEmpty}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 0 4px; font-size: var(--t-sub); color: var(--label2); line-height: 1.6">いま相談していることはありません。「＋ 相談」から、選択肢をつけて聞けます。</p></sc-if>
     <sc-if value="{{more.decisions.show}}" hint-placeholder-val="{{ false }}">
       <button type="button" onClick="{{more.decisions.go}}" style="{{more.decisions.style}}">{{more.decisions.label}}</button>
@@ -1384,7 +1386,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=69"></script>
-<script src="app.js?v=69"></script>
+<script src="config.js?v=70"></script>
+<script src="app.js?v=70"></script>
 </body>
 </html>
