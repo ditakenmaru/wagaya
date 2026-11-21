@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '68';
+  var APP_VERSION = '69';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
