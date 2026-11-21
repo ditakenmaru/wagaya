@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '62';
+  var APP_VERSION = '63';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2458,21 +2458,33 @@
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     this.secTabMap = secTab;
     /* 右上のメニューの「移動」：タブごとに、いま見えるセクションを並べる（写真・見出しは除く）。押すとそのタブのそのセクションへ */
-    var goNotes = function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec('notes'); }, 60); };
-    var navGroups = tabNames.map(function (t) {
-      var seq = TAB_SEQ[TAB_ID[t]] || [];
+    /* 右上のメニューの「移動」：いま見えるセクション（写真・見出しは除く）をアイコン付きのタイルで2列に。下の小さな字は、どのタブか */
+    var NAV_ICON = {
+      flow: 'M5 12.5l4 4 10-10', diary: 'M4 20h4L19 9l-4-4L4 16v4z', notes: 'M3 6h18v12H3zM3 6l9 7 9-7',
+      decide: 'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.4M12 16.8v.2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', deadline: 'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
+      week: 'M4 11h16a8 8 0 0 1-16 0zM9 7c0-1 1-1.5 1-2.5M14 7c0-1 1-1.5 1-2.5', shop: 'M3 4h2l2.5 11h10L20 7H6.5M9 20h.01M17 20h.01',
+      plan: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4', weekend: 'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+      topics: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', news: 'M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7M7 16h4'
+    };
+    var navGo = function (key) { return function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec(key); }, 60); }; };
+    var myNotes = (D.notes || []).filter(function (n) { return n.to === meWho && !n.read; }).length;
+    var navTiles = [];
+    tabNames.forEach(function (t) {
+      var seq = TAB_SEQ[TAB_ID[t]] || [], tl = TAB_LABEL[t] || t, here = t === curTab;
       var secs = shown.filter(function (x) { return x.vis && tabOf(x.c) === t && x.c.key !== 'photos' && x.c.key !== 'hero'; })
         .sort(function (a, b) { var ia = seq.indexOf(a.c.key), ib = seq.indexOf(b.c.key); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
-      var items = secs.map(function (x) {
-        var key = x.c.key;
-        return { label: title[key] || x.c.title || key, go: function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec(key); }, 60); } };
+      var keys = secs.map(function (x) { return x.c.key; });
+      if (TAB_ID[t] === 'two') keys.unshift('notes');
+      keys.forEach(function (key) {
+        var name = key === 'notes' ? '申し送り' : (title[key] || key);
+        navTiles.push({ key: key, label: name, sub: tl + (here ? '・いまここ' : ''), icon: NAV_ICON[key] || 'M12 11.5h.01', badge: key === 'notes' ? myNotes : 0, hasBadge: key === 'notes' && myNotes > 0,
+          aria: name + '（' + tl + '）' + (key === 'notes' && myNotes ? '、未確認 ' + myNotes + '件' : ''), go: navGo(key),
+          style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 12px; border-radius: var(--r-card); border: ' + (here ? '1.5px solid var(--accent)' : '1.5px solid transparent') + '; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
       });
-      if (TAB_ID[t] === 'two') items.unshift({ label: '申し送り', go: goNotes });
-      var here = t === curTab;
-      return { label: (TAB_LABEL[t] || t) + (here ? '（いまここ）' : ''), items: items, hasItems: items.length > 0, current: here ? 'true' : 'false' };
-    }).filter(function (g) { return g.hasItems; });
+    });
     /* 申し送りは、相談・期限が見えないタブ構成でも行けるように */
-    if (!navGroups.some(function (g) { return g.items.some(function (it) { return it.go === goNotes; }); })) navGroups.push({ label: '相談・連絡', items: [{ label: '申し送り', go: goNotes }], hasItems: true, current: 'false' });
+    if (!navTiles.some(function (x) { return x.key === 'notes'; })) navTiles.unshift({ key: 'notes', label: '申し送り', sub: '相談・連絡', icon: NAV_ICON.notes, badge: myNotes, hasBadge: myNotes > 0, aria: '申し送り', go: navGo('notes'),
+      style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 12px; border-radius: var(--r-card); border: 1.5px solid transparent; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
     var rankOf = {};
@@ -2849,7 +2861,7 @@
       accountAria: 'メニュー（' + syncLabel + '。アカウント・通知・更新）',
       syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: var(--r-chip); border: none; font-size: var(--t-cap); font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: var(--danger-soft); color: var(--danger)' : 'background: var(--fill); color: var(--label)'),
       openAccount: function () { self.setState({ accountOpen: true }); },
-      navGroups: navGroups,
+      navTiles: navTiles,
       push: (function () {
         var ps = self.pushState(), q = (D.ui && D.ui.quiet) || '';
         var what = '自分宛ての申し送り（「代わってほしい」も）、相手からの返信・コメント、相談が足された・答えられた時に届きます。自分で書いた物では鳴りません。' + (q ? q + 'の分は、明けてからまとめて届きます。' : '');

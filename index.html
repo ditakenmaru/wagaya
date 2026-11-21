@@ -1128,12 +1128,14 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--line)"></div>
     <nav aria-labelledby="nav-title" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line)">
       <h2 id="nav-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">移動</h2>
-      <sc-for list="{{navGroups}}" as="g" hint-placeholder-count="3">
-        <div role="group" aria-label="{{g.label}}" aria-current="{{g.current}}" style="display: flex; flex-direction: column; gap: 4px">
-          <span class="lbl" aria-hidden="true">{{g.label}}</span>
-          <div class="navrow" style="display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch"><sc-for list="{{g.items}}" as="it" hint-placeholder-count="2"><button type="button" onClick="{{it.go}}" class="btn btn-tint" style="flex-shrink: 0; white-space: nowrap; min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">{{it.label}}</button></sc-for></div>
-        </div>
-      </sc-for>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+        <sc-for list="{{navTiles}}" as="it" hint-placeholder-count="6"><button type="button" onClick="{{it.go}}" aria-label="{{it.aria}}" style="{{it.style}}">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{it.icon}}"></path></svg>
+          <span style="font-size: var(--t-sub); font-weight: 600; line-height: 1.35">{{it.label}}</span>
+          <span style="font-size: var(--t-cap); color: var(--label2)">{{it.sub}}</span>
+          <sc-if value="{{it.hasBadge}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="position: absolute; top: 10px; right: 10px; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: var(--danger); color: #FFFFFF; font-size: var(--t-cap); font-weight: 700; line-height: 20px; text-align: center">{{it.badge}}</span></sc-if>
+        </button></sc-for>
+      </div>
     </nav>
     <h2 id="acct-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{meLabel}}</h2>
     <p style="margin: 0; font-size: var(--t-sub); color: var(--label2); line-height: 1.7">{{meEmail}}</p>
@@ -1380,7 +1382,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=62"></script>
-<script src="app.js?v=62"></script>
+<script src="config.js?v=63"></script>
+<script src="app.js?v=63"></script>
 </body>
 </html>
