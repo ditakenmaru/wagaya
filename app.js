@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '66';
+  var APP_VERSION = '67';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -276,6 +276,9 @@
     c = c || {};
     return ['写真：' + (c.artist || '作者不明'), c.license || '', 'Wikimedia Commons'].filter(function (x) { return x; }).join(' / ');
   }
+  /* 話題のカードの色（Apple の色をもとに、白い文字が読める濃さ） */
+  var TOPIC_TONES = [['#0A6CDA', '#5E5CE6'], ['#E8590C', '#F08C00'], ['#0B8A7A', '#2F9E44'], ['#7048E8', '#AE3EC9'], ['#C2255C', '#E8590C'], ['#1D1D1F', '#495057']];
+  function hashIdx(str, n) { var h = 0; str = String(str || ''); for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return Math.abs(h) % n; }
   function pexels(id, w) { return 'https://images.pexels.com/photos/' + id + '/pexels-photo-' + id + '.jpeg?auto=compress&cs=tinysrgb&w=' + (w || 900); }
   var MOOD = [5728162, 4262172, 29144275, 6646360];
 
@@ -1987,9 +1990,10 @@
       return { isNew: !!marks['topics:' + t.id], title: t.title, note: t.note, more: moreOf('topics', t.id), titleStyle: clamp(2, 'font-size: var(--t-body); font-weight: 700; line-height: 1.4'), noteStyle: clamp(5, 'font-size: var(--t-foot); color: var(--label); line-height: 1.6'), url: t.url, hasUrl: !!t.url, date: t.date || '', editing: !!st.topicEdit, open: function () { self.openTopic(t); },
         archive: function () { self.archiveTopic(t, true); },
         high: !!t.high, highLabel: t.high ? '優先度 高' : '優先度を高く', highPressed: t.high ? 'true' : 'false', toggleHigh: function () { self.toggleTopicHigh(t); },
-        highBtnStyle: 'flex-shrink: 0; min-height: 32px; padding: 0 10px; border-radius: var(--r-chip); border: none; cursor: pointer; font-size: var(--t-cap); font-weight: 700; ' + (t.high ? 'background: var(--attn); color: #FFFFFF' : 'background: var(--fill); color: var(--label2)'),
+        highBtnStyle: 'flex-shrink: 0; min-height: 32px; padding: 0 10px; border-radius: var(--r-chip); border: none; cursor: pointer; font-size: var(--t-cap); font-weight: 700; ' + (t.high ? 'background: #FFFFFF; color: #1D1D1F' : 'background: rgba(255,255,255,.22); color: #FFFFFF'),
         /* Apple Store・Amazon のような横スライドのカード：幅をそろえて次のカードを少し見せ、1枚ずつ止まる */
-        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; min-height: 176px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--r-card); box-shadow: 0 2px 12px rgba(0,0,0,.06); ' + (t.high ? 'background: var(--attn-soft); box-shadow: inset 0 0 0 2px var(--attn), 0 2px 12px rgba(0,0,0,.06)' : 'background: var(--card)'),
+        /* カードごとに色（Apple Store・Amazon のカルーセル風）。色は話題ごとに決まる（id から）。文字は白 */
+        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; min-height: 176px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--r-card); color: #FFFFFF; box-shadow: 0 6px 18px rgba(0,0,0,.12); background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(t.id || t.title, TOPIC_TONES.length)].join(', ') + ')',
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
