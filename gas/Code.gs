@@ -1367,8 +1367,8 @@ function addFeedback(f, me) {
 /* ================= Muse（AIの手伝い）からの書き込み =================
  * 入口は doPost の action:'muse'。ログインの代わりに「鍵」で入る（鍵はメニュー「Muse用の鍵を作る」で人ごとに作り、
  * シートにはハッシュだけ残す。止める時は「_keys」の状態を「止める」に）。
- * できること：一覧を見る（list）と、足すこと（買い物・献立・担当・申し送り・要望・話題・相談・期限・お出かけ）、
- * 自分の鍵で足したものを24時間以内に取り消すこと（undo）。日記・写真・設定は読めない・書けない。
+ * できること：一覧を見る（list）と、足すこと（買い物・献立・担当・申し送り・日記・要望・話題・相談・期限・お出かけ）、
+ * 自分の鍵で足したものを24時間以内に取り消すこと（undo）。日記は書くだけ（読めない）。写真・設定は読めない・書けない。
  * 書いたものは「Museの記録」に1行ずつ残す。 */
 
 var MUSE_LOG = 'Museの記録';
@@ -1547,6 +1547,7 @@ var MUSE_HELP = {
   'menu.add': 'servings?(何人分), date?(yyyy-mm-dd。省くと今日から7日で献立が空いている最初の日), dish, ingredients:[{name, qty?}], how?, note?, url?(https), hotcook?(true/false), toShop?(true＝材料のうちリストに無い物を買い物に足す), replace?(true＝その日の献立を置きかえる)',
   'duty.add': 'task, time?(H:mm), who?(呼び名・家族。省くと自分), date?(その日だけ) か repeat?(毎日・平日・土日・月水金 など。省くと毎日)',
   'note.add': 'text, to?(省くと相手) 相手への申し送り',
+  'diary.add': 'text(1000字まで。超えた分は切れて cut:true が返る) 今日の日記（気づき）に、自分の名前で1件足す。書くだけ（日記は list にも履歴にも出ない。読めない）。本人が話した言葉をそのまま入れる。日付と時刻は日本時間。1日30件まで',
   'feedback.add': 'text, screen? アプリの要望・不具合（「ここ直しといて」）',
   'topic.add': 'title, url?(https), note? いま話している資料へのリンク',
   'decision.add': 'q, options?:[..], due?, note? ふたりで決めることに出す（答えと決定はアプリで2人がする）',
@@ -1591,6 +1592,22 @@ var MUSE_OPS = {
     var id = museId('n');
     var r = addNote({ id: id, text: q.text, to: q.to || otherOf(me.who) }, me);
     return r.ok ? { ok: true, id: id, log: [['申し送り', id, q.text]] } : r;
+  },
+  /* 日記は「書くだけ」：今日の日付・今の時刻・鍵の持ち主の名前で足す。Muse には返さない（list・履歴に日記は無い）。
+   * 「Museの記録」には文字数だけ残す（中身は日記シートにあるので写さない）。取り消しは undo（24時間以内・自分の鍵の分） */
+  'diary.add': function (q, me) {
+    var raw = String(q.text || '').trim(), body = raw.slice(0, 1000).trim();
+    if (!body) return { ok: false, code: 'bad_request' };
+    var now = new Date(), cache = CacheService.getScriptCache(), dk = 'mdiary_' + sha(me.who).slice(0, 16) + '_' + ymd(now);
+    var n = Number(cache.get(dk) || 0) + 1;
+    if (n > 30) return { ok: false, code: 'too_many', message: '日記は1日に30件までです' };
+    var id = museId('y');
+    var r = addDiary({ id: id, date: ymd(now), time: Utilities.formatDate(now, TZ, 'H:mm'), text: body, target: '今日の日記' }, me);
+    if (!r.ok) return r;
+    cache.put(dk, String(n), 90000);
+    var res = { ok: true, id: id, log: [['日記', id, '（' + body.length + '文字）']] };
+    if (raw.length > body.length) res.cut = true;   /* 1000字で切れたことを Muse に知らせる（中身は返さない） */
+    return res;
   },
   'feedback.add': function (q, me) {
     var r = addFeedback({ text: q.text, screen: 'Museから' + (q.screen ? ' / ' + q.screen : '') }, me);

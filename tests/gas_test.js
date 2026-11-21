@@ -513,8 +513,27 @@ ok(b3.api === 18 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(mpost({ op: 'feedback.add', text: '文字が小さい' }).ok && env.ss.getSheetByName('要望').data.some(r => r.includes('文字が小さい') && r.includes('まま')), 'Muse: 要望');
   ok(mpost({ op: 'deadline.add', what: '予防接種の予約', due: '2099-02-01' }).ok && mpost({ op: 'outing.add', name: '動物園' }).ok && mpost({ op: 'decision.add', q: '年末どこへ', options: ['実家', '家'] }).ok, 'Muse: 期限・お出かけ・相談');
   ok(mpost({ op: 'topic.add', title: 'x', url: 'javascript:alert(1)' }).ok === false, 'Muse: https 以外のリンクは断る');
+  // 日記は書くだけ：アプリには出る、Muse の一覧・記録には中身を出さない、取り消せる
+  const dy = mpost({ op: 'diary.add', text: 'ひみつの気づき：はじめて自分で靴をはいた' });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(dy.ok && dy.id && !JSON.stringify(dy).includes('靴') && bd.diary.some(x => x.id === dy.id && x.by === 'まま' && x.text.includes('靴をはいた') && /^\d{1,2}:\d{2}$/.test(x.time)), 'Muse: 日記を書く（今日・自分の名前・時刻つき、返事に中身なし） ' + JSON.stringify(dy));
+  ok(mpost({ op: 'diary.add', text: '   ' }).code === 'bad_request', 'Muse: 空の日記は断る');
+  ok(!env.ss.getSheetByName('Museの記録').data.some(r => r.join('|').includes('靴')) && env.ss.getSheetByName('Museの記録').data.some(r => r.includes(dy.id) && r.join('|').includes('文字）')), 'Muse: 日記の中身は記録に写さない（文字数だけ）');
+  ok(env.ss.getSheetByName('Museの記録').data.some(r => r.includes(dy.id) && r.includes('（' + 'ひみつの気づき：はじめて自分で靴をはいた'.length + '文字）')), 'Muse: 日記の記録は文字数がぴったり');
+  const dyX = mpost({ op: 'diary.add', text: 'よけいな項目つき', date: '2020-01-01', time: '1:00', by: 'ケン', who: 'ケン', target: 'x' });
+  bd = post(env, { action: 'boot', session: S, today }).data;
+  ok(dyX.ok && bd.diary.some(x => x.id === dyX.id && x.by === 'まま' && x.date === today && x.time !== '1:00' && x.target === '今日の日記'), 'Muse: 日記は日付・時刻・名前を送られても使わない');
+  const dyL = mpost({ op: 'diary.add', text: 'あ'.repeat(1001) });
+  ok(dyL.ok && dyL.cut === true && !dy.cut && env.ss.getSheetByName('日記').data.some(r => r.some(c => String(c).replace(/^'/, '') === 'あ'.repeat(1000))), 'Muse: 日記は1000字で切り、cut で知らせる');
+  ok(JSON.stringify(mpost({ op: 'help' }).ops).includes('diary.add'), 'Muse: help に diary.add');
+  const dy2 = mpost({ op: 'diary.add', text: '消す日記' });
+  env.promptAnswer = 'ケン'; env.museNewKey();
+  const KK = (env.dialog.match(/wgk_[0-9a-f]{64}/) || [])[0];
+  ok(KK && KK !== KM && post(env, { action: 'muse', key: KK, op: 'undo', id: dy2.id }).code === 'not_found', 'Muse: 別の人の鍵では日記を取り消せない');
+  env.promptAnswer = 'まま';
+  ok(mpost({ op: 'undo', id: dy2.id }).ok && !env.ss.getSheetByName('日記').data.some(r => r.join('|').includes('消す日記')) && env.ss.getSheetByName('日記').data.some(r => r.join('|').includes('靴をはいた')) && !post(env, { action: 'boot', session: S, today }).data.diary.some(x => x.id === dy2.id), 'Muse: 日記の取り消し（ほかの日記は残り、アプリからも消える）');
   const L = mpost({ op: 'list' });
-  ok(L.ok && L.me === 'まま' && L.shop.items.some(x => x.name === '豆腐') && L.menu.some(x => x.dish === 'カレー') && !('diary' in L) && !('photos' in L) && !JSON.stringify(L).includes('@example.com'), 'Muse: 一覧（日記・写真・メールは出さない）');
+  ok(L.ok && L.me === 'まま' && L.shop.items.some(x => x.name === '豆腐') && L.menu.some(x => x.dish === 'カレー') && !('diary' in L) && !JSON.stringify(L).includes('靴') && !('photos' in L) && !JSON.stringify(L).includes('@example.com'), 'Muse: 一覧（日記・写真・メールは出さない）');
   const tofuId = env.ss.getSheetByName('Museの記録').data.find(r => r.includes('豆腐'))[4];
   ok(mpost({ op: 'undo', id: tofuId }).ok && !env.ss.getSheetByName('買い物').data.some(r => r.includes('豆腐')), 'Muse: 取り消し');
   ok(mpost({ op: 'undo', id: 'sq' }).code === 'not_found', 'Muse: 自分の鍵で足した物以外は消せない');
