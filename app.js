@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '63';
+  var APP_VERSION = '64';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1988,7 +1988,8 @@
         archive: function () { self.archiveTopic(t, true); },
         high: !!t.high, highLabel: t.high ? '優先度 高' : '優先度を高く', highPressed: t.high ? 'true' : 'false', toggleHigh: function () { self.toggleTopicHigh(t); },
         highBtnStyle: 'flex-shrink: 0; min-height: 32px; padding: 0 10px; border-radius: var(--r-chip); border: none; cursor: pointer; font-size: var(--t-cap); font-weight: 700; ' + (t.high ? 'background: var(--attn); color: #FFFFFF' : 'background: var(--fill); color: var(--label2)'),
-        cardStyle: 'flex-shrink: 0; width: 250px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px 16px; border-radius: var(--r-card); ' + (t.high ? 'background: var(--attn-soft); box-shadow: inset 0 0 0 2px var(--attn)' : 'background: var(--card)'),
+        /* Apple Store・Amazon のような横スライドのカード：幅をそろえて次のカードを少し見せ、1枚ずつ止まる */
+        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; min-height: 176px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--r-card); box-shadow: 0 2px 12px rgba(0,0,0,.06); ' + (t.high ? 'background: var(--attn-soft); box-shadow: inset 0 0 0 2px var(--attn), 0 2px 12px rgba(0,0,0,.06)' : 'background: var(--card)'),
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
@@ -2904,7 +2905,7 @@
 
   /* ホームでは長い一覧を数件にしぼり、「すべて見る」を付ける。
      そのセクションの居場所が別のタブならそのタブへ、ホームの中ならその場で広げる */
-  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 3], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5], planList: ['plan', 3] };
+  var HOME_LIMIT = { flow: ['flow', 8], decisions: ['decide', 2], deadlines: ['deadline', 4], topics: ['topics', 10], diary: ['diary', 3], shop: ['shop', 8], outings: ['weekend', 3], news: ['news', 5], planList: ['plan', 3] };
   App.prototype.homeMore = function (R, isHome, secTab, curTab, flowAll) {
     var self = this, st = this.state, more = {};
     Object.keys(HOME_LIMIT).forEach(function (k) {
