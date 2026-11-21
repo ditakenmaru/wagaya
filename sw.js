@@ -2,7 +2,7 @@
  * 開く時は手元の画面をすぐ出し、裏で新しい版を取っておく（次に開いた時に新しい版になる）。
  * index.html と同じ版の app.js / config.js だけを使う（?v= の番号で合わせる。混ざると画面が空になるため）。
  * 版を上げる時：index.html の ?v= と、下の VERSION をそろえて上げる。 */
-var VERSION = '81';
+var VERSION = '82';
 var CACHE = 'wagaya-v' + VERSION;
 var SHELL = ['./', 'index.html', 'app.js?v=' + VERSION, 'config.js?v=' + VERSION, 'manifest.webmanifest', 'icons/icon-192.png?v=4', 'icons/apple-touch-icon.png?v=4'];
 self.addEventListener('install', function (e) {
@@ -41,7 +41,7 @@ function peekNotes() {
   });
 }
 self.addEventListener('push', function (e) {
-  var plain = function () { return showNote('FUTABA', '新しいお知らせがあります', 'wagaya-new', ''); };
+  var plain = function () { return showNote('Futable', '新しいお知らせがあります', 'wagaya-new', ''); };
   e.waitUntil(peekNotes().then(function (r) {
     var items = (r && r.ok && r.items) || [];
     if (!items.length) return plain();

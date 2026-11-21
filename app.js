@@ -1,4 +1,4 @@
-/* FUTABA（旧：わが家の今日） — 家族アプリ（画面）
+/* Futable（ふたぶる。旧：わが家の今日） — 家族アプリ（画面）
  * 画面は index.html の <template id="tpl"> に書き、ここで描画する。
  * データは GAS（Googleのスプレッドシートとカレンダー）から取る。
  */
@@ -1249,7 +1249,7 @@
      写真・日記・メール・他の項目は入れない。WhatsAppの番号はこの端末だけに覚える */
   App.prototype.openMuse = function (kind, x) {
     var D = this.state.data || {}, me = (D.me && D.me.who) || '';
-    var L = ['家族アプリ「FUTABA」のことで相談です。私は「' + me + '」です。', ''];
+    var L = ['家族アプリ「Futable（ふたぶる）」のことで相談です。私は「' + me + '」です。', ''];
     if (kind === 'decide') {
       L.push('【ふたりで決めること】' + x.q);
       if (x.options && x.options.length) L.push('選択肢：' + x.options.join(' / '));
@@ -1292,7 +1292,7 @@
     var to = st.draftTo || this.otherWho();
     /* 担当に付けた文・代わってほしいの頼み・「今日の日記」以外に付けた気づきは、Muse からは同じ形で入れられないので、整えた文を返してもらう */
     var viaApp = !list && !!(st.noteTaskId || st.noteAsk || (!handover && st.noteTarget && st.noteTarget !== '今日の日記'));
-    var L = ['家族アプリ「FUTABA」へのお願いです。私は「' + me + '」です。', '',
+    var L = ['家族アプリ「Futable（ふたぶる）」へのお願いです。私は「' + me + '」です。', '',
       '次の文は音声入力のままです。誤変換と言いよどみだけ直して整えてください。意味は変えず、内容を足したり削ったりしないでください。', '', '【文】', text, ''];
     if (viaApp) L.push('整えた文だけを返してください。アプリには入れないでください（私がアプリに貼って送ります）。');
     else if (handover) L.push('整えたら、わが家アプリで「' + to + '」への申し送りに入れてください（note.add）。入れたら、入れた文を私に見せてください。');
