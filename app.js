@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '76';
+  var APP_VERSION = '77';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -296,7 +296,7 @@
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
       flowEdit: false, shopEdit: false, editor: null, shopDraft: '', shopQty: '', shopCat: null,
-      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}
+      fbOpen: false, fbDraft: '', museOpen: false, museDraft: '', museKind: '', museFrom: '', detail: null, replyDraft: '', topicEdit: false, nav: null, expanded: {}
     };
     this.lazyIds = ['diary', 'week', 'shop', 'plan', 'news'];
   }
@@ -1271,18 +1271,73 @@
     }
     L.push('', 'アプリに入れる時は、入れる前に私に確認してください。決めるのは夫婦2人なので、決定扱いにはしないでください。');
     USAGE.add('act:muse_' + kind);
-    this.setState({ museOpen: true, museDraft: L.join('\n'), accountOpen: false });
+    this.setState({ museOpen: true, museKind: kind, museDraft: L.join('\n'), accountOpen: false });
+  };
+  /* 入力中の文（申し送り・気づき）を Muse に整えてもらう：音声入力の誤変換と言いよどみだけ直して、アプリに入れてもらう。
+   * 送るのは本人（下書きを見せて、コピーか WhatsApp で開く）。担当に付けた申し送り・代わってほしいの頼みは Muse から入れられないので、整えた文を返してもらうだけ */
+  /* 「Museに出さない」担当（吸入・薬など）に付けた文は、Muse に渡す入口を出さない（GAS が list から外しているのと同じ線） */
+  App.prototype.polishHidden = function () {
+    var id = this.state.noteTaskId; if (!id) return false;
+    var all = ((this.state.data || {}).dutiesAll || []);
+    return all.some(function (d) { return d.id === id && (d.priv || d.privAny); });
+  };
+  App.prototype.polishMuse = function (from) {
+    var list = from === 'notes';   /* 申し送りの一覧の書く欄から（担当には付かない） */
+    var st = this.state, text = String((list ? st.draft : st.noteDraft) || '').trim();
+    if (!list && this.polishHidden()) return;
+    if (!text) { this.showToast('先に文を入れてください（キーボードのマイクで話せます）', null); return; }
+    try { if (this.rec) { this.rec.onresult = null; this.rec.stop(); } } catch (e) {}   /* 止めた後に届く結果で下書きがずれないように */
+    var me = this.meWho(), handover = list || st.noteMode === 'handover';
+    var to = st.draftTo || this.otherWho();
+    /* 担当に付けた文・代わってほしいの頼み・「今日の日記」以外に付けた気づきは、Muse からは同じ形で入れられないので、整えた文を返してもらう */
+    var viaApp = !list && !!(st.noteTaskId || st.noteAsk || (!handover && st.noteTarget && st.noteTarget !== '今日の日記'));
+    var L = ['わが家アプリ（わが家の今日）へのお願いです。私は「' + me + '」です。', '',
+      '次の文は音声入力のままです。誤変換と言いよどみだけ直して整えてください。意味は変えず、内容を足したり削ったりしないでください。', '', '【文】', text, ''];
+    if (viaApp) L.push('整えた文だけを返してください。アプリには入れないでください（私がアプリに貼って送ります）。');
+    else if (handover) L.push('整えたら、わが家アプリで「' + to + '」への申し送りに入れてください（note.add）。入れたら、入れた文を私に見せてください。');
+    else L.push('整えたら、わが家アプリの今日の日記に入れてください（diary.add）。入れたら、入れた文を私に見せてください。');
+    USAGE.add('act:muse_polish');
+    var upd = { museOpen: true, museKind: viaApp ? 'polishBack' : 'polish', museFrom: list ? 'notes' : 'note', museDraft: L.join('\n'), listening: false };
+    upd[list ? 'notesOpen' : 'noteOpen'] = false;
+    this.setState(upd);
+  };
+  /* 整える途中でやめたら、入力の画面に戻す（書いた文は残す） */
+  App.prototype.closeMuseSheet = function () {
+    var upd = { museOpen: false, museKind: '' };
+    if (/^polish/.test(this.state.museKind || '')) upd[this.state.museFrom === 'notes' ? 'notesOpen' : 'noteOpen'] = true;
+    this.setState(upd);
   };
   App.prototype.museSend = function (how) {
-    var text = String(this.state.museDraft || '').trim();
+    var self = this, st = this.state;
+    var text = String(st.museDraft || '').trim();
     if (!text) { this.showToast('送る文が空です', null); return; }
-    var num = String(LS.get('museWa') || '').replace(/[^\d]/g, '');
-    try { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {}); } catch (e) {}
-    if (how === 'wa' && num) window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(text), '_blank', 'noopener');
+    var num = String(LS.get('museWa') || '').replace(/[^\d]/g, ''), wa = how === 'wa' && !!num;
+    var kind = st.museKind || '', list = st.museFrom === 'notes', orig = list ? st.draft : st.noteDraft;
+    /* 元の下書きに戻す（コピーできなかった時・トーストの「元に戻す」） */
+    var restore = function () { self.setState(list ? { draft: orig, notesOpen: true, toast: null } : { noteDraft: orig, noteOpen: true, toast: null }); };
+    var copied = null;
+    try { if (navigator.clipboard) copied = navigator.clipboard.writeText(text); } catch (e) {}
+    if (copied && copied.catch) copied.catch(function () {
+      /* コピーできなかった：Museに貼れないので、整える時は下書きを戻して知らせる（WhatsApp は文を入れて開くので、そのまま） */
+      if (wa) return;
+      if (kind === 'polish') restore();
+      self.showToast('文をコピーできませんでした。もう一度押すか、文を長押ししてコピーしてください', null);
+    });
+    if (wa) window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(text), '_blank', 'noopener');
     else window.open('https://muse.ai/', '_blank', 'noopener');
-    USAGE.add('act:muse_' + (how === 'wa' && num ? 'wa' : 'copy'));
-    this.setState({ museOpen: false });
-    if (!(how === 'wa' && num)) this.showToast('文をコピーしました。Museに貼って送ってください', null);
+    USAGE.add('act:muse_' + (wa ? 'wa' : 'copy'));
+    if (kind === 'polish') {
+      /* 整えて入れてもらう：こちらの下書きは消す（二重に入らないように）。「元に戻す」で戻せる。一覧から来た時は一覧に戻る */
+      this.setState(list ? { museOpen: false, museKind: '', draft: '', notesOpen: true } : { museOpen: false, museKind: '', noteDraft: '' });
+      this.showToast(wa ? 'WhatsAppで送ると、Museが整えてアプリに入れます' : '文をコピーしました。Museに貼って送ると、整えてアプリに入れます', restore);
+    } else if (kind === 'polishBack') {
+      /* 返してもらうだけ：入力の画面に戻す（今の文と入れ替えて送る） */
+      this.setState({ museOpen: false, museKind: '', noteOpen: true });
+      this.showToast((wa ? '' : '文をコピーしました。') + 'Museが返した文に入れ替えて、ここから送ってください', null);
+    } else {
+      this.setState({ museOpen: false, museKind: '' });
+      if (!wa) this.showToast('文をコピーしました。Museに貼って送ってください', null);
+    }
   };
 
   /* 詳細を見る・コメント：話題・相談・日記・お出かけ・ニュースの全文と、ふたりのやりとり */
@@ -2319,13 +2374,12 @@
     });
     var news = newsRaw.filter(function (n) { return goalId === 'all' || n.goals.indexOf(goalId) >= 0; }).map(function (n) {
       var open = !!st.newsOpen[n.id];
-      var web = n.src === 'Web';
       return {
         title: n.title, why: n.why, body: n.body, url: n.url, src: n.src, meta: n.from + (n.date ? '（' + n.date + '）' : ''),
         open: false, expanded: 'false', more: (rCount['news:' + n.id] ? '詳細を見る（コメント' + rCount['news:' + n.id] + '件）' : '詳細を見る'),
         toggle: function () { self.openDetail('news', n.id); },
-        srcStyle: 'padding: 4px 8px; border-radius: var(--r-btn); font-size: var(--t-cap); font-weight: 700; ' + (web ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--attn-soft); color: var(--attn-ink)'),
-        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: var(--r-card); background: var(--card); animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
+        srcStyle: 'padding: 4px 8px; border-radius: var(--r-btn); font-size: var(--t-cap); font-weight: 700; background: rgba(255,255,255,.22); color: #FFFFFF',
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 200px; padding: 18px; border-radius: var(--r-card); color: #FFFFFF; box-shadow: var(--shadow-card); background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(n.id || n.title, TOPIC_TONES.length)].join(', ') + '); animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
       };
     });
 
@@ -2717,7 +2771,10 @@
       sendReply: function () { self.sendReply(); }, closeDetail: function () { self.setState({ detail: null, replyDraft: '', replyTo: null }); },
       detailBackdropStyle: backdrop(!!st.detail), detailSheetStyle: sheetStyle(!!st.detail, 'max-height: 88vh; overflow-y: auto; '),
       museDraft: st.museDraft, setMuseDraft: function (e) { self.setState({ museDraft: e.target.value }); },
-      closeMuse: function () { self.setState({ museOpen: false }); },
+      closeMuse: function () { self.closeMuseSheet(); },
+      museTitle: /^polish/.test(st.museKind || '') ? 'Museに整えてもらう' : 'Museに相談',
+      museLead: /^polish/.test(st.museKind || '') ? 'Museに渡すのは、下の文だけです（いま書いた文が入っています）。送った文はMuse（Meta）側に残ることがあります。残したくない話は、やめて、そのままアプリに入れてください。送るのは自分で、アプリからは自動で送りません。' : 'Museに渡すのは、下の文だけです（写真・日記・メールは入りません）。消したいところは消してから送ってください。送るのは自分で、アプリからは自動で送りません。',
+      polishMuse: function () { self.polishMuse(); }, showPolish: !self.polishHidden(), polishMuseNotes: function () { self.polishMuse('notes'); },
       museCopy: function () { self.museSend('copy'); }, museWa: function () { self.museSend('wa'); },
       hasMuseWa: !!String(LS.get('museWa') || '').replace(/[^\d]/g, ''), museWaNum: LS.get('museWa') || '',
       setMuseWaNum: function (e) { LS.set('museWa', e.target.value); self.setState({ museWaAt: Date.now() }); },
@@ -3037,7 +3094,7 @@
         me: { email: 'demo@example.com', who: 'とと' }, api: 18, today: ymd(t), swapsAhead: [{ date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), id: 'd1', who: 'まま', orig: 'とと' }],
         duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rel: i === 0 ? 90 : (i === 2 ? 0 : null) }; }),
         done: {}, checked: {},
-        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; }),
+        dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { var o = { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; if (o.id === 'd6') { o.priv = true; o.privAny = true; } return o; }),   /* d6 は「Museに出さない」の見本 */
         notes: [{ id: 'n0', createdAt: Date.now() - 1800e3, from: 'まま', to: 'とと', taskId: 'd7', task: '寝かしつけ', text: '見本：今日の「寝かしつけ」、代わってもらえる？', read: false, ask: 'swap', askDate: ymd(t), answer: '' }, { id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }, { id: 'n2', createdAt: Date.now() - 7200e3, from: 'とと', to: 'まま', taskId: 'd1', task: '起こして朝ごはん', text: '見本：明日の「起こして朝ごはん」、代わってもらえる？', read: true, ask: 'swap', askDate: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), answer: 'ok' }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; })

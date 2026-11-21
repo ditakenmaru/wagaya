@@ -940,7 +940,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     </sc-if>
     <div class="strip" style="display: flex; gap: 12px; overflow-x: auto; padding: 2px 16px 8px; scroll-snap-type: x mandatory; scrollbar-width: none">
       <sc-for list="{{news}}" as="nw" hint-placeholder-count="3">
-        <article style="{{nw.cardStyle}}">
+        <article class="tcard" style="{{nw.cardStyle}}">
           <span style="display: flex; align-items: center; gap: 8px">
             <span style="{{nw.srcStyle}}">{{nw.src}}</span>
             <span style="font-size: var(--t-cap); color: var(--label2)">{{nw.meta}}</span>
@@ -1064,6 +1064,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <label for="note-input" class="lbl">申し送りを書く</label>
       <textarea id="note-input" rows="3" value="{{draft}}" onChange="{{setDraft}}" placeholder="例：明日は保育園の持ち物に着替えを2組" class="field" style="box-sizing: border-box; width: 100%; padding: 12px; resize: none"></textarea>
       <button type="button" onClick="{{sendNote}}" class="btn btn-fill" style="min-height: 48px; font-size: var(--t-sub)">送る</button>
+      <button type="button" onClick="{{polishMuseNotes}}" class="btn-link" style="align-self: center; min-height: 44px; padding: 0 8px; font-size: var(--t-sub)">Museに整えてもらう</button>
     </div>
   </section>
 
@@ -1103,6 +1104,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <span style="flex: 1; font-size: var(--t-foot); color: var(--label2); line-height: 1.5">{{micHint}}</span>
     </div>
     <button type="button" onClick="{{saveNote}}" class="btn btn-fill" style="margin-top: 4px; min-height: 50px; font-size: var(--t-sub)">{{saveLabel}}</button>
+    <sc-if value="{{showPolish}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{polishMuse}}" class="btn-link" style="align-self: center; min-height: 44px; padding: 0 8px; font-size: var(--t-sub)">Museに整えてもらう</button></sc-if>
   </section>
 
   <button type="button" aria-label="材料と作り方を閉じる" onClick="{{closeSheet}}" style="{{backdropStyle}}"></button>
@@ -1379,8 +1381,8 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   <section role="dialog" aria-modal="true" aria-labelledby="muse-title" style="{{museSheetStyle}}">
     <button type="button" aria-label="閉じる" onClick="{{closeMuse}}" class="btn-close">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--line)"></div>
-    <h2 id="muse-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">Museに相談</h2>
-    <p style="margin: 0; font-size: var(--t-foot); color: var(--label2); line-height: 1.6">Museに渡すのは、下の文だけです（写真・日記・メールは入りません）。消したいところは消してから送ってください。送るのは自分で、アプリからは自動で送りません。</p>
+    <h2 id="muse-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{museTitle}}</h2>
+    <p style="margin: 0; font-size: var(--t-foot); color: var(--label2); line-height: 1.6">{{museLead}}</p>
     <textarea id="muse-input" aria-label="Museに送る文" rows="10" value="{{museDraft}}" onInput="{{setMuseDraft}}" class="field" style="box-sizing: border-box; width: 100%; padding: 12px; line-height: 1.6; resize: vertical"></textarea>
     <sc-if value="{{hasMuseWa}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{museWa}}" class="btn btn-fill" style="min-height: 50px; font-size: var(--t-sub)">WhatsAppのMuseで開く（文を入れた状態）</button></sc-if>
     <button type="button" onClick="{{museCopy}}" class="btn btn-fill" style="min-height: 50px; font-size: var(--t-sub)">文をコピーしてMuseを開く</button>
@@ -1389,7 +1391,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=76"></script>
-<script src="app.js?v=76"></script>
+<script src="config.js?v=77"></script>
+<script src="app.js?v=77"></script>
 </body>
 </html>
