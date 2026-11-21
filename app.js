@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '75';
+  var APP_VERSION = '76';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -836,10 +836,25 @@
       var rec = new SR();
       rec.lang = 'ja-JP'; rec.interimResults = true; rec.continuous = false;
       var base = this.state.noteDraft ? this.state.noteDraft + ' ' : '';
-      rec.onresult = function (e) { var t = ''; for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; self.setState({ noteDraft: base + t }); };
-      rec.onerror = function () { self.setState({ listening: false }); self.showToast('マイクが使えませんでした。キーボードのマイクで話してください', null); };
+      /* iPhone は確定した結果と途中の結果が重なって返ることがあるので、確定分を順に足し、途中の分は最後の1つだけ使う */
+      var fixed = '';
+      rec.onresult = function (e) {
+        var interim = '';
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) fixed += e.results[i][0].transcript; else interim = e.results[i][0].transcript;
+        }
+        self.setState({ noteDraft: base + fixed + interim });
+      };
+      rec.onerror = function (ev) {
+        var code = String((ev && ev.error) || 'unknown').replace(/[^\w-]/g, '').slice(0, 30);
+        USAGE.add('err:mic_' + code);   /* 何が起きたかを回数だけ残す（文章は残さない） */
+        self.setState({ listening: false });
+        if (code === 'no-speech' || code === 'aborted') { self.showToast('声が聞き取れませんでした。もう一度マイクを押して話してください', null); return; }
+        if (code === 'not-allowed') { self.showToast('マイクが許可されていません。iPhoneの設定で、このアプリのマイクと音声入力を許可してください。すぐ使うならキーボードのマイクが確実です', null); return; }
+        self.showToast('ホーム画面のアプリでは音声入力が止まることがあります（' + code + '）。キーボードのマイクで話してください', null);
+      };
       rec.onend = function () { self.setState({ listening: false }); };
-      this.rec = rec; rec.start();
+      this.rec = rec; rec.start(); USAGE.add('act:mic_start');
       this.setState({ listening: true });
     } catch (e) {
       this.setState({ listening: false });
