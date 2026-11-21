@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '61';
+  var APP_VERSION = '62';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -763,11 +763,27 @@
     if (!go) return;
     if (!this.state.data) { this.pendingGo = go; return; }
     USAGE.add('act:push_open');
+    this.jumpSec(go);
+  };
+  /* そのセクションのタブへ切り替えて、セクションの頭までスクロールする（通知・右上のメニューから） */
+  App.prototype.jumpSec = function (go) {
     if (go === 'notes') { this.setState({ notesOpen: true }); return; }
     var t = this.secTabMap && this.secTabMap[go];
     if (!t) return;
-    if (this.state.nav !== t) this.setState({ nav: t });
-    setTimeout(function () { var el = document.querySelector('[data-sec="' + go + '"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 120);
+    /* タブが変わる時は一気に（前のタブの位置から長く流れないように）、同じタブの中だけ滑らかに */
+    var change = this.state.nav !== t;
+    if (change) { this.setState({ nav: t }); window.scrollTo(0, 0); }
+    var find = function () { return document.querySelector('[data-sec="' + go + '"]'); };
+    setTimeout(function () {
+      var el = find();
+      if (!el) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      el.scrollIntoView({ block: 'start', behavior: change ? 'auto' : 'smooth' });
+      /* 読み上げの位置も移った先へ（見出しにフォーカス） */
+      var h = el.querySelector('h2, h3');
+      if (h) { if (!h.hasAttribute('tabindex')) h.setAttribute('tabindex', '-1'); try { h.focus({ preventScroll: true }); } catch (e) {} }
+      /* 遅れて出る部分で高さが変わった時は、もう一度合わせる */
+      setTimeout(function () { var e2 = find(); if (e2 && Math.abs(e2.getBoundingClientRect().top - 64) > 8) e2.scrollIntoView({ block: 'start', behavior: 'auto' }); }, change ? 500 : 900);
+    }, 120);
   };
 
   App.prototype.showToast = function (msg, undo) {
@@ -2441,6 +2457,22 @@
     var isHome = curTab === tabNames[0];   /* ホーム（最初のタブ）は全部のセクションを出し、長い一覧は少しだけ */
     var secTab = {}; secAll.forEach(function (c) { secTab[c.key] = tabOf(c); });
     this.secTabMap = secTab;
+    /* 右上のメニューの「移動」：タブごとに、いま見えるセクションを並べる（写真・見出しは除く）。押すとそのタブのそのセクションへ */
+    var goNotes = function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec('notes'); }, 60); };
+    var navGroups = tabNames.map(function (t) {
+      var seq = TAB_SEQ[TAB_ID[t]] || [];
+      var secs = shown.filter(function (x) { return x.vis && tabOf(x.c) === t && x.c.key !== 'photos' && x.c.key !== 'hero'; })
+        .sort(function (a, b) { var ia = seq.indexOf(a.c.key), ib = seq.indexOf(b.c.key); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+      var items = secs.map(function (x) {
+        var key = x.c.key;
+        return { label: title[key] || x.c.title || key, go: function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec(key); }, 60); } };
+      });
+      if (TAB_ID[t] === 'two') items.unshift({ label: '申し送り', go: goNotes });
+      var here = t === curTab;
+      return { label: (TAB_LABEL[t] || t) + (here ? '（いまここ）' : ''), items: items, hasItems: items.length > 0, current: here ? 'true' : 'false' };
+    }).filter(function (g) { return g.hasItems; });
+    /* 申し送りは、相談・期限が見えないタブ構成でも行けるように */
+    if (!navGroups.some(function (g) { return g.items.some(function (it) { return it.go === goNotes; }); })) navGroups.push({ label: '相談・連絡', items: [{ label: '申し送り', go: goNotes }], hasItems: true, current: 'false' });
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
     var rankOf = {};
@@ -2817,6 +2849,7 @@
       accountAria: 'メニュー（' + syncLabel + '。アカウント・通知・更新）',
       syncStyle: 'min-height: 44px; padding: 0 12px; border-radius: var(--r-chip); border: none; font-size: var(--t-cap); font-weight: 700; cursor: pointer; ' + (st.offline ? 'background: var(--danger-soft); color: var(--danger)' : 'background: var(--fill); color: var(--label)'),
       openAccount: function () { self.setState({ accountOpen: true }); },
+      navGroups: navGroups,
       push: (function () {
         var ps = self.pushState(), q = (D.ui && D.ui.quiet) || '';
         var what = '自分宛ての申し送り（「代わってほしい」も）、相手からの返信・コメント、相談が足された・答えられた時に届きます。自分で書いた物では鳴りません。' + (q ? q + 'の分は、明けてからまとめて届きます。' : '');
@@ -2831,7 +2864,7 @@
       refreshNow: function () { self.setState({ accountOpen: false }); self.refresh(); },
       logout: function () { self.logout(); },
       accountBackdropStyle: backdrop(st.accountOpen),
-      accountSheetStyle: sheetStyle(st.accountOpen, '')
+      accountSheetStyle: sheetStyle(st.accountOpen, 'max-height: 88vh; overflow-y: auto; overscroll-behavior: contain; ')   /* 「移動」が増えて長くなったので、シートの中でスクロール */
     };
     R.more = this.homeMore(R, isHome, secTab, curTab, flow);
     this.planMore = R.more.planList && R.more.planList.show && R.more.planList.label.indexOf('少なく') < 0 ? R.more.planList.go : null;

@@ -154,7 +154,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
 @keyframes barB{0%{width:0}100%{width:100%}}
 @keyframes capIn{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:none}}
 @keyframes capIn2{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:none}}
-[id^="w-"],section{scroll-margin-top:64px}
+[id^="w-"],section,[data-sec]{scroll-margin-top:64px}.navrow::-webkit-scrollbar{display:none}
 #ptr{position:fixed;top:calc(-44px + env(safe-area-inset-top));left:50%;transform:translate(-50%,0);opacity:0;z-index:90;display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;background:var(--toast);color:#FFFFFF;font:600 13px/1 var(--font);box-shadow:0 6px 18px rgba(0,0,0,.2);pointer-events:none;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
 #ptr i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#FFFFFF;box-sizing:border-box}
 #ptr.spin i{animation:spin .8s linear infinite}
@@ -1123,9 +1123,18 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <button type="button" onClick="{{closeSheet}}" style="margin-top: 8px; min-height: 48px; border-radius: 14px; border: none; background: #17201B; color: #FFFFFF; font-size: 15px; font-weight: 700; cursor: pointer">閉じる</button>
   </section>
   <button type="button" aria-label="アカウントを閉じる" onClick="{{closeAccount}}" style="{{accountBackdropStyle}}"></button>
-  <section role="dialog" aria-modal="true" aria-labelledby="acct-title" style="{{accountSheetStyle}}">
-    <button type="button" aria-label="閉じる" onClick="{{closeAccount}}" class="btn-close">×</button>
+  <section role="dialog" aria-modal="true" aria-label="メニュー" style="{{accountSheetStyle}}">
+    <button type="button" aria-label="閉じる" onClick="{{closeAccount}}" class="btn-close" style="position: sticky; top: 0; align-self: flex-end; flex-shrink: 0; margin: 0 0 -44px; z-index: 2">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--line)"></div>
+    <nav aria-labelledby="nav-title" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line)">
+      <h2 id="nav-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">移動</h2>
+      <sc-for list="{{navGroups}}" as="g" hint-placeholder-count="3">
+        <div role="group" aria-label="{{g.label}}" aria-current="{{g.current}}" style="display: flex; flex-direction: column; gap: 4px">
+          <span class="lbl" aria-hidden="true">{{g.label}}</span>
+          <div class="navrow" style="display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch"><sc-for list="{{g.items}}" as="it" hint-placeholder-count="2"><button type="button" onClick="{{it.go}}" class="btn btn-tint" style="flex-shrink: 0; white-space: nowrap; min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">{{it.label}}</button></sc-for></div>
+        </div>
+      </sc-for>
+    </nav>
     <h2 id="acct-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{meLabel}}</h2>
     <p style="margin: 0; font-size: var(--t-sub); color: var(--label2); line-height: 1.7">{{meEmail}}</p>
     <p style="margin: 0; font-size: var(--t-sub); color: var(--label2); line-height: 1.7">{{lastSyncLabel}}（{{appVersion}}）</p>
@@ -1371,7 +1380,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=61"></script>
-<script src="app.js?v=61"></script>
+<script src="config.js?v=62"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>
