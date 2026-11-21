@@ -1207,6 +1207,10 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
         <button type="button" onClick="{{ed.toggleSkip}}" style="min-height: 48px; border-radius: var(--r-btn); border: 1.5px solid var(--attn); background: var(--attn-soft); color: var(--attn-ink); font-size: var(--t-sub); font-weight: 700; cursor: pointer">{{ed.skipLabel}}</button>
       </sc-if>
       </sc-if>
+      <sc-if value="{{ed.showPriv}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 4px"><button type="button" aria-pressed="{{ed.privPressed}}" onClick="{{ed.togglePriv}}" style="{{ed.privStyle}}">{{ed.privLabel}}</button>
+        <span style="font-size: var(--t-cap); color: var(--label2); line-height: 1.5">オンにすると、この担当（と小項目・この担当に付けた申し送り）を Muse の一覧と履歴に出しません（吸入・薬など）。アプリには今までどおり出ます。予定・期限・ほかの申し送りには効きません</span></div>
+      </sc-if>
       <sc-if value="{{ed.hasKids}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); color: var(--label2); line-height: 1.6">{{ed.kidsText}}</span></sc-if>
       <sc-if value="{{ed.canAddChild}}" hint-placeholder-val="{{ false }}">
         <button type="button" onClick="{{ed.addChild}}" class="btn btn-gray" style="min-height: 48px">＋ 小項目を足す</button>
@@ -1367,7 +1371,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=60"></script>
-<script src="app.js?v=60"></script>
+<script src="config.js?v=61"></script>
+<script src="app.js?v=61"></script>
 </body>
 </html>

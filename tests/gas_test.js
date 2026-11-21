@@ -354,7 +354,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 17 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 18 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -519,6 +519,34 @@ ok(b3.api === 17 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(mpost({ op: 'undo', id: tofuId }).ok && !env.ss.getSheetByName('買い物').data.some(r => r.includes('豆腐')), 'Muse: 取り消し');
   ok(mpost({ op: 'undo', id: 'sq' }).code === 'not_found', 'Muse: 自分の鍵で足した物以外は消せない');
   ok(mpost({ op: 'undo', id: 'menu:' + m2.date }).ok && !env.ss.getSheetByName('献立').data.some(r => r.includes('カレー')), 'Muse: 献立の取り消し');
+  // Museに出さない担当（健康に近いもの）は list・履歴に出さない
+  { const sd = env.ss.getSheetByName('担当').data, h = sd[0];
+    if (h.indexOf('Museに出さない') < 0) { h.push('Museに出さない'); sd.slice(1).forEach(r => r.push('')); }
+    post(env, { action: 'saveDuty', session: S, duty: { id: 'dpriv', task: '吸入（2人）', time: '7:00', who: 'まま', rule: '毎日', priv: true } });
+    post(env, { action: 'saveDuty', session: S, duty: { id: 'dprivc', task: '吸入用のお水', parent: 'dpriv' } });
+    env.onEdit && env.onEdit();
+    const L2 = mpost({ op: 'list' });
+    ok(L2.ok && !JSON.stringify(L2).includes('吸入'), 'Muse: 「Museに出さない」担当（と小項目）は list に出さない');
+    const b2 = post(env, { action: 'boot', session: S, today, fresh: true }).data;
+    ok(b2.dutiesAll.some(x => x.id === 'dpriv' && x.priv) && b2.dutiesAll.some(x => x.id === 'dprivc' && !x.priv && x.privAny), 'アプリには出る（自分の印 priv と、大項目から来た privAny を分ける）');
+    const pc = h.indexOf('Museに出さない'); const prow = sd.find(r => r.includes('dpriv'));
+    prow[pc] = 'はい'; env.onEdit && env.onEdit();
+    ok(!JSON.stringify(mpost({ op: 'list' })).includes('吸入'), 'Muse: 列に「はい」と手で書いても出さない');
+    post(env, { action: 'setDone', session: S, date: today, taskId: 'dpriv', done: true });
+  }
+  // 履歴：鍵ごとに許した種類だけ。読んだら記録
+  ok(mpost({ op: 'history', kind: 'menu' }).code === 'not_allowed', 'Muse履歴: 許していない鍵は読めない');
+  ok(mpost({ op: 'history', kind: 'diary' }).code === 'bad_kind', 'Muse履歴: 決めた3種類以外は読めない');
+  { const kd = env.ss.getSheetByName('_keys').data; let ci = kd[0].indexOf('読める履歴'); if (ci < 0) { kd[0].push('読める履歴'); ci = kd[0].length - 1; kd.slice(1).forEach(r => r.push('')); } kd[1][ci] = 'menu, shopTrend, dutyBalance'; }
+  const ys = (() => { const J = Date.now() + 9 * 3600e3, y = new Date(J - 864e5); return y.getUTCFullYear() + '-' + String(y.getUTCMonth() + 1).padStart(2, '0') + '-' + String(y.getUTCDate()).padStart(2, '0'); })();
+  env.ss.getSheetByName('献立').data.push(env.ss.getSheetByName('献立').data[0].map(c => c === '日付' ? ys : c === '料理' ? '肉じゃが' : c === '材料' ? 'じゃがいも:3個 / 牛肉:200g' : c === '作り方' ? '秘密の作り方' : ''));
+  let H = mpost({ op: 'history', kind: 'menu' });
+  ok(H.ok && H.items.some(x => x.dish === '肉じゃが' && x.ingredients.join() === 'じゃがいも,牛肉') && !JSON.stringify(H).includes('秘密の作り方') && !JSON.stringify(H).includes('200g'), 'Muse履歴: 過去の献立（料理名と材料名だけ） ' + JSON.stringify(H).slice(0, 200));
+  H = mpost({ op: 'history', kind: 'shopTrend' });
+  ok(H.ok && H.items.some(x => x.name === '牛乳' && x.listedWeeks >= 1 && 'bought' in x) && !JSON.stringify(H).includes('qty'), 'Muse履歴: 買い物の傾向（品ごとの集計）');
+  H = mpost({ op: 'history', kind: 'dutyBalance', weeks: 99 });
+  ok(H.ok && !JSON.stringify(H).includes('吸入') && H.totals && H.from, 'Muse履歴: 家事の偏り（Museに出さない担当は数えない。週は8まで）');
+  ok(env.ss.getSheetByName('Museの記録').data.some(r => r.includes('history') && r.includes('dutyBalance')), 'Muse履歴: 読んだら記録に残す');
   const kh = env.ss.getSheetByName('_keys').data; kh[1][kh[0].indexOf('状態')] = '止める';
   ok(mpost({ op: 'list' }).code === 'bad_key', 'Muse: 鍵を止めると使えない');
 }
@@ -571,7 +599,7 @@ ok(b3.api === 17 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 17 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 18 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';

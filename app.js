@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '60';
+  var APP_VERSION = '61';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -866,6 +866,7 @@
     this.mutate(function (d) { d.done = d.done || {}; ids.forEach(function (id) { if (val) d.done[id] = true; else delete d.done[id]; }); });
     this.send('setDoneMany', { date: this.state.data.today, ids: ids, done: val }, function () { self.mutate(function (d) { ids.forEach(function (id) { if (prev[id]) d.done[id] = true; else delete d.done[id]; }); }); });
   };
+  App.prototype.privApi = function () { return Number((this.state.data || {}).api || 0) >= 18; };   /* 「Museに出さない」は GAS 18 から */
   App.prototype.dutyApi = function () { return Number((this.state.data || {}).api || 0) >= 17; };   /* 大項目と小項目（担当の「親」）は GAS 17 から */
   App.prototype.setShop = function (x, val) {
     var self = this;
@@ -912,7 +913,8 @@
       who: d ? (all && all.who) || d.who : who, once: all ? !!all.date : true, rule: (all && !all.date && all.rule) || '毎日', date: (all && all.date) || D.today || ymd(new Date()),
       routine: !!(all && !all.date), skipToday: !!(d && D.skipped && D.skipped[d.id]),
       relOn: !!(all && all.rel != null), rel: all && all.rel != null ? String(all.rel) : '',
-      parent: (all && all.parent) || parentId || ''
+      parent: (all && all.parent) || parentId || '',
+      priv: !!(all && all.priv)
     } });
   };
   App.prototype.editSet = function (k, v) { var e = Object.assign({}, this.state.editor); e[k] = v; this.setState({ editor: e }); };
@@ -928,9 +930,10 @@
       var D1 = this.state.data || {}, prow = (D1.dutiesAll || []).filter(function (x) { return x.id === e.parent; })[0];
       if (!prow) { this.showToast('大項目が見つかりません。読み直してからもう一度お試しください', null); return; }
       var dc = { id: e.id, task: task, parent: e.parent };
+      if (this.privApi()) dc.priv = !!e.priv;
       var revertC = this.snapshot();
       this.mutate(function (D) {
-        D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== dc.id; }).concat([{ id: dc.id, t: prow.t, rel: prow.rel, task: task, who: prow.who, rule: prow.rule, date: prow.date, parent: dc.parent }]);
+        D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== dc.id; }).concat([{ id: dc.id, t: prow.t, rel: prow.rel, task: task, who: prow.who, rule: prow.rule, date: prow.date, parent: dc.parent, priv: !!dc.priv, privAny: !!(dc.priv || prow.priv || prow.privAny) }]);
         var pt = (D.duties || []).filter(function (x) { return x.id === dc.parent; })[0];
         D.duties = (D.duties || []).filter(function (x) { return x.id !== dc.id; });
         if (pt) D.duties.push({ id: dc.id, t: pt.t, rel: pt.rel, task: task, who: pt.who, orig: pt.orig || '', once: !!pt.once, parent: dc.parent });
@@ -942,9 +945,11 @@
     }
     var d = { id: e.id, task: task, time: rel != null ? hhmm(dep - rel) : e.time, rel: rel, who: e.who, rule: rule, date: e.once ? e.date : '' };
     if (this.dutyApi()) d.parent = '';   /* 小項目から外した時に「親」を消す */
+    if (this.privApi()) d.priv = !!e.priv;
     var revert = this.snapshot();
     this.mutate(function (D) {
       var row = { id: d.id, t: rel != null ? dep - rel : minOf(d.time), rel: rel, task: task, who: d.who, rule: rule || '毎日', date: d.date };
+      if (e.priv) row.priv = true;
       D.dutiesAll = (D.dutiesAll || []).filter(function (x) { return x.id !== d.id; }).concat([row]);
       var today = parseYmd(D.today || ymd(new Date()));
       var on = d.date ? d.date === D.today : dayMatch(rule, today.getDay());
@@ -2124,6 +2129,13 @@
         ed.hasKids = myKids.length > 0;
         ed.kidsText = myKids.length ? '小項目：' + myKids.map(function (x) { return x.task; }).join('、') : '';
         ed.canAddChild = self.dutyApi() && !E.isNew && !E.parent;
+        /* Museに渡さない（健康に近い担当など。Muse の一覧・履歴に出さない） */
+        var privByParent = !!(prow0 && prow0.priv);
+        ed.showPriv = self.privApi();
+        ed.privPressed = (E.priv || privByParent) ? 'true' : 'false';
+        ed.privStyle = pill(!!(E.priv || privByParent)) + (privByParent ? '; opacity: .6' : '');
+        ed.privLabel = privByParent ? 'Museに渡さない（大項目と同じ）' : 'Museに渡さない';
+        ed.togglePriv = function () { if (!privByParent) self.editSet('priv', !E.priv); };
         ed.addChild = function () { self.setState({ editor: null }); setTimeout(function () { self.openDuty(null, E.id); }, 0); };
         ed.canAskOther = !E.isNew && !E.parent && self.askDates(E.id).length > 0;
         ed.askOther = function () { self.setState({ editor: { kind: 'who', isNew: false, id: E.id, task: E.task, dutyId: E.id } }); };
@@ -2918,7 +2930,7 @@
         [12, '見本：焼きそば', false, '見本の献立です。', [['焼きそば麺', '3玉'], ['キャベツ', '1/4個']], '見本の作り方。']
       ];
       demoDB = {
-        me: { email: 'demo@example.com', who: 'とと' }, api: 17, today: ymd(t), swapsAhead: [{ date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), id: 'd1', who: 'まま', orig: 'とと' }],
+        me: { email: 'demo@example.com', who: 'とと' }, api: 18, today: ymd(t), swapsAhead: [{ date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), id: 'd1', who: 'まま', orig: 'とと' }],
         duties: [[390, '起こして朝ごはん', 'とと'], [435, '犬の散歩', 'とと'], [480, '保育園の送り', 'まま'], [1020, '保育園のお迎え', 'まま'], [1080, '夕ごはん（ホットクック）', 'とと'], [1140, 'お風呂', 'とと'], [1200, '寝かしつけ', 'まま'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rel: i === 0 ? 90 : (i === 2 ? 0 : null) }; }),
         done: {}, checked: {},
         dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { return { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; }),

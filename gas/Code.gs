@@ -18,14 +18,14 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 17;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 18;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
 var SHEETS = {
   '設定': ['項目', '値', '説明'],
   '画面': ['キー', '見出し', 'みんなのタブ', '人のタブ', '順番', '夜の順番', '旅行中', '見る人', '説明', '下のタブ', '朝の順番'],
-  '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付', '親'],
+  '担当': ['id', '時刻', 'やること', '担当', '曜日', '日付', '親', 'Museに出さない'],
   'チェック': ['日付', '種類', '対象ID', '済', '誰', '更新'],
   '申し送り': ['id', '作成', 'from', 'to', 'taskId', 'task', 'text', '確認', '確認した人', '依頼', '依頼の日', '依頼の答え'],
   '日記': ['id', '日付', '時刻', '誰', 'text', '対象'],
@@ -44,7 +44,7 @@ var SHEETS = {
   '改善ログ': ['日付', 'きっかけ', '仮説', '変えたこと', '結果', '状態'],
   '_sessions': ['hash', 'email', '作成', '期限'],
   '返信': ['id', '対象', '誰', '日時', '本文', '返信先'],
-  '_keys': ['hash', '誰', '作成', '状態', '最後に使った', '回数'],
+  '_keys': ['hash', '誰', '作成', '状態', '最後に使った', '回数', '読める履歴'],
   'Museの記録': ['日時', '誰', '操作', 'シート', 'id', '内容']
 };
 
@@ -330,7 +330,7 @@ function buildBoot(today) {
   var depart = departMin(s);
   var dutyRows = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
     var dt = dutyTime(r['時刻'], depart);
-    return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']), parent: text(r['親']),
+    return { id: idOf(r, DUTY_KEYS), t: dt.t, rel: dt.rel, task: text(r['やること']), who: whoOf(r['担当']), rule: text(r['曜日']) || '毎日', date: normDate(r['日付']), parent: text(r['親']), priv: privMark(r['Museに出さない']), privOwn: privMark(r['Museに出さない']),
       _who0: !!text(r['担当']), _rule0: !!text(r['曜日']) };
   });
   linkDutyParents(dutyRows);
@@ -355,6 +355,8 @@ function buildBoot(today) {
   var dutiesAll = dutyRows.filter(function (d) { return !d.date || d.date >= today; }).map(function (d) {
     var o = { id: d.id, t: d.t, rel: d.rel, task: d.task, who: d.who, rule: d.rule, date: d.date };
     if (d.parent) o.parent = d.parent;
+    if (d.privOwn) o.priv = true;          /* その行の印（編集シートが読む・書く） */
+    if (d.priv) o.privAny = true;          /* 大項目から来た分も含めた「Museに出さない」 */
     return o;
   });
   /* 先の日の担当替え（明日から SWAP_AHEAD_DAYS 日先まで）。「別の日を代わってほしい」の状態と取り消しに使う */
@@ -1092,6 +1094,7 @@ function linkDutyParents(rows) {
     if (!d._who0) d.who = p.who;
     if (d.t == null && d.rel == null) { d.t = p.t; d.rel = p.rel; }
     if (!d._rule0 && !d.date) { d.rule = p.rule; d.date = p.date; }
+    if (p.priv) d.priv = true;   /* 大項目を Muse に出さないなら小項目も */
   });
   rows.forEach(function (d) { if (d.parent && by[d.parent].parent) d.parent = ''; });
 }
@@ -1122,6 +1125,7 @@ function saveDuty(d) {
     var p = findById('担当', parent, DUTY_KEYS);
     if (!p || text(p['親']) || parent === String(d.id)) return { ok: false, code: 'bad_parent' };
     var objC = { id: String(d.id), '時刻': '', 'やること': task, '担当': '', '曜日': '', '日付': '', '親': parent };
+    if ('priv' in d) objC['Museに出さない'] = d.priv ? true : '';
     var rc = findById('担当', d.id, DUTY_KEYS);
     if (rc) setCells('担当', rc._row, objC); else appendObj('担当', objC);
     return { ok: true };
@@ -1129,6 +1133,7 @@ function saveDuty(d) {
   var rel = d.rel == null || d.rel === '' ? null : Math.max(0, Math.min(600, Math.round(Number(d.rel) || 0)));
   var obj = { id: String(d.id), '時刻': rel != null ? '出発' + (rel ? '-' + rel : '') : (normTime(d.time) || ''), 'やること': task, '担当': whoOf(d.who), '曜日': d.date ? '' : (String(d.rule || '毎日').trim() || '毎日'), '日付': normDate(d.date) || '' };
   if ('parent' in d) obj['親'] = '';   /* 「親」は新しい画面が送った時だけ書き換える（古い画面で小項目を直しても、小項目のまま） */
+  if ('priv' in d) obj['Museに出さない'] = d.priv ? true : '';
   var r = findById('担当', d.id, DUTY_KEYS);
   if (r) setCells('担当', r._row, obj); else appendObj('担当', obj);
   return { ok: true };
@@ -1381,6 +1386,7 @@ function museCall(req) {
   var op = String(req.op || '');
   if (op === 'help') return { ok: true, me: me.who, ops: MUSE_HELP };
   if (op === 'list') return museList(me);
+  if (op === 'history') return museHistory(req, me, owner);
   var fn = MUSE_OPS[op];
   if (!fn) return { ok: false, code: 'unknown_op', ops: Object.keys(MUSE_HELP) };
   return withLock(function () {
@@ -1409,6 +1415,85 @@ function keyOwner(key) {
 function museId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function otherOf(who) { var ps = people().list; return ps[0].name === who ? ps[1].name : ps[0].name; }
 
+/* ================= Muse が読める履歴（読むだけ・用途ごとの集計） =================
+ * 全件や生の記録は出さない。出すのは用途ごとに決めた3種類だけ：
+ *   menu        過去の献立（日付・料理名・材料名。量・作り方・メモ・写真は出さない）→ 献立の提案
+ *   shopTrend   品ごとの「リストに入った週の数・買った回数・最後の週・何週ごとか」（週ごとの明細は出さない）→ 買い物の傾向
+ *   dutyBalance 担当ごと・人ごとの「済」の回数（日付・時刻・誰が何時に、は出さない）→ 家事の偏り
+ * 「Museに出さない」担当は数えない。日記・写真・申し送り・相談のコメント・メール・子どもの名前と誕生日は出さない。
+ * 鍵ごとの「読める履歴」（_keys の列。menu,shopTrend,dutyBalance をカンマ区切り。空＝読めない）で許した種類だけ。
+ * 読んだら「Museの記録」に種類と件数だけ残す。1日に30回まで。 */
+var HISTORY_KINDS = ['menu', 'shopTrend', 'dutyBalance'];
+/* 「Museに出さない」の列：空・FALSE・いいえ・0・no 以外は全部「出さない」（「はい」「x」「✓」と手で書いても漏れない） */
+function privMark(v) { var t = String(v == null ? '' : v).trim(); return !!t && !/^(false|いいえ|0|no|off|出す)$/i.test(t); }
+/* Museに出さない担当の id（大項目にあれば小項目も）。担当シート全体から */
+function privDutyIds() {
+  var rows = rowsOf('担当').filter(function (r) { return text(r['やること']); }), out = {}, par = {};
+  rows.forEach(function (r) { var id = idOf(r, DUTY_KEYS); par[id] = text(r['親']); if (privMark(r['Museに出さない'])) out[id] = true; });
+  Object.keys(par).forEach(function (id) { if (par[id] && out[par[id]]) out[id] = true; });
+  return out;
+}
+function museHistory(req, me, owner) {
+  var kind = String(req.kind || '');
+  if (HISTORY_KINDS.indexOf(kind) < 0) return { ok: false, code: 'bad_kind', kinds: HISTORY_KINDS };
+  var row = rowsOf('_keys').filter(function (r) { return r.hash === owner.hash; })[0];
+  var allow = splitList(row && row['読める履歴']);
+  if (allow.indexOf(kind) < 0) return { ok: false, code: 'not_allowed', message: 'この鍵では ' + kind + ' を読めません（持ち主が「_keys」の「読める履歴」で許可します）' };
+  var cache = CacheService.getScriptCache(), dk = 'mhist_' + owner.hash.slice(0, 16) + '_' + ymd(new Date());
+  var n = Number(cache.get(dk) || 0) + 1; cache.put(dk, String(n), 90000);
+  if (n > 30) return { ok: false, code: 'too_many', message: '履歴は1日に30回までです' };
+  var weeks = Math.max(1, Math.min(8, Math.round(Number(req.weeks) || (kind === 'dutyBalance' ? 4 : 8))));
+  var t = parseYmd(ymd(new Date())), from = ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - weeks * 7)), today = ymd(t);
+  var out = { ok: true, kind: kind, from: from, to: today };
+  if (kind === 'menu') {
+    out.items = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= from && d < today && text(r['料理']); })
+      .map(function (r) { return { date: normDate(r['日付']), dish: text(r['料理']), ingredients: parseIngredients(r['材料']).map(function (x) { return x[0]; }).filter(String) }; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  } else if (kind === 'shopTrend') {
+    var bought = {};
+    rowsOf('チェック').forEach(function (r) { if (r['種類'] === '買い物' && truthy(r['済'])) bought[String(r['対象ID']) + '|' + normDate(r['日付'])] = true; });
+    var by = {};
+    rowsOf('買い物').forEach(function (r) {
+      var name = text(r['品名']), w = normDate(r['週']);
+      if (!name || !w || w < from) return;
+      var k = normName(name), e = by[k] || (by[k] = { name: name, cat: '', weeks: {}, bought: 0 });
+      e.weeks[w] = 1; e.cat = text(r['分類']) || e.cat; e.name = name;
+      if (bought[idOf(r, SHOP_KEYS) + '|' + w]) e.bought++;
+    });
+    out.items = Object.keys(by).map(function (k) {
+      var e = by[k], ws = Object.keys(e.weeks).sort(), n = ws.length;
+      var gap = n >= 2 ? Math.round((parseYmd(ws[n - 1]) - parseYmd(ws[0])) / 864e5 / 7 / (n - 1) * 10) / 10 : null;
+      return { name: e.name, cat: e.cat, listedWeeks: n, bought: e.bought, lastWeek: ws[n - 1], everyWeeks: gap };
+    }).sort(function (a, b) { return b.listedWeeks - a.listedWeeks; }).slice(0, 150);
+    out.note = 'bought は「買った」が押された回数。押し忘れがあるので、listedWeeks（リストに入った週の数）と合わせて見る';
+  } else {
+    var duties = rowsOf('担当').filter(function (r) { return text(r['やること']); }).map(function (r) {
+      return { id: idOf(r, DUTY_KEYS), task: text(r['やること']), who: whoOf(r['担当']), parent: text(r['親']) };
+    });
+    var byId = {}, pv = privDutyIds(); duties.forEach(function (d) { byId[d.id] = d; d.priv = !!pv[d.id]; });
+    var cnt = {}, ps = people().list.map(function (p) { return p.name; });
+    rowsOf('チェック').forEach(function (r) {
+      if (r['種類'] !== '担当' || !truthy(r['済'])) return;
+      var d = normDate(r['日付']), du = byId[String(r['対象ID'])];
+      if (!d || d < from || d >= today || !du || du.priv || du.parent) return;   /* 小項目は大項目の済に含まれる */
+      var w = whoOf(r['誰']), c = cnt[du.id] || (cnt[du.id] = { task: du.task, usual: du.who, done: {} });
+      c.done[w] = (c.done[w] || 0) + 1;
+    });
+    out.items = Object.keys(cnt).map(function (k) { return cnt[k]; });
+    var tot = {}; ps.forEach(function (p) { tot[p] = 0; });
+    out.items.forEach(function (c) { Object.keys(c.done).forEach(function (w) { tot[w] = (tot[w] || 0) + c.done[w]; }); });
+    out.totals = tot;
+    out.note = '「済」を押した人で数える（押し忘れ・相手がまとめて押した日は実際とずれる）。Museに出さない担当は含まない';
+  }
+  /* 記録と鍵の「最後に使った」は、書き込みと重ならないようロックの中で */
+  try { withLock(function () {
+    appendObj(MUSE_LOG, { '日時': new Date(), '誰': me.who, '操作': 'history', 'シート': kind, 'id': '', '内容': weeks + '週・' + out.items.length + '件（読むだけ）' });
+    setCells('_keys', owner.row, { '最後に使った': new Date(), '回数': Number(owner.count || 0) + 1 });
+    return { ok: true };
+  }); } catch (e) {}
+  return out;
+}
+
 /* 今の一覧（Museが重ならないように足したり、相談に使ったりする）。日記・写真・申し送りの他人宛ては出さない */
 function museList(me) {
   var today = ymd(new Date()), v = ver();
@@ -1416,15 +1501,17 @@ function museList(me) {
   if (!D) { D = buildBoot(today); snapPut(today, D, v); }
   var items = [];
   (D.shop.groups || []).forEach(function (g) { g.items.forEach(function (it) { items.push({ name: it[1], qty: it[2], cat: g.label, bought: !!D.checked[it[0]] }); }); });
+  /* 「Museに出さない」担当（吸入・薬など健康に近いもの）と、それに付いた申し送りは出さない */
+  var privIds = privDutyIds();   /* 過ぎた日だけの担当も含め、担当シート全体から */
   return { ok: true, today: today, me: me.who, partner: otherOf(me.who),
     shop: { week: D.shop.week, categories: (D.shop.groups || []).map(function (g) { return g.label; }), items: items },
     menu: (D.menu || []).map(function (m) { return { date: m.date, dish: m.dish, ingredients: m.ingredients.map(function (x) { return x[0] + (x[1] ? ' ' + x[1] : ''); }) }; }),
-    duties: (D.dutiesAll || []).map(function (d) { return { task: d.task, time: d.t == null ? '' : Math.floor(d.t / 60) + ':' + pad(d.t % 60), who: d.who, repeat: d.date ? '' : d.rule, date: d.date || '' }; }),
+    duties: (D.dutiesAll || []).filter(function (d) { return !d.privAny && !d.priv; }).map(function (d) { return { task: d.task, time: d.t == null ? '' : Math.floor(d.t / 60) + ':' + pad(d.t % 60), who: d.who, repeat: d.date ? '' : d.rule, date: d.date || '' }; }),
     plans: (D.plans || []).filter(function (p) { return p.date >= today; }),
     deadlines: (D.deadlines || []).filter(function (x) { return !x.done; }).map(function (x) { return { what: x.what, due: x.due, who: x.who }; }),
     decisions: (D.decisions || []).filter(function (x) { return x.state !== '決まった'; }).map(function (x) { return { q: x.q, options: x.options, due: x.due }; }),
     outings: (D.outings || []).map(function (x) { return { name: x.name, date: x.date, place: x.place, state: x.state, go: x.go }; }),
-    notesForMe: (D.notes || []).filter(function (x) { return x.to === me.who && !x.read; }).map(function (x) { return { from: x.from, text: x.text }; })
+    notesForMe: (D.notes || []).filter(function (x) { return x.to === me.who && !x.read && !privIds[x.taskId]; }).map(function (x) { return { from: x.from, text: x.text }; })
   };
 }
 
@@ -1455,6 +1542,7 @@ function addToShop(list, cat) {
 
 var MUSE_HELP = {
   list: '今の一覧を見る（買い物・献立・担当・予定・期限・相談・お出かけ・自分宛ての申し送り）',
+  history: 'kind（menu＝過去の献立 / shopTrend＝品ごとの買い方 / dutyBalance＝担当ごと・人ごとの済の回数）, weeks?(1〜8。既定 menu・shopTrend 8、dutyBalance 4) 読むだけ。鍵ごとに読める種類が決まっている',
   'shop.add': 'items:[{name, qty?, cat?}] 買い物リストに足す（まだ買っていない同じ品名は足さない）',
   'menu.add': 'servings?(何人分), date?(yyyy-mm-dd。省くと今日から7日で献立が空いている最初の日), dish, ingredients:[{name, qty?}], how?, note?, url?(https), hotcook?(true/false), toShop?(true＝材料のうちリストに無い物を買い物に足す), replace?(true＝その日の献立を置きかえる)',
   'duty.add': 'task, time?(H:mm), who?(呼び名・家族。省くと自分), date?(その日だけ) か repeat?(毎日・平日・土日・月水金 など。省くと毎日)',
