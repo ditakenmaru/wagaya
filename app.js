@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '65';
+  var APP_VERSION = '66';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2488,11 +2488,11 @@
       if (key === 'news') { var nn = (D.news || []).length; return nn ? nn + '本' : ''; }
       return '';
     };
+    /* 落ち着いた見た目（UIデザイナーの見直し）：色は青1色。アイコンは小さな角丸の枠に。料理だけ同じ大きさの写真 */
     var tileVisual = function (key) {
       var ph = navPhoto[key];
-      if (ph) return 'position: relative; height: 72px; border-radius: 12px; overflow: hidden; background: var(--fill) url(\'' + ph.replace(/'/g, '%27') + '\') center / cover no-repeat';
-      var g = (NAV_GRAD[key] || '#8E8E93,#636366').split(',');
-      return 'position: relative; height: 72px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, ' + g[0] + ', ' + g[1] + ')';
+      if (ph) return 'width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; background: var(--fill) url(\'' + ph.replace(/'/g, '%27') + '\') center / cover no-repeat';
+      return 'width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--accent-soft)';
     };
     var navGo = function (key) { return function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec(key); }, 60); }; };
     var myNotes = (D.notes || []).filter(function (n) { return n.to === meWho && !n.read; }).length;
@@ -2508,12 +2508,12 @@
         var hint = hintOf(key);
         navTiles.push({ key: key, label: name, hint: hint, hasHint: !!hint, sub: tl + (here ? '・いまここ' : ''), icon: NAV_ICON[key] || 'M12 11.5h.01', visual: tileVisual(key), isPhoto: !!navPhoto[key], noPhoto: !navPhoto[key], badge: key === 'notes' ? myNotes : 0, hasBadge: key === 'notes' && myNotes > 0,
           aria: name + '（' + tl + '）' + (key === 'notes' && myNotes ? '、未確認 ' + myNotes + '件' : ''), go: navGo(key),
-          style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 8px 8px 12px; border-radius: var(--r-card); border: ' + (here ? '1.5px solid var(--accent)' : '1.5px solid transparent') + '; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
+          style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 96px; padding: 12px; border-radius: var(--r-card); border: none; background: ' + (here ? 'var(--accent-soft)' : 'var(--card)') + '; color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
       });
     });
     /* 申し送りは、相談・期限が見えないタブ構成でも行けるように */
     if (!navTiles.some(function (x) { return x.key === 'notes'; })) navTiles.unshift({ key: 'notes', label: '申し送り', hint: hintOf('notes'), hasHint: true, sub: '相談・連絡', icon: NAV_ICON.notes, visual: tileVisual('notes'), isPhoto: false, noPhoto: true, badge: myNotes, hasBadge: myNotes > 0, aria: '申し送り', go: navGo('notes'),
-      style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 8px 8px 12px; border-radius: var(--r-card); border: 1.5px solid transparent; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
+      style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 96px; padding: 12px; border-radius: var(--r-card); border: none; background: var(--card); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
     var rankOf = {};
