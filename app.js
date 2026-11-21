@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '64';
+  var APP_VERSION = '65';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2467,6 +2467,33 @@
       plan: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4', weekend: 'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
       topics: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', news: 'M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7M7 16h4'
     };
+    /* タイルの上の絵：料理は今日の献立の写真、ほかはセクションごとの色のアイコン画像（アプリのアイコン風） */
+    var NAV_GRAD = { flow: '#34C759,#30B0C7', diary: '#FF9F0A,#FF6B3D', notes: '#5E5CE6,#BF5AF2', decide: '#FF375F,#FF9F0A', deadline: '#FF3B30,#FF7A6E',
+      week: '#FF9F0A,#FFCC00', shop: '#32ADE6,#0A84FF', plan: '#0A84FF,#5E5CE6', weekend: '#FFCC00,#FF9F0A', topics: '#64D2FF,#5E5CE6', news: '#8E8E93,#48484A' };
+    var todayYmd = D.today || ymd(new Date());
+    var todayMenu = (D.menu || []).filter(function (m) { return m.date === todayYmd && m.dish; })[0];
+    var navPhoto = { week: todayMenu && todayMenu.photo ? todayMenu.photo : pexels(MOOD[0], 400) };
+    /* 中身の一言（押す前に何があるか分かるように） */
+    var chk0 = D.checked || {}, done0 = D.done || {};
+    var hintOf = function (key) {
+      if (key === 'flow') { var left = mine.filter(function (d) { return !done[d.id]; }).length; return left ? 'のこり' + left + '件' : 'ぜんぶ済み'; }
+      if (key === 'diary') return diaryAll.length ? '今日 ' + diaryAll.length + '件' : 'まだ書いていない';
+      if (key === 'notes') return myNotes ? '未確認 ' + myNotes + '件' : '新しいものなし';
+      if (key === 'decide') { var od = (D.decisions || []).filter(function (x) { return x.state !== '決まった'; }).length; return od ? od + '件の相談' : '相談なし'; }
+      if (key === 'deadline') { var nx = (D.deadlines || []).filter(function (x) { return !x.done && x.due; }).sort(function (a, b) { return a.due < b.due ? -1 : 1; })[0]; return nx ? '次：' + Number(nx.due.slice(5, 7)) + '/' + Number(nx.due.slice(8, 10)) : '期限なし'; }
+      if (key === 'week') return todayMenu ? '今日：' + todayMenu.dish : '今日の献立はまだ';
+      if (key === 'shop') { var nb = 0; ((D.shop && D.shop.groups) || []).forEach(function (g) { g.items.forEach(function (it) { if (!chk0[it[0]]) nb++; }); }); return nb ? 'まだ買っていない ' + nb + '品' : 'ぜんぶ買った'; }
+      if (key === 'plan') { var tp = (D.plans || []).filter(function (p) { return p.date === todayYmd; }).length; return tp ? '今日 ' + tp + '件' : '今日の予定なし'; }
+      if (key === 'topics') { var nt = (D.topics || []).length; return nt ? nt + '件' : ''; }
+      if (key === 'news') { var nn = (D.news || []).length; return nn ? nn + '本' : ''; }
+      return '';
+    };
+    var tileVisual = function (key) {
+      var ph = navPhoto[key];
+      if (ph) return 'position: relative; height: 72px; border-radius: 12px; overflow: hidden; background: var(--fill) url(\'' + ph.replace(/'/g, '%27') + '\') center / cover no-repeat';
+      var g = (NAV_GRAD[key] || '#8E8E93,#636366').split(',');
+      return 'position: relative; height: 72px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, ' + g[0] + ', ' + g[1] + ')';
+    };
     var navGo = function (key) { return function () { self.setState({ accountOpen: false }); USAGE.add('act:menu_nav'); setTimeout(function () { self.jumpSec(key); }, 60); }; };
     var myNotes = (D.notes || []).filter(function (n) { return n.to === meWho && !n.read; }).length;
     var navTiles = [];
@@ -2478,14 +2505,15 @@
       if (TAB_ID[t] === 'two') keys.unshift('notes');
       keys.forEach(function (key) {
         var name = key === 'notes' ? '申し送り' : (title[key] || key);
-        navTiles.push({ key: key, label: name, sub: tl + (here ? '・いまここ' : ''), icon: NAV_ICON[key] || 'M12 11.5h.01', badge: key === 'notes' ? myNotes : 0, hasBadge: key === 'notes' && myNotes > 0,
+        var hint = hintOf(key);
+        navTiles.push({ key: key, label: name, hint: hint, hasHint: !!hint, sub: tl + (here ? '・いまここ' : ''), icon: NAV_ICON[key] || 'M12 11.5h.01', visual: tileVisual(key), isPhoto: !!navPhoto[key], noPhoto: !navPhoto[key], badge: key === 'notes' ? myNotes : 0, hasBadge: key === 'notes' && myNotes > 0,
           aria: name + '（' + tl + '）' + (key === 'notes' && myNotes ? '、未確認 ' + myNotes + '件' : ''), go: navGo(key),
-          style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 12px; border-radius: var(--r-card); border: ' + (here ? '1.5px solid var(--accent)' : '1.5px solid transparent') + '; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
+          style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 8px 8px 12px; border-radius: var(--r-card); border: ' + (here ? '1.5px solid var(--accent)' : '1.5px solid transparent') + '; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
       });
     });
     /* 申し送りは、相談・期限が見えないタブ構成でも行けるように */
-    if (!navTiles.some(function (x) { return x.key === 'notes'; })) navTiles.unshift({ key: 'notes', label: '申し送り', sub: '相談・連絡', icon: NAV_ICON.notes, badge: myNotes, hasBadge: myNotes > 0, aria: '申し送り', go: navGo('notes'),
-      style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 12px; border-radius: var(--r-card); border: 1.5px solid transparent; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
+    if (!navTiles.some(function (x) { return x.key === 'notes'; })) navTiles.unshift({ key: 'notes', label: '申し送り', hint: hintOf('notes'), hasHint: true, sub: '相談・連絡', icon: NAV_ICON.notes, visual: tileVisual('notes'), isPhoto: false, noPhoto: true, badge: myNotes, hasBadge: myNotes > 0, aria: '申し送り', go: navGo('notes'),
+      style: 'position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 8px 8px 12px; border-radius: var(--r-card); border: 1.5px solid transparent; background: var(--fill); color: var(--label); text-align: left; font-family: inherit; cursor: pointer' });
     /* 並びは CSS の order で変える（DOM の順は変えない。入れ替えると描き直しで要素が使い回されて崩れるため） */
     var seq0 = !isHome && TAB_SEQ[TAB_ID[curTab]];
     var rankOf = {};
