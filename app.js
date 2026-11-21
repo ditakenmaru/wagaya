@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '71';
+  var APP_VERSION = '72';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -1993,7 +1993,7 @@
         highBtnStyle: 'flex-shrink: 0; min-height: 32px; padding: 0 10px; border-radius: var(--r-chip); border: none; cursor: pointer; font-size: var(--t-cap); font-weight: 700; ' + (t.high ? 'background: #FFFFFF; color: #1D1D1F' : 'background: rgba(255,255,255,.22); color: #FFFFFF'),
         /* Apple Store・Amazon のような横スライドのカード：幅をそろえて次のカードを少し見せ、1枚ずつ止まる */
         /* カードごとに色（Apple Store・Amazon のカルーセル風）。色は話題ごとに決まる（id から）。文字は白 */
-        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; min-height: 176px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--r-card); color: #FFFFFF; box-shadow: 0 6px 18px rgba(0,0,0,.12); background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(t.id || t.title, TOPIC_TONES.length)].join(', ') + ')',
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); min-height: 176px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--r-card); color: #FFFFFF; box-shadow: var(--shadow-card); background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(t.id || t.title, TOPIC_TONES.length)].join(', ') + ')',
         host: (function () { try { var h = new URL(t.url).hostname; return h === 'claude.ai' ? 'Claude' : h.replace(/^www\./, ''); } catch (e) { return ''; } })() };
     });
 
@@ -2016,8 +2016,8 @@
         if (x.a1 === o) picks.push({ label: names[0], style: self.badge(names[0]) });
         if (x.a2 === o) picks.push({ label: names[1], style: self.badge(names[1]) });
         var on = mine === o;
-        return { label: o, picks: picks, pressed: on ? 'true' : 'false', pick: function () { self.answer(x, o); },
-          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: var(--r-btn); text-align: left; cursor: pointer; font-size: var(--t-sub); font-weight: 600; border: none; color: ' + (on ? 'var(--accent)' : 'var(--label)') + '; background: ' + (on ? 'var(--accent-soft)' : 'var(--fill)') + '; box-shadow: ' + (on ? 'inset 0 0 0 2px var(--accent)' : 'none') };
+        return { label: (on ? '✓ ' : '') + o, picks: picks, pressed: on ? 'true' : 'false', pick: function () { self.answer(x, o); },
+          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: var(--r-btn); text-align: left; cursor: pointer; font-size: var(--t-sub); font-weight: 600; border: none; color: ' + (on ? 'var(--accent)' : 'var(--label)') + '; background: ' + (on ? 'var(--accent-soft)' : 'var(--fill)') + '; box-shadow: none' };
       });
       var other = me1 ? x.a2 : x.a1, otherName = me1 ? names[1] : names[0];
       var waiting = !mine && !other ? 'まだ2人とも答えていません。あなたから答えられます'
@@ -2059,7 +2059,7 @@
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
-        cardStyle: 'flex-shrink: 0; width: calc(100vw - 88px); max-width: 320px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); box-shadow: 0 6px 18px rgba(0,0,0,.08); background: ' + (decided ? 'var(--card2)' : 'var(--card)'),
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); box-shadow: none; background: ' + (decided ? 'var(--card2)' : 'var(--card)'),
         headStyle: 'display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; align-items: flex-start; margin: 0 -16px 4px; padding: 16px; min-height: 76px; box-sizing: border-box; color: #FFFFFF; background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(x.id || x.q, TOPIC_TONES.length)].join(', ') + ')' };
     });
 
@@ -2107,7 +2107,7 @@
         days: wkDays.map(function (w) { return { label: w.label + 'に行く', pick: function () { self.planOuting(x, w.ymd); } }; }),
         unplan: function () { self.planOuting(x, ''); }, edit: function () { self.openOuting(x); }, muse: function () { self.openMuse('outing', x); },
         likeStyle: 'min-height: 44px; padding: 0 16px; border-radius: var(--r-btn); font-size: var(--t-sub); font-weight: 700; cursor: pointer; border: none; ' + (mineLike ? 'background: var(--accent-bg); color: #FFFFFF' : 'background: var(--accent-soft); color: var(--accent)'),
-        cardStyle: 'flex-shrink: 0; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); background: ' + (planned ? 'var(--done-soft)' : 'var(--card)') };
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); scroll-snap-align: start; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-card); background: ' + (planned ? 'var(--done-soft)' : 'var(--card)') };
     });
 
     /* 編集シート（担当・買い物・話題） */
@@ -2309,7 +2309,7 @@
         open: false, expanded: 'false', more: (rCount['news:' + n.id] ? '詳細を見る（コメント' + rCount['news:' + n.id] + '件）' : '詳細を見る'),
         toggle: function () { self.openDetail('news', n.id); },
         srcStyle: 'padding: 4px 8px; border-radius: var(--r-btn); font-size: var(--t-cap); font-weight: 700; ' + (web ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--attn-soft); color: var(--attn-ink)'),
-        cardStyle: 'flex-shrink: 0; width: 290px; box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: var(--r-card); background: var(--card); animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-height: 230px; padding: 16px; border-radius: var(--r-card); background: var(--card); animation: ' + ((st.goalAnim || 0) % 2 ? 'slideA' : 'slideB') + ' .4s cubic-bezier(.2,.8,.2,1) both'
       };
     });
 
@@ -2953,7 +2953,7 @@
     Object.keys(HOME_LIMIT).forEach(function (k) {
       var sec = HOME_LIMIT[k][0], n = HOME_LIMIT[k][1], list = R[k] || [];
       var count = k === 'shop' ? list.reduce(function (a, g) { return a + g.items.length; }, 0) : list.length;
-      var m = { show: false, label: '', go: function () {}, style: 'align-self: stretch; margin: 12px ' + ({ topics: 1, diary: 1, outings: 1, news: 1 }[k] ? '20px' : '0') + ' 0; min-height: 48px; border-radius: var(--r-btn); border: none; background: var(--card); color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer' };
+      var m = { show: false, label: '', go: function () {}, style: 'align-self: flex-start; margin: 8px ' + ({ topics: 1, diary: 1, outings: 1, news: 1 }[k] ? '20px' : '0') + ' 0; min-height: 44px; padding: 0 4px; border-radius: var(--r-btn); border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer' };
       more[k] = m;
       var here = secTab[sec] === curTab;
       var open = !!(st.expanded && st.expanded[sec]);
