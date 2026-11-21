@@ -871,6 +871,14 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <h2 id="sec-plan" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{title.plan}}</h2>
       <span style="font-size: var(--t-cap); color: var(--label2)">{{planRange}} {{planTotal}}件</span>
     </div>
+    <sc-if value="{{planNav.show}}" hint-placeholder-val="{{ false }}">
+      <div role="group" aria-label="カレンダーを4週間ずつ送る" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+        <button type="button" aria-label="前の4週間へ" aria-disabled="{{planNav.prevOff}}" onClick="{{planNav.prev}}" style="{{planNav.prevStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg></button>
+        <span role="status" aria-busy="{{planNav.busy}}" style="flex: 1; min-width: 0; text-align: center; font-size: var(--t-sub); font-weight: 600">{{planNav.label}}</span>
+        <sc-if value="{{planNav.away}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{planNav.home}}" class="btn-link" style="flex-shrink: 0; min-height: 44px; padding: 0 4px; font-size: var(--t-foot)">今日へ</button></sc-if>
+        <button type="button" aria-label="次の4週間へ" aria-disabled="{{planNav.nextOff}}" onClick="{{planNav.next}}" style="{{planNav.nextStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></button>
+      </div>
+    </sc-if>
     <div role="group" aria-label="{{planGridAria}}" style="display: flex; flex-direction: column; gap: 8px">
       <sc-for list="{{planWeeks}}" as="pw" hint-placeholder-count="2">
         <div style="{{pw.gridStyle}}">
@@ -912,9 +920,8 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <sc-if value="{{more.planList.show}}" hint-placeholder-val="{{ false }}">
       <button type="button" onClick="{{more.planList.go}}" style="{{more.planList.style}}">{{more.planList.label}}</button>
     </sc-if>
-    <sc-if value="{{planFurther.show}}" hint-placeholder-val="{{ false }}">
-      <sc-if value="{{planFurther.hasNote}}" hint-placeholder-val="{{ false }}"><p role="status" style="margin: 8px 4px 0; font-size: var(--t-cap); color: var(--label2)">{{planFurther.note}}</p></sc-if>
-      <button type="button" aria-busy="{{planFurther.busy}}" onClick="{{planFurther.go}}" class="btn-link" style="align-self: flex-start; min-height: 44px; padding: 0 4px; font-size: var(--t-sub)">{{planFurther.label}}</button>
+    <sc-if value="{{planNav.show}}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{planNav.canNext}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{planNav.next}}" class="btn-link" style="align-self: flex-start; min-height: 44px; padding: 0 4px; font-size: var(--t-sub)">{{planNav.nextLabel}}</button></sc-if>
     </sc-if>
   </section>
   </sc-if>
@@ -1395,7 +1402,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=78"></script>
-<script src="app.js?v=78"></script>
+<script src="config.js?v=79"></script>
+<script src="app.js?v=79"></script>
 </body>
 </html>
