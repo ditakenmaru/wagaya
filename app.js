@@ -6,7 +6,7 @@
   'use strict';
 
   var CFG = window.APP_CONFIG || {};
-  var APP_VERSION = '73';
+  var APP_VERSION = '74';
   var API_EXPECTED = 15;   // 画面が必要とする GAS の API_VERSION の下限（これより古い時だけ知らせる）。16 から boot に swapsAhead と cancelSwap。無い GAS では取り消しを出さない
   var DEMO = /[?&]demo=1/.test(location.search) || !!CFG.demo;
   /* 見本モードは別の名前で保存する（本物のアプリの保存を上書きしない） */
@@ -2018,7 +2018,7 @@
         if (x.a2 === o) picks.push({ label: names[1], style: self.badge(names[1]) });
         var on = mine === o;
         return { label: (on ? '✓ ' : '') + o, picks: picks, pressed: on ? 'true' : 'false', pick: function () { self.answer(x, o); },
-          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: var(--r-btn); text-align: left; cursor: pointer; font-size: var(--t-sub); font-weight: 600; border: none; color: ' + (on ? 'var(--accent)' : 'var(--label)') + '; background: ' + (on ? 'color-mix(in srgb, var(--accent-bg) 20%, var(--card))' : 'var(--card)') + '; box-shadow: none' };
+          style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 12px; border-radius: var(--r-btn); text-align: left; cursor: pointer; font-size: var(--t-sub); font-weight: 600; border: none; color: ' + (on ? '#1D1D1F' : '#FFFFFF') + '; background: ' + (on ? 'rgba(255,255,255,.96)' : 'rgba(255,255,255,.2)') + '; box-shadow: none' };
       });
       var other = me1 ? x.a2 : x.a1, otherName = me1 ? names[1] : names[0];
       var waiting = !mine && !other ? 'まだ2人とも答えていません。あなたから答えられます'
@@ -2060,8 +2060,8 @@
         openAll: function () { self.openDetail('decide', x.id); },
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
-        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); box-shadow: none; background: ' + (decided ? 'var(--card2)' : 'color-mix(in srgb, ' + tone[0] + ' 7%, var(--card))'),
-        headStyle: 'display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; align-items: flex-start; margin: 0 -16px 4px; padding: 16px; min-height: 76px; box-sizing: border-box; color: #FFFFFF; background: linear-gradient(150deg, ' + TOPIC_TONES[hashIdx(x.id || x.q, TOPIC_TONES.length)].join(', ') + ')' };
+        cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); ' + (decided ? 'box-shadow: none; background: var(--card2)' : 'color: #FFFFFF; box-shadow: var(--shadow-card); background: linear-gradient(150deg, ' + tone.join(', ') + ')'),
+        headStyle: 'display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; align-items: flex-start; margin: 0 -16px 4px; padding: 16px 16px 4px; box-sizing: border-box; color: #FFFFFF; background: ' + (decided ? 'linear-gradient(150deg, ' + tone.join(', ') + ')' : 'transparent') };
     });
 
     /* 決まった相談はアーカイブへ。一覧には決まっていないものだけ出し、下の「決まったこと」で広げる（新しく決まった順＝シートの下から） */
