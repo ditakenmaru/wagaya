@@ -1103,6 +1103,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     </div>
   </section>
 
+  <sc-if value="{{upBarOn}}" hint-placeholder-val="{{ false }}"><div role="status" aria-live="polite" data-upbar="1" style="{{upBarStyle}}"><span style="width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #FFFFFF; animation: spin .8s linear infinite"></span><span style="flex: 1; font-size: var(--t-sub); font-weight: 600">{{upMsg}}</span></div></sc-if>
   <div role="status" aria-live="polite" style="{{toastStyle}}">
     <span style="flex: 1; font-size: var(--t-sub); font-weight: 600">{{toastMsg}}</span>
     <sc-if value="{{toastHasUndo}}" hint-placeholder-val="{{ true }}">
@@ -1433,7 +1434,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=89"></script>
-<script src="app.js?v=89"></script>
+<script src="config.js?v=90"></script>
+<script src="app.js?v=90"></script>
 </body>
 </html>

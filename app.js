@@ -287,7 +287,7 @@
     DCLogic.call(this);
     var cached = LS.get('boot');
     this.state = {
-      who: LS.get('who') || 'all', day: null, menuWeek: 0, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, sheet: false,
+      who: LS.get('who') || 'all', day: null, menuWeek: 0, dayAnim: 0, hideBought: false, now: Date.now(), toast: null, upMsg: null, sheet: false,
       loading: !cached, data: cached, photos: [],
       slideIdx: 0, slideAt: Date.now(), paused: false,
       noteOpen: false, noteMode: 'diary', noteTarget: '', noteTaskId: null, noteDraft: '', listening: false,
@@ -1389,12 +1389,13 @@
     var done = 0, ng = 0, big = 0, n = files.length;
     var step = function (i) {
       if (i >= n) {
+        self.setState({ upMsg: null });
         self.showToast(done ? '写真を' + done + '件足しました' + (ng || big ? '（' + [big ? big + '件は大きすぎ' : '', ng ? ng + '件は失敗' : ''].filter(String).join('、') + '）' : '') : (big ? '大きすぎて送れませんでした（動画は15MBまで）' : '送れませんでした。電波のよい所でもう一度'), null);
         if (done) self.refresh(true, true);
         return;
       }
       var f = files[i], isVideo = /^video\//.test(f.type || '');
-      self.showToast('写真を送っています ' + (i + 1) + ' / ' + n, null);
+      self.setState({ upMsg: '写真を送っています ' + (i + 1) + ' / ' + n });
       if (isVideo && f.size > 15 * 1048576) { big++; step(i + 1); return; }
       var prep = isVideo ? readBase64(f).then(function (d) { return { mime: f.type === 'video/quicktime' ? 'video/quicktime' : 'video/mp4', data: d }; })
         : shrinkImage(f).then(function (d) { return { mime: 'image/jpeg', data: d }; });
@@ -1556,7 +1557,9 @@
   App.prototype.saveDecision = function () {
     var e = this.state.editor, q = (e.q || '').trim();
     if (!q) { this.showToast('相談したいことを入力してください', null); return; }
-    if (e.uploading) { this.showToast('添付を送っています。終わるまで少し待ってください', null); return; }
+    if (e.uploading) {   /* 送信は先に通す：画面を閉じて下に「送っています」を出し、添付が終わったら自動で保存する */
+      this.setState({ editor: Object.assign({}, e, { hidden: true, saveAfter: true }), upMsg: '添付を送っています…（終わると相談を保存します）' }); return;
+    }
     var opts = String(e.options || '').split(/\n/).map(function (x) { return x.trim(); }).filter(String).slice(0, 6);
     var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim(), files: (e.files || []).slice(0, this.attachMax()).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
     var cleared = false;
@@ -1640,9 +1643,12 @@
     var step = function (i) {
       if (i >= files.length) {
         setEd(function (c) { return Object.assign({}, c, { uploading: false }); });
+        var cur = self.state.editor;
+        if (cur && cur.id === eid && cur.saveAfter) { self.setState({ upMsg: null }); self.saveDecision(); }
         if (ng || big) self.showToast((big ? big + '件は大きすぎます（PDFは5MBまで）' : '') + (big && ng ? '。' : '') + (ng ? ng + '件は送れませんでした' : ''), null);
         return;
       }
+      var cur0 = self.state.editor; if (cur0 && cur0.id === eid && cur0.saveAfter) self.setState({ upMsg: '添付を送っています ' + (i + 1) + ' / ' + files.length });
       var f = files[i], pdf = f.type === 'application/pdf' || (!f.type && /\.pdf$/i.test(f.name || ''));
       if (!pdf && !/^image\//.test(f.type || '')) { ng++; step(i + 1); return; }
       if (pdf && f.size > 5 * 1048576) { big++; step(i + 1); return; }
@@ -2885,7 +2891,7 @@
       topics: topics, topicsEmpty: topics.length === 0, linksArchive: linksArchive, topicEdit: !!st.topicEdit, topicEditLabel: st.topicEdit ? '完了' : '直す',
       toggleTopicEdit: function () { self.setState({ topicEdit: !self.state.topicEdit }); },
       addTopic: function () { self.openTopic(null); },
-      ed: ed, edBackdropStyle: backdrop(!!E), edSheetStyle: sheetStyle(!!E, 'max-height: 88vh; overflow-y: auto; '),
+      ed: ed, edBackdropStyle: backdrop(!!E && !E.hidden), edSheetStyle: sheetStyle(!!E && !E.hidden, 'max-height: 88vh; overflow-y: auto; '),
       fbDraft: st.fbDraft, setFbDraft: function (e) { self.setState({ fbDraft: e.target.value }); },
       openFb: function () { self.setState({ fbOpen: true, accountOpen: false }); },
       closeFb: function () { self.setState({ fbOpen: false }); },
@@ -3129,7 +3135,9 @@
       })(),
       toastMsg: st.toast ? st.toast.msg : '',
       undo: function () { if (self.state.toast && self.state.toast.undo) self.state.toast.undo(); },
-      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: var(--r-card); background: var(--toast); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 30; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
+      upBarOn: !!st.upMsg, upMsg: st.upMsg || '',
+      upBarStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-card); background: var(--toast); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 1500',
+      toastStyle: 'position: fixed; left: 16px; right: 16px; bottom: calc(' + (st.upMsg ? 150 : 96) + 'px + env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: var(--r-card); background: var(--toast); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 30; transition: transform .25s ease-out, opacity .25s; ' + (st.toast ? 'transform: translateY(0); opacity: 1' : 'transform: translateY(24px); opacity: 0; pointer-events: none'),
       openSheet: function () { self.setState({ sheet: true }); },
       closeSheet: function () { self.setState({ sheet: false }); },
       backdropStyle: backdrop(st.sheet),
