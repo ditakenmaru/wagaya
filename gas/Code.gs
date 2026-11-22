@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 19;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 20;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -36,7 +36,7 @@ var SHEETS = {
   'ニュース': ['id', '中期ID', '出どころ', '発信元', '日付', '見出し', 'なぜ今', '本文', 'URL'],
   '話題': ['id', '見出し', 'URL', '説明', '日付', '表示', '優先'],
   '要望': ['id', '日時', '誰', '内容', '画面', '状態', 'メモ'],
-  '相談': ['id', '問い', '選択肢', '期限', '状態', '決まったこと', '人1の答え', '人2の答え', 'メモ', '作成'],
+  '相談': ['id', '問い', '選択肢', '期限', '状態', '決まったこと', '人1の答え', '人2の答え', 'メモ', '作成', '添付'],
   '期限': ['id', '内容', '期限', '担当', '済', 'URL', 'メモ'],
   'お出かけ': ['id', '名前', '種類', '日付', '場所', 'URL', 'メモ', '人1', '人2', '状態', '行く日'],
   '使われ方': ['日付', '誰', '項目', '回数'],
@@ -120,6 +120,8 @@ function doPost(e) {
       case 'photosBatch': return out(photosBatch(req.ids));
       case 'video': return out(videoData(req.id));
       case 'addPhoto': return out(addPhoto(req, me));
+      case 'addAttachment': return out(addAttachment(req, me));
+      case 'attachData': return out(attachData(req.id));
       case 'logout': return out(logout(req.session));
       case 'setDone': return out(withLock(function () { return setCheck(req.date, '担当', req.taskId, !!req.done, me); }));
       case 'setDoneMany': return out(withLock(function () { return setDoneMany(req.date, req.ids, !!req.done, me); }));
@@ -143,7 +145,7 @@ function doPost(e) {
       case 'saveDecision': return out(withLock(function () { return saveDecision(req.item || {}, me); }));
       case 'answerDecision': return out(withLock(function () { return answerDecision(req.id, req.answer, me); }));
       case 'decide': return out(withLock(function () { return decide(req.id, req.decided, !!req.reopen); }));
-      case 'deleteDecision': return out(withLock(function () { return deleteById('相談', req.id, ['問い']); }));
+      case 'deleteDecision': return out(withLock(function () { var r0 = findById('相談', req.id, ['問い']), old0 = r0 ? cleanAttach(r0['添付']) : []; var res0 = deleteById('相談', req.id, ['問い']); if (old0.length) trashAttach(old0.map(function (f) { return f.id; })); return res0; }));
       case 'saveDeadline': return out(withLock(function () { return saveDeadline(req.item || {}); }));
       case 'doneDeadline': return out(withLock(function () { var r = findById('期限', req.id, ['内容', '期限']); if (!r) return { ok: false, code: 'not_found' }; setCells('期限', r._row, { '済': !!req.done }); return { ok: true }; }));
       case 'deleteDeadline': return out(withLock(function () { return deleteById('期限', req.id, ['内容', '期限']); }));
@@ -435,7 +437,7 @@ function buildBoot(today) {
   var dsince = ymd(new Date(t.getTime() - 14 * 864e5));
   var decisions = rowsOf('相談').filter(function (r) { return text(r['問い']); }).map(function (r) {
     return { id: idOf(r, ['問い']), q: text(r['問い']), options: splitOptions(r['選択肢']), due: normDate(r['期限']), state: text(r['状態']) || '相談中', decided: text(r['決まったこと']),
-      a1: text(r['人1の答え']), a2: text(r['人2の答え']), note: text(r['メモ']), created: normDate(r['作成']) };
+      a1: text(r['人1の答え']), a2: text(r['人2の答え']), note: text(r['メモ']), created: normDate(r['作成']), files: cleanAttach(r['添付']) };
   }).filter(function (x) { return x.state !== '決まった' || !x.created || x.created >= dsince || (x.due && x.due >= dsince); });
 
   /* 期限があるもの：済んでいないものと、済んで3日以内のもの */
@@ -831,15 +833,18 @@ function photoQuery() {
   return '(' + ids.map(function (id) { return "'" + id.replace(/'/g, '') + "' in parents"; }).join(' or ') + ") and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false";
 }
 /* アプリから足した写真の置き場。無ければ作る */
-function uploadFolder() {
-  var props = PropertiesService.getScriptProperties(), id = props.getProperty('uploadFolder');
+function uploadFolder() { return appFolder('uploadFolder', 'WAGAYA 写真（アプリから）'); }
+/* 相談に付ける画像・PDFの置き場。写真のスライドに混ざらないよう、別のフォルダにする */
+function attachFolder() { return appFolder('attachFolder', 'WAGAYA 添付（アプリから）'); }
+function appFolder(prop, name) {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty(prop);
   if (id) {
     try { if (Drive.Files.get(id, { fields: 'id,trashed' }).trashed) id = ''; }
     catch (e) { if (/not ?found|404/i.test(String(e && e.message))) id = ''; else throw e; }
   }
   if (!id) {
-    id = Drive.Files.create({ name: 'WAGAYA 写真（アプリから）', mimeType: 'application/vnd.google-apps.folder' }, null, { fields: 'id' }).id;
-    props.setProperty('uploadFolder', id);
+    id = Drive.Files.create({ name: name, mimeType: 'application/vnd.google-apps.folder' }, null, { fields: 'id' }).id;
+    props.setProperty(prop, id);
   }
   return id;
 }
@@ -858,6 +863,52 @@ function addPhoto(req, me) {
   return { ok: true, id: f.id };
 }
 function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 15) : 10) * 1048576; }
+
+/* 相談に付ける画像・PDF。画像は画面で縮めたJPEG（8MBまで）、PDFは5MBまで。1つの相談に3つまで */
+var ATTACH_TYPES = { 'image/jpeg': ['.jpg', 'i'], 'image/png': ['.png', 'i'], 'application/pdf': ['.pdf', 'p'] };
+var ATTACH_MAX = 3, ATTACH_PDF_MAX = 5 * 1048576, ATTACH_IMG_MAX = 8 * 1048576;
+function addAttachment(req, me) {
+  var mime = String(req.mime || ''), t = ATTACH_TYPES[mime], data = String(req.data || '');
+  if (!t || !data || !/^[A-Za-z0-9+\/=]+$/.test(data)) return { ok: false, code: 'bad_request' };
+  var max = t[1] === 'p' ? ATTACH_PDF_MAX : ATTACH_IMG_MAX;
+  if (data.length * 3 / 4 > max + 4) return { ok: false, code: 'too_big' };
+  var bytes = Utilities.base64Decode(data);
+  if (bytes.length > max) return { ok: false, code: 'too_big' };
+  var name = 'a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + t[0];
+  var f = Drive.Files.create({ name: name, parents: [attachFolder()], description: '相談の添付（' + me.who + '）' }, Utilities.newBlob(bytes, mime, name), { fields: 'id' });
+  return { ok: true, id: f.id, t: t[1] };
+}
+/* シートの「添付」の列（JSON）を、[{id, t:'i'|'p', n:名前}] にそろえる */
+function cleanAttach(v) {
+  var a = v;
+  if (typeof v === 'string') { try { a = JSON.parse(v); } catch (e) { a = []; } }
+  if (!Array.isArray(a)) return [];
+  return a.filter(function (f) { return f && /^[A-Za-z0-9_-]{10,}$/.test(String(f.id || '')) && (f.t === 'i' || f.t === 'p'); }).slice(0, ATTACH_MAX)
+    .map(function (f) { return { id: String(f.id), t: f.t, n: String(f.n || '').replace(/[\r\n]/g, ' ').slice(0, 40) }; });
+}
+/* 添付の中身。添付の置き場の中のものだけ返す */
+function attachData(id) {
+  var folder = PropertiesService.getScriptProperties().getProperty('attachFolder');
+  if (!folder || !/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return { ok: false, code: 'bad_request' };
+  var f;
+  try { f = Drive.Files.get(String(id), { fields: 'id,parents,mimeType,size,trashed' }); } catch (err) { return { ok: false, code: 'not_found' }; }
+  if (f.trashed || (f.parents || []).indexOf(folder) < 0 || !ATTACH_TYPES[f.mimeType || '']) return { ok: false, code: 'not_found' };
+  if (Number(f.size || 0) > ATTACH_IMG_MAX) return { ok: false, code: 'too_big' };
+  var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) return { ok: false, code: 'fetch_failed' };
+  return { ok: true, type: f.mimeType, data: Utilities.base64Encode(r.getContent()) };
+}
+/* 外した添付・消した相談の添付は、ごみ箱へ（置き場の中のものだけ。できなくても進める） */
+function trashAttach(ids) {
+  var folder = PropertiesService.getScriptProperties().getProperty('attachFolder');
+  if (!folder) return;
+  ids.forEach(function (id) {
+    try {
+      var f = Drive.Files.get(String(id), { fields: 'id,parents' });
+      if ((f.parents || []).indexOf(folder) >= 0) Drive.Files.update({ trashed: true }, String(id));
+    } catch (err) { console.error(err); }
+  });
+}
 
 /* 写真と動画の一覧（idだけ。軽い）。動画は大きさも見る。
  * みてねのように「最近足した物」を出す：足した日（ドライブに入った日）が新しい順に、設定「写真を出す期間（日）」（既定30）の分だけ、最大 PHOTO_MAX 件。
@@ -1182,7 +1233,20 @@ function saveDecision(x, me) {
   if (!q || !x.id) return { ok: false, code: 'bad_request' };
   var opts = (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String);
   var obj = { id: String(x.id), '問い': q, '選択肢': opts.join('\n'), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 300) };
+  var files = x.files === undefined ? null : cleanAttach(x.files);   /* 古い画面は files を送らない＝触らない */
   var r = findById('相談', x.id, ['問い']);
+  if (files && r) {
+    /* 編集画面を開いた時の一覧（files0）にあって、今の一覧に無い物だけ「外した」。開いている間に相手が足した物は残す（ごみ箱へ入れない） */
+    var keep = {}, was = {}; files.forEach(function (f) { keep[f.id] = 1; });
+    var old = cleanAttach(r['添付']);
+    if (Array.isArray(x.files0)) {
+      x.files0.forEach(function (id) { was[String(id)] = 1; });
+      old.forEach(function (f) { if (!keep[f.id] && !was[f.id] && files.length < ATTACH_MAX) { files.push(f); keep[f.id] = 1; } });
+      var gone = old.filter(function (f) { return !keep[f.id]; }).map(function (f) { return f.id; });
+      if (gone.length) trashAttach(gone);
+    }
+  }
+  if (files) obj['添付'] = JSON.stringify(files);
   if (r) {
     /* 問いか選択肢が変わったら、2人の答えを消して相談中に戻す（違う問いへの答えで決まりにならないように） */
     if (text(r['問い']) !== q || splitOptions(r['選択肢']).join('\n') !== opts.join('\n')) { obj['人1の答え'] = ''; obj['人2の答え'] = ''; obj['状態'] = '相談中'; obj['決まったこと'] = ''; }

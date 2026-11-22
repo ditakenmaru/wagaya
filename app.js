@@ -1526,13 +1526,14 @@
 
   /* ---------- ふたりで決めること ---------- */
   App.prototype.openDecision = function (x) {
-    this.setState({ editor: { kind: 'decide', isNew: !x, id: x ? x.id : uid('q'), q: x ? x.q : '', options: x ? x.options.join('\n') : '', due: x ? x.due : '', note: x ? x.note : '' } });
+    this.setState({ editor: { kind: 'decide', isNew: !x, id: x ? x.id : uid('q'), q: x ? x.q : '', options: x ? x.options.join('\n') : '', due: x ? x.due : '', note: x ? x.note : '', files: x ? (x.files || []).slice() : [], files0: x ? (x.files || []).map(function (f) { return f.id; }) : [] } });
   };
   App.prototype.saveDecision = function () {
     var e = this.state.editor, q = (e.q || '').trim();
     if (!q) { this.showToast('相談したいことを入力してください', null); return; }
+    if (e.uploading) { this.showToast('添付を送っています。終わるまで少し待ってください', null); return; }
     var opts = String(e.options || '').split(/\n/).map(function (x) { return x.trim(); }).filter(String).slice(0, 6);
-    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim() };
+    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim(), files: (e.files || []).slice(0, 3).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
     var cleared = false;
     this.mutate(function (d) {
       var list = d.decisions || [], old = list.filter(function (x) { return x.id === item.id; })[0];
@@ -1555,6 +1556,91 @@
     this.setState({ editor: null });
     this.send('deleteDecision', { id: e.id }, this.snapshot());
     this.showToast('相談を消しました', null);
+  };
+  /* 相談の添付（画像・PDF）。置き場は写真のスライドとは別。一覧には id・種類・名前だけ入り、中身は見る時に取って端末に保存する（ログアウトで消える） */
+  var BLANK_IMG = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E';
+  function b64ToBlob(b64, type) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: type }); }
+  App.prototype.attachOk = function () { return DEMO || Number((this.state.data || {}).api || 0) >= 20; };   /* 添付は GAS 20 から */
+  App.prototype.attachSrc = function (f) {
+    var m = this.attachUrls || (this.attachUrls = {});
+    if (m[f.id] !== undefined) return m[f.id];
+    m[f.id] = '';
+    this.loadAttach(f);
+    return '';
+  };
+  App.prototype.loadAttach = function (f, done) {
+    var self = this, m = this.attachUrls || (this.attachUrls = {}), key = location.origin + '/__attach/' + f.id;
+    var cacheP = (window.caches && window.isSecureContext) ? caches.open('wagaya-photos').catch(function () { return null; }) : Promise.resolve(null);
+    cacheP.then(function (cache) {
+      return (cache ? cache.match(key).catch(function () { return null; }) : Promise.resolve(null)).then(function (hit) {
+        if (hit) return hit.blob();
+        if (DEMO || self.state.needLogin) throw new Error('no');
+        return api('attachData', { id: f.id }).then(function (res) {
+          if (!res || !res.ok) throw new Error('fail');
+          var blob = b64ToBlob(res.data, res.type);
+          if (cache) cache.put(key, new Response(blob, { headers: { 'Content-Type': res.type } })).catch(function () {});
+          return blob;
+        });
+      });
+    }).then(function (blob) {
+      m[f.id] = URL.createObjectURL(blob);
+      self.setState({ attachTick: Date.now() });
+      if (done) done(m[f.id]);
+    }, function () { delete m[f.id]; if (done) self.showToast('添付を読み込めませんでした。少し待ってからもう一度お願いします', null); });
+  };
+  App.prototype.openAttach = function (f) {
+    var self = this, m = this.attachUrls || (this.attachUrls = {}), pdf = f.t === 'p';
+    USAGE.add('act:attach_open');
+    var show = function (src) { self.setState({ viewer: { src: src, name: f.n || (pdf ? 'PDF' : '画像'), pdf: pdf } }); };
+    if (m[f.id]) { show(m[f.id]); return; }
+    this.showToast('読み込んでいます', null);
+    this.loadAttach(f, show);
+  };
+  App.prototype.pickAttach = function () { var el = document.getElementById('attach-pick'); if (el) el.click(); };
+  App.prototype.uploadAttach = function (e) {
+    var self = this, ed0 = this.state.editor, left = ed0 ? 3 - (ed0.files || []).length : 0;
+    var picked = Array.prototype.slice.call((e && e.target && e.target.files) || []), files = picked.slice(0, Math.max(0, left));
+    if (e && e.target) e.target.value = '';
+    if (picked.length > files.length) this.showToast('添付は3つまでです。先の' + files.length + '件だけ送ります', null);
+    if (!ed0 || !files.length) return;
+    USAGE.add('act:attach_add');
+    var eid = ed0.id, ng = 0, big = 0, m = this.attachUrls || (this.attachUrls = {});
+    var setEd = function (fn) { var cur = self.state.editor; if (cur && cur.id === eid) self.setState({ editor: fn(cur) }); };
+    setEd(function (c) { return Object.assign({}, c, { uploading: true }); });
+    var step = function (i) {
+      if (i >= files.length) {
+        setEd(function (c) { return Object.assign({}, c, { uploading: false }); });
+        if (ng || big) self.showToast((big ? big + '件は大きすぎます（PDFは5MBまで）' : '') + (big && ng ? '。' : '') + (ng ? ng + '件は送れませんでした' : ''), null);
+        return;
+      }
+      var f = files[i], pdf = f.type === 'application/pdf' || (!f.type && /\.pdf$/i.test(f.name || ''));
+      if (!pdf && !/^image\//.test(f.type || '')) { ng++; step(i + 1); return; }
+      if (pdf && f.size > 5 * 1048576) { big++; step(i + 1); return; }
+      var prep = pdf ? readBase64(f).then(function (d) { return { mime: 'application/pdf', data: d }; }) : shrinkImage(f).then(function (d) { return { mime: 'image/jpeg', data: d }; });
+      prep.then(function (x) {
+        return api('addAttachment', x).then(function (res) {
+          if (!res || !res.ok || !res.id) throw res || new Error('fail');
+          m[res.id] = pdf ? URL.createObjectURL(f) : URL.createObjectURL(b64ToBlob(x.data, 'image/jpeg'));
+          var nf = { id: res.id, t: pdf ? 'p' : 'i', n: pdf ? String(f.name || 'PDF').slice(0, 40) : '' };
+          setEd(function (c) { return Object.assign({}, c, { files: (c.files || []).concat([nf]).slice(0, 3) }); });
+        });
+      }).then(null, function (err) { if (err && err.code === 'too_big') big++; else ng++; }).then(function () { step(i + 1); });
+    };
+    step(0);
+  };
+  App.prototype.removeAttach = function (f) {
+    var cur = this.state.editor;
+    if (cur) this.setState({ editor: Object.assign({}, cur, { files: (cur.files || []).filter(function (x) { return x.id !== f.id; }) }) });
+  };
+  /* 画面に出す形。画像は小さな四角、PDFは名前つきの札。タップで拡大／開く */
+  App.prototype.attachVM = function (files) {
+    var self = this;
+    return (files || []).map(function (f) {
+      var img = f.t === 'i', src = img ? self.attachSrc(f) : '';
+      return { id: f.id, isImg: img, isPdf: !img, src: src || BLANK_IMG, name: f.n || (img ? '画像' : 'PDF'), label: (img ? '画像を開く' : 'PDFを開く') + (f.n ? '：' + f.n : ''),
+        open: function () { self.openAttach(f); }, remove: function () { self.removeAttach(f); },
+        style: 'flex-shrink: 0; box-sizing: border-box; height: 72px; padding: 0; border: 1px solid var(--sep); border-radius: 12px; overflow: hidden; background: var(--card); color: var(--label); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; ' + (img ? 'width: 72px' : 'min-width: 72px; max-width: 150px; padding: 0 12px') };
+    });
   };
   App.prototype.answer = function (x, opt) {
     var me1 = this.names()[0] === this.meWho(), key = me1 ? 'a1' : 'a2';
@@ -2129,6 +2215,7 @@
           if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); var m = Object.assign({}, self.state.decThreadOpen || {}); m[x.id] = true; self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null, decThreadOpen: m }); }   /* 書いた後は開いたまま（自分のコメントが見える） */
         },
         openAll: function () { self.openDetail('decide', x.id); },
+        files: self.attachVM(x.files), hasFiles: !!(x.files && x.files.length),
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
         cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); ' + (decided ? 'box-shadow: none; background: var(--card2)' : 'color: #FFFFFF; box-shadow: var(--shadow-card); background: linear-gradient(150deg, ' + tone.join(', ') + ')'),
@@ -2302,6 +2389,8 @@
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
       } else if (E.kind === 'decide') {
         ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
+        ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < 3 && !E.uploading; ed.uploading = !!E.uploading;
+        ed.files.forEach(function (ef) { ef.removeLabel = (ef.name || '') + 'を外す'; }); ed.pickFile = function () { self.pickAttach(); };
       } else if (E.kind === 'deadline') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: pill(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
         ed.save = function () { self.saveDeadline(); }; ed.del = function () { self.deleteDeadline(); };
@@ -2773,15 +2862,16 @@
       fbBackdropStyle: backdrop(st.fbOpen), fbSheetStyle: sheetStyle(st.fbOpen, ''),
       dt: (function () {
         var x = st.detail;
-        if (!x) return { open: false, title: '', body: '', meta: '', kindLabel: '', hasUrl: false, url: '', lines: [], replies: [], empty: true, canReply: false, ctaLabel: '', hasCta: false, cta: function () {} };
+        if (!x) return { open: false, title: '', body: '', meta: '', kindLabel: '', hasUrl: false, url: '', lines: [], files: [], hasFiles: false, replies: [], empty: true, canReply: false, ctaLabel: '', hasCta: false, cta: function () {} };
         var KL = { topics: '話題', decide: 'ふたりで決めること', diary: '今日の日記', weekend: 'お出かけの候補', news: 'ニュース', deadline: '期限があるもの' };
         var find = function (list) { return (list || []).filter(function (y) { return String(y.id) === String(x.id); })[0]; };
-        var it = null, title = '', body = '', meta = '', url = '', lines = [], cta = null;
+        var it = null, title = '', body = '', meta = '', url = '', lines = [], cta = null, dfiles = [];
         if (x.kind === 'topics' && (it = find(D.topics))) { title = it.title; body = it.note; url = it.url; meta = it.date || ''; cta = ['直す・消す', function () { self.setState({ detail: null }); self.openTopic(it); }]; }
         if (x.kind === 'decide' && (it = find(D.decisions))) {
           title = it.q; body = it.note; meta = it.due ? dueLabel(it.due) + 'まで' : '';
           lines = (it.options && it.options.length ? it.options : ['賛成', '反対']).map(function (o) { var w = []; if (it.a1 === o) w.push(names[0]); if (it.a2 === o) w.push(names[1]); return o + (w.length ? '　← ' + w.join('・') : ''); });
           if (it.state === '決まった') lines.push('決まった：' + it.decided);
+          dfiles = self.attachVM(it.files);
           cta = ['閉じて、カードで答える', function () { self.setState({ detail: null }); }];
         }
         if (x.kind === 'diary' && (it = find(D.diary))) { title = (it.by || '') + 'の日記'; body = it.text; meta = it.time || ''; }
@@ -2800,7 +2890,7 @@
             style: 'display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: var(--r-card); ' + (child ? 'margin-left: 24px; border-left: 3px solid var(--sep); ' : '') + (mine ? 'background: var(--fill)' : 'background: var(--attn-soft)') };
         });
         return { open: true, kindLabel: KL[x.kind] || '', title: it ? title : '（見つかりません。消されたかもしれません）', body: body || '', hasBody: !!body, meta: meta, hasMeta: !!meta, url: url || '', hasUrl: !!url,
-          lines: lines.map(function (l) { return { text: l }; }), hasLines: lines.length > 0, replies: rs, empty: rs.length === 0, canReply: !!it,
+          lines: lines.map(function (l) { return { text: l }; }), hasLines: lines.length > 0, files: dfiles, hasFiles: dfiles.length > 0, replies: rs, empty: rs.length === 0, canReply: !!it,
           hasCta: !!cta, ctaLabel: cta ? cta[0] : '', cta: cta ? cta[1] : function () {} };
       })(),
       replyDraft: st.replyDraft, setReplyDraft: function (e) { self.setState({ replyDraft: e.target.value }); },
@@ -2855,7 +2945,8 @@
       diaryCount: diaryAll.length ? diaryAll.length + '件' : '',
       diaryEmpty: diaryAll.length === 0,
       openDiaryNote: function () { self.openNoteFor('今日の日記', null); },
-      pickPhotos: function () { self.pickPhotos(); }, uploadPhotos: function (e) { self.uploadPhotos(e); },
+      pickPhotos: function () { self.pickPhotos(); }, uploadPhotos: function (e) { self.uploadPhotos(e); }, uploadAttach: function (e) { self.uploadAttach(e); },
+      viewer: st.viewer ? { open: true, src: st.viewer.src, name: st.viewer.name, isPdf: !!st.viewer.pdf, isImg: !st.viewer.pdf, close: function () { self.setState({ viewer: null }); }, stop: function (e) { if (e && e.stopPropagation) e.stopPropagation(); } } : { open: false, src: '', name: '', isPdf: false, isImg: false, close: function () {}, stop: function () {} },
       noteTarget: st.noteTarget, noteDraft: st.noteDraft,
       isHandover: st.noteMode === 'handover',
       canAsk: st.noteMode === 'handover' && self.canAskSwap(st.noteTaskId, st.noteAskDate),
@@ -3251,6 +3342,7 @@
         });
         if (a === 'addReply') db.replies.push({ id: p.reply.id, target: p.reply.target, who: 'とと', at: Date.now(), text: p.reply.text, parent: p.reply.parent || '' });
         if (a === 'addPhoto') { db.uploaded = (db.uploaded || 0) + 1; }
+        if (a === 'addAttachment') { res({ ok: true, id: 'demo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }); return; }
         if (a === 'deleteReply') db.replies = db.replies.filter(function (x) { return x.id !== p.id; });
         res({ ok: true });
       }, 250);

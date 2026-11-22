@@ -58,14 +58,14 @@ function makeEnv(sheets) {
       computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', Buffer.from(k.map(x => x & 255))).update(Buffer.from(v.map(x => x & 255))).digest()).map(x => x > 127 ? x - 256 : x),
       base64EncodeWebSafe: (d) => (typeof d === 'string' ? Buffer.from(d, 'utf8') : Buffer.from(d.map(x => x & 255))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'), base64Decode: s => Array.from(Buffer.from(s, 'base64')), newBlob: (b, m, n) => ({ bytes: b, mime: m, name: n })
     },
-    UrlFetchApp: { fetch: (u) => { if (/[|\s]/.test(u.split('?')[1] || '')) throw new Error('Invalid argument: ' + u); return ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/commons\.wikimedia/.test(u) ? (env.commons || {}) : /wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }); },
+    UrlFetchApp: { fetch: (u) => { if (/alt=media/.test(u)) return { getResponseCode: () => 200, getContent: () => [1, 2, 3] }; if (/[|\s]/.test(u.split('?')[1] || '')) throw new Error('Invalid argument: ' + u); return ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/commons\.wikimedia/.test(u) ? (env.commons || {}) : /wikipedia/.test(u) ? (env.wikiCalls = (env.wikiCalls || 0) + 1, env.wiki || {}) : /open-meteo/.test(u) ? { current: { temperature_2m: 15.4, weather_code: 2 }, daily: { weather_code: [61], temperature_2m_max: [18.2], temperature_2m_min: [9.6], precipitation_probability_max: [70] } } : env.token) }); },
       fetchAll: (reqs) => { if (!reqs.length || !/push/.test(reqs[0].url)) return []; env.pushReqs = (env.pushReqs || []).concat(reqs); return reqs.map(r => ({ getResponseCode: () => (env.pushCodes || {})[r.url] || 201, getContentText: () => '' })); } },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: h => { const mk = { create: () => triggers.push({ getHandlerFunction: () => h }) }; const wk = { atHour: () => mk }; return { timeBased: () => ({ everyHours: () => mk, onWeekDay: () => wk }) }; }, WeekDay: { FRIDAY: 5, SUNDAY: 0 }, getOAuthToken: () => 't' },
     Drive: { Files: {
       list: (q) => { env.counts.drive++; if (q && /in parents/.test(q.q || '') && env.backups) return { files: env.backups.filter(f => !f.trashed).slice().reverse() }; return { files: [] }; },
-      create: (r, blob) => { env.created = env.created || []; env.created.push({ r, blob }); return { id: blob ? 'file' + env.created.length : 'folder1' }; }, get: (id) => ({ id, trashed: false }),
+      create: (r, blob) => { env.created = env.created || []; env.created.push({ r, blob }); return { id: blob ? 'file_mock_id_' + env.created.length : 'folder' + (env.folders = (env.folders || 0) + 1) }; }, get: (id) => (env.driveFiles && env.driveFiles[id]) || ({ id, trashed: false }),
       copy: (r, id) => { env.backups = env.backups || []; env.backups.push({ id: 'b' + env.backups.length, name: r.name }); return { id: 'c' }; },
-      update: (r, id) => { const f = (env.backups || []).find(x => x.id === id); if (f) f.trashed = true; return {}; }
+      update: (r, id) => { (env.trashedIds = env.trashedIds || []).push(id); const f = (env.backups || []).find(x => x.id === id); if (f) f.trashed = true; return {}; }
     } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (env.props || {})[k] || null, setProperty: (k, v) => { env.props = env.props || {}; env.props[k] = v; } }) },
     Calendar: { Events: { list: () => { env.counts.cal++; return { items: env.calItems || [] }; } } },
@@ -268,6 +268,65 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   ok(post(env, { action: 'addPhoto', session: S, mime: 'image/jpeg', data: Buffer.alloc(9 * 1048576).toString('base64') }).code === 'too_big', 'addPhoto: 大きすぎる写真は断る');
   ok(post(env, { action: 'addPhoto', mime: 'image/jpeg', data: small }).ok === false, 'addPhoto: ログインなしは断る');
 }
+// 相談の添付（画像・PDF）
+{
+  const small = Buffer.from('jpegdata').toString('base64');
+  let r = post(env, { action: 'addAttachment', session: S, mime: 'image/jpeg', data: small });
+  ok(r.ok && r.t === 'i' && env.props.attachFolder && env.props.attachFolder !== env.props.uploadFolder, 'addAttachment: 写真とは別の置き場に入れる');
+  const aid = r.id;
+  const up = (env.created || []).filter(c => c.blob).pop();
+  ok(up.r.parents[0] === env.props.attachFolder && /\.jpg$/.test(up.r.name), 'addAttachment: 添付の置き場に .jpg で入る');
+  const pdf = post(env, { action: 'addAttachment', session: S, mime: 'application/pdf', data: small });
+  ok(pdf.ok && pdf.t === 'p', 'addAttachment: PDFも受け取る');
+  ok(post(env, { action: 'addAttachment', session: S, mime: 'text/html', data: small }).code === 'bad_request', 'addAttachment: 画像・PDF以外は断る');
+  ok(post(env, { action: 'addAttachment', session: S, mime: 'application/pdf', data: Buffer.alloc(6 * 1048576).toString('base64') }).code === 'too_big', 'addAttachment: 大きすぎるPDFは断る');
+  ok(post(env, { action: 'addAttachment', mime: 'image/jpeg', data: small }).ok === false, 'addAttachment: ログインなしは断る');
+  // 相談に付ける
+  env.driveFiles = {}; env.driveFiles[aid] = { id: aid, parents: [env.props.attachFolder], mimeType: 'image/jpeg', size: '8', trashed: false };
+  env.driveFiles[pdf.id] = { id: pdf.id, parents: [env.props.attachFolder], mimeType: 'application/pdf', size: '8', trashed: false };
+  const files = [{ id: aid, t: 'i', n: '間取り' }, { id: pdf.id, t: 'p', n: '見積.pdf' }, { id: 'bad id', t: 'i', n: 'x' }, { id: 'zzzzzzzzzz1', t: 'x', n: 'y' }];
+  post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files } });
+  let bt2 = post(env, { action: 'boot', session: S, today }).data;
+  let qa = (bt2.decisions || []).find(x => x.id === 'qa1');
+  ok(qa && qa.files.length === 2 && qa.files[0].id === aid && qa.files[0].n === '間取り' && qa.files[1].t === 'p', '添付: bootに id・種類・名前だけ返し、不正な物は落とす');
+  ok(!/data|base64/.test(JSON.stringify(qa.files)), '添付: bootに中身は入れない');
+  // 古い画面（files を送らない）は添付を消さない
+  post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], note: 'ひとこと' } });
+  env.onEdit();
+  qa = (post(env, { action: 'boot', session: S, today }).data.decisions || []).find(x => x.id === 'qa1');
+  ok(qa.files.length === 2, '添付: filesなしの保存では消えない');
+  // 中身
+  let d = post(env, { action: 'attachData', session: S, id: aid });
+  ok(d.ok && d.type === 'image/jpeg' && d.data === Buffer.from([1, 2, 3]).toString('base64'), 'attachData: 置き場の中の添付の中身を返す');
+  env.driveFiles['other1other1'] = { id: 'other1other1', parents: ['elsewhere'], mimeType: 'image/jpeg', size: '8', trashed: false };
+  ok(post(env, { action: 'attachData', session: S, id: 'other1other1' }).code === 'not_found', 'attachData: 置き場の外のファイルは返さない');
+  ok(post(env, { action: 'attachData', id: aid }).ok === false, 'attachData: ログインなしは断る');
+  // 1つ外すと、その1つだけごみ箱へ
+  env.trashedIds = [];
+  post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files: [files[0]], files0: [aid, pdf.id] } });
+  ok(env.trashedIds.length === 1 && env.trashedIds[0] === pdf.id, '添付: 開いた時にあった物を外すと、そのPDFだけごみ箱へ');
+  // 編集中に相手が足した添付は、こちらの保存でごみ箱へ入れない
+  {
+    const other = { id: 'other_added_1', t: 'i', n: '相手が足した' };
+    env.driveFiles[other.id] = { id: other.id, parents: [env.props.attachFolder], mimeType: 'image/jpeg', size: '8', trashed: false };
+    post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files: [files[0], other], files0: [aid] } });   // 相手の保存
+    env.trashedIds = [];
+    post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files: [files[0]], files0: [aid] } });   // こちら：開いた時は aid だけ
+    env.onEdit();
+    const q = (post(env, { action: 'boot', session: S, today }).data.decisions || []).find(x => x.id === 'qa1');
+    ok(env.trashedIds.length === 0 && q.files.some(f => f.id === other.id) && q.files.length === 2, '添付: 開いている間に相手が足した物は残し、ごみ箱へ入れない');
+    post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files: [files[0]], files0: [aid, other.id] } });   // 相手の物も見た上でこちらが外した
+    ok(env.trashedIds.length === 1 && env.trashedIds[0] === other.id, '添付: 開いた時にあった物を外した時だけごみ箱へ');
+  }
+  // 相談を消すと、残りもごみ箱へ
+  env.trashedIds = [];
+  post(env, { action: 'deleteDecision', session: S, id: 'qa1' });
+  ok(env.trashedIds.length === 1 && env.trashedIds[0] === aid, '添付: 相談を消すと添付もごみ箱へ');
+  // Museに渡す一覧に添付を出さない
+  post(env, { action: 'saveDecision', session: S, item: { id: 'qa2', q: 'Museに出さない確認', options: ['A', 'B'], files: [{ id: aid, t: 'i', n: 'x' }] } });
+  ok(!/attach|files|間取り/.test(JSON.stringify(env.museList({ who: 'とと' }))), '添付: Museの一覧に添付を出さない');
+  post(env, { action: 'deleteDecision', session: S, id: 'qa2' });
+}
 // 担当：アプリから足す（今日だけ・くり返し）、直す、消す
 env.onEdit();
 let r2 = post(env, { action: 'saveDuty', session: S, duty: { id: 'dx1', task: '病院', time: '10:00', who: 'まま', date: today } });
@@ -380,7 +439,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 19 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 20 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -654,7 +713,7 @@ ok(b3.api === 19 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 19 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 20 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';
