@@ -16,7 +16,7 @@ with sync_playwright() as p:
     card = pg.locator('.dcard', has_text='見本：直す相談')
     card.get_by_role('button', name='編集', exact=True).click(); pg.wait_for_timeout(400)
     ok(pg.locator('#ed-q').input_value() == '見本：直す相談', '相談：「編集」で編集画面が開く')
-    ok(pg.get_by_text('答えはリセットされます').count() == 1, '相談：リセットの注意が出る')
+    ok(pg.get_by_text('答えはリセットされ').count() == 0, '相談：まだ誰も答えていなければリセットの注意は出さない')
     pg.fill('#ed-q', '見本：直した相談'); pg.get_by_role('button', name='保存').first.click(); pg.wait_for_timeout(600)
     ok(pg.locator('.dcard', has_text='見本：直した相談').count() == 1 and pg.locator('.dcard', has_text='見本：直す相談').count() == 0, '相談：直した文になる')
     pg.get_by_text('決まったこと（アーカイブ').first.click(); pg.wait_for_timeout(400)
