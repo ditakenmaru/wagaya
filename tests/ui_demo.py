@@ -60,7 +60,7 @@ async def main():
         print('no-time duty as いつでも:', 'いつでも' in txt and '洗濯物をたたむ' in txt)
         await page.get_by_role('button', name='直す', exact=True).first.click(); await page.wait_for_timeout(300)
         await page.get_by_role('button', name='洗濯物をたたむ').click(); await page.wait_for_timeout(300)
-        await page.get_by_role('button', name='消す', exact=True).click(); await page.wait_for_timeout(200)
+        await page.locator('section[aria-labelledby=ed-title]').get_by_role('button', name='消す', exact=True).click(); await page.wait_for_timeout(200)
         still = await page.get_by_role('button', name='本当に消す（もう一度押す）').count()
         await page.get_by_role('button', name='本当に消す（もう一度押す）').click(); await page.wait_for_timeout(400)
         txt = await page.locator('section[aria-labelledby=sec-flow]').inner_text()
