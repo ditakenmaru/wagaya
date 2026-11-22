@@ -151,6 +151,14 @@ r = post(env, { action: 'ackNote', session: S, id: 'n1', read: true });
 r = post(env, { action: 'deleteDiary', session: S, id: 'k1' });
 b2 = post(env, { action: 'boot', session: S, today });
 ok(b2.data.notes[0].read === true && b2.data.diary.length === 0, '確認・日記の削除');
+{ // 過去の日記（アーカイブ）：今日より前の90日だけ・新しい順
+  const ymdAdd = n => { const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  [['ka1', -1, '20:00', '昨日の夜'], ['ka2', -1, '7:00', '昨日の朝'], ['ka3', -5, '9:00', '5日前'], ['ka4', -120, '9:00', '120日前'], ['ka5', 0, '9:00', '今日の分']].forEach(x => post(env, { action: 'addDiary', session: S, entry: { id: x[0], date: ymdAdd(x[1]), time: x[2], text: x[3] } }));
+  const bp = post(env, { action: 'boot', session: S, today }).data;
+  ok(JSON.stringify(bp.diaryPast.map(x => x.id)) === '["ka1","ka2","ka3"]', '日記のアーカイブ: 今日より前の90日だけ・新しい順（今日の分と120日前は入らない）');
+  ok(bp.diary.some(x => x.id === 'ka5') && !bp.diary.some(x => x.id === 'ka1'), '日記のアーカイブ: 今日の日記は今まで通り別');
+  ['ka1', 'ka2', 'ka3', 'ka4', 'ka5'].forEach(id => post(env, { action: 'deleteDiary', session: S, id }));
+}
 
 // 設定で呼び名を変える → 反映
 env.ss.getSheetByName('設定').data.find(r => r[0] === '人1の呼び名')[1] = 'ケン';
@@ -447,7 +455,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 24 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 25 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -743,7 +751,7 @@ ok(b3.api === 24 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 24 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 25 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';

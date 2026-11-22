@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 24;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 25;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -395,6 +395,15 @@ function buildBoot(today) {
     return { id: String(r.id), date: today, time: normTime(r['時刻']), by: whoOf(r['誰']), text: text(r.text), target: text(r['対象']) };
   });
 
+  /* 過去の日記（アーカイブ）：今日より前の90日、新しい順に最大120件 */
+  var dpFrom = (function () { var t0 = parseYmd(today); return ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() - 90)); })();
+  var diaryPast = rowsOf('日記').filter(function (r) { var d = normDate(r['日付']); return r.id && text(r.text) && d && d < today && d >= dpFrom; }).map(function (r) {
+    return { id: String(r.id), date: normDate(r['日付']), time: normTime(r['時刻']), by: whoOf(r['誰']), text: text(r.text) };
+  }).sort(function (a, b) {
+    var tm = function (t) { var m = String(t).match(/(\d+):(\d+)/); return m ? Number(m[1]) * 60 + Number(m[2]) : -1; };
+    return a.date < b.date ? 1 : a.date > b.date ? -1 : tm(b.time) - tm(a.time);
+  }).slice(0, 120);
+
   var menu = rowsOf('献立').filter(function (r) { var d = normDate(r['日付']); return d && d >= ymd(weekStart) && d <= ymd(menuEnd); }).map(function (r) {
     return { date: normDate(r['日付']), dish: text(r['料理']), hotcook: truthy(r['ホットクック']), note: text(r['メモ']), ingredients: parseIngredients(r['材料']), how: text(r['作り方']), photo: safeUrl(r['写真URL']), servings: text(r['人数']) };
   }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });   /* 日付順（写真を探すのも今週の分から） */
@@ -458,7 +467,7 @@ function buildBoot(today) {
   return {
     topics: topics, topicsArchived: topicsArchived, decisions: decisions, deadlines: deadlines, outings: outings, streak: streak,
     weather: weatherFor(trip[0] && trip[1] && today >= trip[0] && today <= trip[1] && s['旅行先の天気の場所'] ? s['旅行先の天気の場所'] : s['天気の場所'], today),
-    today: today, duties: duties, dutiesAll: dutiesAll, swapsAhead: swapsAhead, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary,
+    today: today, duties: duties, dutiesAll: dutiesAll, swapsAhead: swapsAhead, skipped: skipped, shopSuggest: shopSuggest(shop), done: done, checked: checked, notes: notes, diary: diary, diaryPast: diaryPast,
     menu: menu, menuFrom: ymd(weekStart), menuTo: ymd(menuEnd), shopCats: shopCatsOf(shop), shopLastCat: shopLastCat(menu),
     replies: replies, shop: shop, plans: plansFor(t, new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1), s['カレンダーID']), plansFrom: ymd(t), plansTo: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + PLAN_DAYS - 1)),   /* 今日から4週間（PLAN_DAYS） */ goals: goals, news: news,
     photosReady: photoFolders().length > 0, photos: photoList(),

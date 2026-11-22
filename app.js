@@ -2988,6 +2988,19 @@
       diary: diaryAll.slice().reverse().map(function (k, i) {
         return { isNew: !!marks['diary:' + k.id], time: k.time + (k.by ? '　' + k.by : ''), text: k.text, more: moreOf('diary', k.id), textStyle: clamp(5, 'margin: 0; font-size: var(--t-sub); line-height: 1.7'), cardStyle: 'flex-shrink: 0; width: 240px; box-sizing: border-box; background: var(--attn-soft); border-radius: var(--r-card); padding: 16px 16px; display: flex; flex-direction: column; gap: 8px; animation: rise .45s cubic-bezier(.2,.8,.2,1) ' + (i * 60) + 'ms both' };
       }),
+      diaryArchive: (function () {
+        var past = (D.diaryPast || []), open = !!st.diaryArchiveOpen, groups = [], gi = {};
+        past.forEach(function (k) {
+          if (!(k.date in gi)) { var dt = parseYmd(k.date); gi[k.date] = groups.length; groups.push({ date: k.date, label: (dt.getMonth() + 1) + '/' + dt.getDate() + '（' + DOWS[dt.getDay()] + '）', items: [] }); }
+          var o = !!(st.diaryPastOpen || {})[k.id], lg = String(k.text).length > 80 || String(k.text).split('\n').length > 3;
+          groups[gi[k.date]].items.push({ time: (k.time ? k.time + '　' : '') + (k.by || ''), text: k.text, long: lg, expandLabel: o ? '閉じる ⌃' : '続きを読む ⌄',
+            textStyle: 'margin: 0; font-size: var(--t-sub); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere' + (lg && !o ? '; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden' : ''),
+            toggle: function () { var m = Object.assign({}, self.state.diaryPastOpen || {}); if (m[k.id]) delete m[k.id]; else m[k.id] = true; self.setState({ diaryPastOpen: m }); } });
+        });
+        return { show: past.length > 0, open: open, expanded: open ? 'true' : 'false', groups: groups,
+          label: open ? '過去の日記を閉じる ⌃' : '過去の日記（アーカイブ ' + past.length + '件）⌄',
+          toggle: function () { self.setState({ diaryArchiveOpen: !self.state.diaryArchiveOpen }); USAGE.add('act:diary_archive'); } };
+      })(),
       diaryCount: diaryAll.length ? diaryAll.length + '件' : '',
       diaryEmpty: diaryAll.length === 0,
       openDiaryNote: function () { self.openNoteFor('今日の日記', null); },
@@ -3325,6 +3338,7 @@
         done: {}, checked: {},
         dutiesAll: [[390, '起こして朝ごはん', 'とと', '毎日', 90], [435, '犬の散歩', 'とと', '毎日'], [480, '保育園の送り', 'まま', '平日', 0], [1020, '保育園のお迎え', 'まま', '平日'], [1080, '夕ごはん（ホットクック）', 'とと', '毎日'], [1140, 'お風呂', 'とと', '毎日'], [1200, '寝かしつけ', 'まま', '毎日'], [1230, '保育園の持ち物（着替え2組・タオル・連絡帳）をそろえて玄関に置く', 'まま', '毎日'], [600, 'ゴミ出し', '家族', '火金']].map(function (x, i) { var o = { id: 'd' + (i + 1), t: x[0], task: x[1], who: x[2], rule: x[3], date: '', rel: x[4] == null ? null : x[4] }; if (o.id === 'd6') { o.priv = true; o.privAny = true; } return o; }),   /* d6 は「Museに出さない」の見本 */
         notes: [{ id: 'n0', createdAt: Date.now() - 1800e3, from: 'まま', to: 'とと', taskId: 'd7', task: '寝かしつけ', text: '見本：今日の「寝かしつけ」、代わってもらえる？', read: false, ask: 'swap', askDate: ymd(t), answer: '' }, { id: 'n1', createdAt: Date.now() - 3600e3, from: 'まま', to: 'とと', taskId: '', task: '', text: '保育園の連絡帳に、明日の持ち物（着替え2組）が書いてありました。', read: false }, { id: 'n2', createdAt: Date.now() - 7200e3, from: 'とと', to: 'まま', taskId: 'd1', task: '起こして朝ごはん', text: '見本：明日の「起こして朝ごはん」、代わってもらえる？', read: true, ask: 'swap', askDate: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)), answer: 'ok' }],
+        diaryPast: [{ id: 'kp1', date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1)), time: '20:10', by: 'とと', text: '見本：お風呂でふたりとも、自分で泡を流したがった。' }, { id: 'kp2', date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1)), time: '7:50', by: 'まま', text: '見本：朝ごはんをよく食べた。' + '長い日記のテスト。'.repeat(12) }, { id: 'kp3', date: ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 3)), time: '18:00', by: 'まま', text: '見本：公園で初めて滑り台を1人で滑った。' }],
         diary: [{ id: 'k1', date: ymd(t), time: '7:40', by: 'まま', text: '散歩で、公園の手前からふたりとも自分で歩きたがった。', target: '今日の日記' }],
         menu: dishes.map(function (x, i) { var m = { date: dd(i), dish: x[0], hotcook: x[1], note: x[2], ingredients: x[3], how: x[4], photo: x[5] ? pexels(x[5]) : '' }; if (i % 2 && m.photo) { m.photoBy = 'wiki'; m.photoTitle = x[0]; m.photoCredit = { artist: '見本の作者', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0', page: 'https://commons.wikimedia.org/wiki/File:Example.jpg' }; } return m; })
           .concat(nextDishes.map(function (x) { return { date: dd(x[0]), dish: x[1], hotcook: x[2], note: x[3], ingredients: x[4], how: x[5], photo: '' }; })),
