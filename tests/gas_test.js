@@ -447,7 +447,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 23 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 24 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -618,6 +618,28 @@ ok(b3.api === 23 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(dyX.ok && bd.diary.some(x => x.id === dyX.id && x.by === 'まま' && x.date === today && x.time !== '1:00' && x.target === '今日の日記'), 'Muse: 日記は日付・時刻・名前を送られても使わない');
   const dyL = mpost({ op: 'diary.add', text: 'あ'.repeat(1001) });
   ok(dyL.ok && dyL.cut === true && !dy.cut && env.ss.getSheetByName('日記').data.some(r => r.some(c => String(c).replace(/^'/, '') === 'あ'.repeat(1000))), 'Muse: 日記は1000字で切り、cut で知らせる');
+  { // ニュース：Muse から足す（人1＝ととの鍵だけ）
+    env.promptAnswer = 'とと'; env.museNewKey();
+    const KT = (env.dialog.match(/wgk_[0-9a-f]{64}/) || [])[0];
+    const mt = o => post(env, Object.assign({ action: 'muse', key: KT }, o));
+    ok(mpost({ op: 'news.add', title: 'まま鍵のニュース' }).code === 'not_allowed' && mpost({ op: 'list' }).goals.length === 0 && mpost({ op: 'list' }).news.length === 0, 'Muse: 人1以外の鍵はニュースを足せない・goals と news も出さない');
+    const l0 = mt({ op: 'list' });
+    ok(Array.isArray(l0.goals) && Array.isArray(l0.news), 'Muse: list に goals と news（足す前の確認用）');
+    const gid = (l0.goals[0] || {}).id;
+    const n1 = mt({ op: 'news.add', title: 'テストのニュース', goals: (gid || 'zz') + ',nai', why: '旅行前に確認', body: '本文', from: 'テスト新聞', url: 'https://example.com/a', date: '2026-11-22' });
+    ok(n1.ok && n1.id && !n1.skipped, 'Muse: news.add で足せる');
+    ok(mt({ op: 'news.add', title: 'テストのニュース' }).skipped === true && mt({ op: 'news.add', title: '別の見出し', url: 'https://example.com/a' }).skipped === true, 'Muse: 同じ見出し・同じURLは足さない');
+    ok(mt({ op: 'news.add', title: '  ' }).ok === false && mt({ op: 'news.add', title: 'http', url: 'http://x.example/' }).ok, 'Muse: 空の見出しは断る・https以外のURLは外して足す');
+    ok(mt({ op: 'news.add', title: '  テスト の ニュース。' }).skipped === true && mt({ op: 'news.add', title: '別の話', url: 'https://example.com/a/?utm_source=x#top' }).skipped === true, 'Muse: 大文字小文字・空白・末尾の記号・utm・#の違いも同じ記事とみなす');
+    ok(mt({ op: 'news.add', title: { a: 1 } }).ok === false, 'Muse: 見出しが文字でない物は断る');
+    { const c1 = mt({ op: 'news.add', title: '__proto__の件', goals: 'constructor,toString,__proto__,' + gid + ',' + gid }); ok(c1.ok && c1.id, 'Muse: 変な goals でも足せる（無い物は落とす）');
+      const li = mt({ op: 'list' }).news.filter(x => x.title === '__proto__の件')[0]; ok(li && JSON.stringify(li.goals) === JSON.stringify(gid ? [gid] : []), 'Muse: goals は中期にある id だけ・重複なし'); mt({ op: 'undo', id: c1.id }); }
+    { const fu = mt({ op: 'news.add', title: '未来の日付の記事', date: '2099-01-01' }); ok(fu.ok, '日付が未来でも足せる'); const f0 = mt({ op: 'list' }).news.filter(x => x.title === '未来の日付の記事')[0]; ok(f0 && !String(f0.date).includes('2099') && !/^1月1日$/.test(f0.date), 'Muse: 未来の日付は今日に直す'); mt({ op: 'undo', id: fu.id }); }
+    const nl = mt({ op: 'list' }).news;
+    ok(nl[0].title === 'http' && nl.some(x => x.title === 'テストのニュース'), 'Muse: 足したニュースが list に出る');
+    ok(mt({ op: 'undo', id: n1.id }).ok && !mt({ op: 'list' }).news.some(x => x.title === 'テストのニュース'), 'Muse: ニュースも undo で取り消せる');
+      { let last = {}; for (let k = 0; k < 12; k++) last = mt({ op: 'news.add', title: '量のテスト' + k }); ok(last.code === 'too_many', 'Muse: ニュースは1日10件まで'); }
+  }
   ok(JSON.stringify(mpost({ op: 'help' }).ops).includes('diary.add'), 'Muse: help に diary.add');
   const dy2 = mpost({ op: 'diary.add', text: '消す日記' });
   env.promptAnswer = 'ケン'; env.museNewKey();
@@ -721,7 +743,7 @@ ok(b3.api === 23 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 23 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 24 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';

@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 23;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 24;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -1602,6 +1602,10 @@ function museHistory(req, me, owner) {
 }
 
 /* 今の一覧（Museが重ならないように足したり、相談に使ったりする）。日記・写真・申し送りの他人宛ては出さない */
+/* ニュースの画面は人1向け（「画面」シートの見る人）。足せる・中期の目標を見られるのも人1の鍵だけ */
+function newsOwner(me) { return me.who === people().list[0].name; }
+function newsKey(v) { return String(v || '').toLowerCase().replace(/[\s　]+/g, '').replace(/[。、.,!！?？「」『』"']+$/, ''); }
+function urlKey(u) { return String(u || '').toLowerCase().replace(/#.*$/, '').replace(/[?&]utm_[^&]*/g, '').replace(/\/+$/, ''); }
 function museList(me) {
   var today = ymd(new Date()), v = ver();
   var D = snapGet(today, v);
@@ -1618,6 +1622,8 @@ function museList(me) {
     deadlines: (D.deadlines || []).filter(function (x) { return !x.done; }).map(function (x) { return { what: x.what, due: x.due, who: x.who }; }),
     decisions: (D.decisions || []).filter(function (x) { return x.state !== '決まった'; }).map(function (x) { return { q: x.q, options: x.options, due: x.due }; }),
     outings: (D.outings || []).map(function (x) { return { name: x.name, date: x.date, place: x.place, state: x.state, go: x.go }; }),
+    goals: newsOwner(me) ? (D.goals || []).map(function (g) { return { id: g.id, name: String(g.label).slice(0, 40), next: String(g.next).slice(0, 80) }; }) : [],   /* ニュースを足す時の「中期ID」。ニュースの画面は人1向けなので、人1の鍵だけ */
+    news: newsOwner(me) ? (D.news || []).slice(0, 15).map(function (n) { return { title: n.title, date: n.date, from: n.from, goals: n.goals }; }) : [],   /* 足す前に、同じ話がないか見る */
     notesForMe: (D.notes || []).filter(function (x) { return x.to === me.who && !x.read && !privIds[x.taskId]; }).map(function (x) { return { from: x.from, text: x.text }; })
   };
 }
@@ -1657,6 +1663,7 @@ var MUSE_HELP = {
   'diary.add': 'text(1000字まで。超えた分は切れて cut:true が返る) 今日の日記（気づき）に、自分の名前で1件足す。書くだけ（日記は list にも履歴にも出ない。読めない）。本人が話した言葉をそのまま入れる。日付と時刻は日本時間。1日30件まで',
   'feedback.add': 'text, screen? アプリの要望・不具合（「ここ直しといて」）',
   'topic.add': 'title, url?(https), note? いま話している資料へのリンク',
+  'news.add': 'title, goals?(中期の id をカンマ区切り。list の goals から。省くと全体向け), why?(なぜ今・80字まで), body?(本文・300字まで), from?(発信元), url?(https), date?(yyyy-mm-dd。省くと今日) ニュース画面に出る記事。同じ見出し・同じURLは足さない（skipped:true）',
   'decision.add': 'q, options?:[..], due?, note? ふたりで決めることに出す（答えと決定はアプリで2人がする）',
   'deadline.add': 'what, due?, who?, url?, note? 期限があるもの',
   'outing.add': 'name, kind?, date?, place?, url?, note? お出かけの候補',
@@ -1724,6 +1731,25 @@ var MUSE_OPS = {
     var id = museId('t');
     var r = saveTopic({ id: id, title: q.title, url: q.url, note: q.note });
     return r.ok ? { ok: true, id: id, log: [['話題', id, q.title]] } : r;
+  },
+  'news.add': function (q, me) {
+    if (!newsOwner(me)) return { ok: false, code: 'not_allowed', message: 'ニュースは人1の鍵だけが足せます' };
+    var title = typeof q.title === 'string' ? q.title.replace(/\s+/g, ' ').slice(0, 100).trim() : '';
+    if (!title) return { ok: false, code: 'bad_request' };
+    var url = safeUrl(q.url).slice(0, 500), tk = newsKey(title), uk = urlKey(url), dup = false;
+    rowsOf('ニュース').forEach(function (r) { if (newsKey(text(r['見出し'])) === tk || (uk && urlKey(text(r['URL'])) === uk)) dup = true; });
+    if (dup) return { ok: true, skipped: true };
+    var today = ymd(new Date()), n = 0;   /* 1日10件まで（数えるのはサーバーの時刻。鍵が漏れても膨らまないように） */
+    rowsOf(MUSE_LOG).forEach(function (r) { if (text(r['操作']) === 'news.add' && r['日時'] instanceof Date && ymd(r['日時']) === today) n++; });
+    if (n >= 10) return { ok: false, code: 'too_many', message: 'ニュースは1日10件までです' };
+    var ids = Object.create(null); rowsOf('中期').forEach(function (r) { if (text(r['名前'])) ids[idOf(r, ['名前'])] = true; });
+    var seen = Object.create(null), goals = (typeof q.goals === 'string' ? q.goals : '').split(/[,、\s]+/).filter(function (g) { if (!g || !ids[g] || seen[g]) return false; seen[g] = true; return true; }).join(',');
+    var one = function (v, n0) { return typeof v === 'string' ? v.replace(/\s+/g, ' ').slice(0, n0).trim() : ''; };
+    var d = normDate(q.date), t0 = parseYmd(today), dd = d ? Math.round((parseYmd(d) - t0) / 864e5) : 0;
+    if (!d || dd > 1 || dd < -60) d = today;   /* 未来や大昔の日付で並びの先頭に居座らせない */
+    var id = museId('m');
+    appendObj('ニュース', { id: id, '中期ID': goals, '出どころ': 'Muse', '発信元': one(q.from, 30), '日付': d, '見出し': title, 'なぜ今': one(q.why, 80), '本文': one(q.body, 300), 'URL': url });
+    return { ok: true, id: id, log: [['ニュース', id, title]] };
   },
   'decision.add': function (q, me) {
     var id = museId('q');
