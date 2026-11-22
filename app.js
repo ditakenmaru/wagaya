@@ -1448,6 +1448,21 @@
     this.delArmTimer = setTimeout(function () { if (self.state.delArm === id) self.setState({ delArm: null }); }, 4000);
   };
   App.prototype.delLabelOf = function (id) { return this.state.delArm === id ? 'もう一度で削除' : '削除'; };
+  /* 相談・申し送りの「消す」も2回押し（コメントと同じ：1回目で「もう一度で削除」、4秒で戻る） */
+  App.prototype.tapDelete = function (key, fn) {
+    var self = this;
+    if (this.state.delArm === key) { clearTimeout(this.delArmTimer); this.setState({ delArm: null }); fn(); return; }
+    this.setState({ delArm: key });
+    clearTimeout(this.delArmTimer);
+    this.delArmTimer = setTimeout(function () { if (self.state.delArm === key) self.setState({ delArm: null }); }, 4000);
+  };
+  App.prototype.delLabelOf2 = function (key) { return this.state.delArm === key ? 'もう一度で消す' : '消す'; };
+  App.prototype.deleteNoteById = function (id) {
+    var revert = this.snapshot();
+    this.mutate(function (d) { d.notes = (d.notes || []).filter(function (x) { return x.id !== id; }); d.replies = (d.replies || []).filter(function (x) { return x.target !== 'notes:' + id; }); });
+    this.send('deleteNote', { id: id }, revert);
+    this.showToast('申し送りを消しました', null);
+  };
   App.prototype.deleteReply = function (id) {
     var revert = this.snapshot();
     this.mutate(function (d) { d.replies = (d.replies || []).filter(function (x) { return x.id !== id; }); });
@@ -1552,9 +1567,13 @@
   };
   App.prototype.deleteDecision = function () {
     var e = this.state.editor;
-    this.mutate(function (d) { d.decisions = (d.decisions || []).filter(function (x) { return x.id !== e.id; }); });
     this.setState({ editor: null });
-    this.send('deleteDecision', { id: e.id }, this.snapshot());
+    this.deleteDecisionById(e.id);
+  };
+  App.prototype.deleteDecisionById = function (id) {
+    var revert = this.snapshot();
+    this.mutate(function (d) { d.decisions = (d.decisions || []).filter(function (x) { return x.id !== id; }); });
+    this.send('deleteDecision', { id: id }, revert);
     this.showToast('相談を消しました', null);
   };
   /* 相談の添付（画像・PDF）。置き場は写真のスライドとは別。一覧には id・種類・名前だけ入り、中身は見る時に取って端末に保存する（ログアウトで消える） */
@@ -2216,6 +2235,7 @@
           if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); var m = Object.assign({}, self.state.decThreadOpen || {}); m[x.id] = true; self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null, decThreadOpen: m }); }   /* 書いた後は開いたまま（自分のコメントが見える） */
         },
         openAll: function () { self.openDetail('decide', x.id); },
+        del: function () { self.tapDelete('dq:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('dq:' + x.id),
         files: self.attachVM((x.files || []).slice(0, (x.files || []).length > 3 ? 2 : 3)), hasFiles: !!(x.files && x.files.length), moreFiles: (x.files || []).length > 3 ? '＋' + ((x.files || []).length - 2) : '', hasMoreFiles: (x.files || []).length > 3,   /* カードの幅は3マス：4つ以上なら、2つ＋「＋N」 */
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
@@ -2232,7 +2252,7 @@
       toggle: function () { self.setState({ decArchiveOpen: !self.state.decArchiveOpen }); USAGE.add('act:decide_archive'); },
       items: decDone.map(function (x, i) {   /* 番号は決まった順（古い=1）。新しく決まるほど大きくなり、ずれない */
         var no = decDone.length - i;
-        return { no: String(no), noLabel: '決まったこと ' + no + '番', q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
+        return { no: String(no), noLabel: '決まったこと ' + no + '番', del: function () { self.tapDelete('da:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('da:' + x.id), q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
           more: moreOf('decide', x.id),
           reopen: function () { self.decideNow(x, true); } };
       })
@@ -3014,6 +3034,7 @@
       notesSummary: unreadAll.length ? '未確認 ' + unreadAll.length + '件' : 'すべて確認済み',
       notes: notesSorted.map(function (n) {
         var mineTo = n.to === meWho;
+        var canDelNote = n.from === meWho && !n.ask;   /* 自分が書いた普通の申し送りだけ（担当替えの頼みは、取り消しの仕組みがあるので対象外） */
         /* 引き受けた頼み：今日か先の日でまだ生きていれば取り消せる。先の日は GAS 16（swapsAhead）がある時だけ */
         var okAsk = n.ask === 'swap' && n.answer === 'ok' && n.askDate >= D.today && self.swapApi();
         var live = okAsk && self.swapLive(n.taskId, n.askDate);
@@ -3024,6 +3045,7 @@
         var canceled = okAsk && !live;
         var dayIs = n.askDate && n.askDate !== D.today ? 'この日は' : '今日は';
         return {
+          canDelete: canDelNote, del: function () { self.tapDelete('dn:' + n.id, function () { self.deleteNoteById(n.id); }); }, delLabel: self.delLabelOf2('dn:' + n.id),
           from: n.from, to: n.to, when: whenLabel(n.createdAt), text: n.text, task: n.task,
           unread: !n.read && mineTo && !(n.ask === 'swap' && !n.answer), read: n.read, hasTask: !!n.task,
           fromBadge: self.badge(n.from), toBadge: self.badge(n.to),
