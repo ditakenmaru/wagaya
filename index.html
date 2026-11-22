@@ -587,8 +587,8 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
 <sc-if value="{{dc.showCommentBtn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-expanded="{{dc.commentExpanded}}" onClick="{{dc.toggleComment}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.commentLabel}}</button></sc-if>
             <button type="button" onClick="{{dc.more.go}}" style="{{dc.more.style}}">{{dc.more.label}}</button>
             <button type="button" data-muse="1" onClick="{{dc.muse}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">Museに相談</button>
-            <button type="button" onClick="{{dc.del}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--danger); font-size: var(--t-sub); font-weight: 600; cursor: pointer">{{dc.delLabel}}</button>
           </div>
+          <div><button type="button" onClick="{{dc.del}}" style="{{dc.delStyle}}">{{dc.delLabel}}</button></div>
         </div>
       </article>
     </sc-for>
@@ -614,7 +614,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
                 <button type="button" onClick="{{da.more.go}}" style="{{da.more.style}}">{{da.more.label}}</button>
                 <button type="button" onClick="{{da.reopen}}" class="btn btn-gray" style="min-height: 44px; padding: 0 12px; font-size: var(--t-foot)">相談に戻す</button>
-                <button type="button" onClick="{{da.del}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--danger); font-size: var(--t-foot); font-weight: 600; cursor: pointer">{{da.delLabel}}</button>
+                <button type="button" onClick="{{da.del}}" style="{{da.delStyle}}">{{da.delLabel}}</button>
               </div>
             </article>
           </sc-for>
@@ -1075,7 +1075,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
             <button type="button" onClick="{{n.ack}}" class="btn btn-fill" style="min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">確認しました</button>
           </sc-if>
           <button type="button" aria-expanded="{{n.replyExpanded}}" onClick="{{n.toggleReply}}" class="btn btn-gray" style="min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">{{n.replyLabel}}</button>
-          <sc-if value="{{n.canDelete}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{n.del}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--danger); font-size: var(--t-foot); font-weight: 600; cursor: pointer">{{n.delLabel}}</button></sc-if>
+          <sc-if value="{{n.canDelete}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{n.del}}" style="{{n.delStyle}}">{{n.delLabel}}</button></sc-if>
           <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
             <span style="margin-left: auto; font-size: var(--t-cap); font-weight: 700; color: var(--done)">確認済み</span>
           </sc-if>
@@ -1429,7 +1429,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=87"></script>
-<script src="app.js?v=87"></script>
+<script src="config.js?v=88"></script>
+<script src="app.js?v=88"></script>
 </body>
 </html>

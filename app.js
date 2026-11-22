@@ -1457,6 +1457,8 @@
     this.delArmTimer = setTimeout(function () { if (self.state.delArm === key) self.setState({ delArm: null }); }, 4000);
   };
   App.prototype.delLabelOf2 = function (key) { return this.state.delArm === key ? 'もう一度で消す' : '消す'; };
+  /* 「消す」はボタンの形（薄い赤）。1回押すと濃い赤に変わる */
+  App.prototype.delBtnStyle = function (key, onColor) { return 'min-height: 44px; padding: 0 18px; border: none; border-radius: var(--r-btn); font-size: var(--t-sub); font-weight: 700; cursor: pointer; ' + (this.state.delArm === key ? 'background: var(--danger); color: #FFFFFF' : (onColor ? 'background: rgba(255,255,255,.24); color: #FFFFFF' : 'background: var(--danger-soft); color: var(--danger)')); };   /* onColor＝色つきのカードの上（半透明の白） */
   App.prototype.deleteNoteById = function (id) {
     var revert = this.snapshot();
     this.mutate(function (d) { d.notes = (d.notes || []).filter(function (x) { return x.id !== id; }); d.replies = (d.replies || []).filter(function (x) { return x.target !== 'notes:' + id; }); });
@@ -2235,7 +2237,7 @@
           if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); var m = Object.assign({}, self.state.decThreadOpen || {}); m[x.id] = true; self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null, decThreadOpen: m }); }   /* 書いた後は開いたまま（自分のコメントが見える） */
         },
         openAll: function () { self.openDetail('decide', x.id); },
-        del: function () { self.tapDelete('dq:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('dq:' + x.id),
+        del: function () { self.tapDelete('dq:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('dq:' + x.id), delStyle: self.delBtnStyle('dq:' + x.id, true),
         files: self.attachVM((x.files || []).slice(0, (x.files || []).length > 3 ? 2 : 3)), hasFiles: !!(x.files && x.files.length), moreFiles: (x.files || []).length > 3 ? '＋' + ((x.files || []).length - 2) : '', hasMoreFiles: (x.files || []).length > 3,   /* カードの幅は3マス：4つ以上なら、2つ＋「＋N」 */
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
@@ -2252,7 +2254,7 @@
       toggle: function () { self.setState({ decArchiveOpen: !self.state.decArchiveOpen }); USAGE.add('act:decide_archive'); },
       items: decDone.map(function (x, i) {   /* 番号は決まった順（古い=1）。新しく決まるほど大きくなり、ずれない */
         var no = decDone.length - i;
-        return { no: String(no), noLabel: '決まったこと ' + no + '番', del: function () { self.tapDelete('da:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('da:' + x.id), q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
+        return { no: String(no), noLabel: '決まったこと ' + no + '番', del: function () { self.tapDelete('da:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('da:' + x.id), delStyle: self.delBtnStyle('da:' + x.id), q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
           more: moreOf('decide', x.id),
           reopen: function () { self.decideNow(x, true); } };
       })
@@ -3045,7 +3047,7 @@
         var canceled = okAsk && !live;
         var dayIs = n.askDate && n.askDate !== D.today ? 'この日は' : '今日は';
         return {
-          canDelete: canDelNote, del: function () { self.tapDelete('dn:' + n.id, function () { self.deleteNoteById(n.id); }); }, delLabel: self.delLabelOf2('dn:' + n.id),
+          canDelete: canDelNote, del: function () { self.tapDelete('dn:' + n.id, function () { self.deleteNoteById(n.id); }); }, delLabel: self.delLabelOf2('dn:' + n.id), delStyle: self.delBtnStyle('dn:' + n.id),
           from: n.from, to: n.to, when: whenLabel(n.createdAt), text: n.text, task: n.task,
           unread: !n.read && mineTo && !(n.ask === 'swap' && !n.answer), read: n.read, hasTask: !!n.task,
           fromBadge: self.badge(n.from), toBadge: self.badge(n.to),
