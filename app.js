@@ -2142,8 +2142,9 @@
       show: decDone.length > 0, open: decArchiveOpen, expanded: decArchiveOpen ? 'true' : 'false',
       label: decArchiveOpen ? '決まったことを閉じる ⌃' : '決まったこと（アーカイブ ' + decDone.length + '件）⌄',
       toggle: function () { self.setState({ decArchiveOpen: !self.state.decArchiveOpen }); USAGE.add('act:decide_archive'); },
-      items: decDone.map(function (x) {
-        return { q: x.q, decidedText: x.decided, qStyle: clamp(2, 'font-size: var(--t-sub); font-weight: 700; line-height: 1.45; color: var(--label)'),
+      items: decDone.map(function (x, i) {   /* 番号は決まった順（古い=1）。新しく決まるほど大きくなり、ずれない */
+        var no = decDone.length - i;
+        return { no: String(no), noLabel: '決まったこと ' + no + '番', q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
           more: moreOf('decide', x.id),
           reopen: function () { self.decideNow(x, true); } };
       })
