@@ -1983,7 +1983,13 @@
       return { dotStyle: 'position: absolute; top: ' + (14 - size / 2) + 'px; left: calc(' + pct(d.t) + '% - ' + size / 2 + 'px); width: ' + size + 'px; height: ' + size + 'px; border-radius: 50%; box-sizing: border-box; border: 2px solid ' + (fill === 'var(--card)' ? 'var(--label3)' : 'var(--accent)') + '; background: ' + fill };
     });
 
-    var flow = mine.map(function (d) {
+    /* 今日の流れの並び：これからの物 → 時刻を過ぎてまだの物 → 済んだ物。朝が終わったら朝の物は下に下がり、夜の物が上に出る（今日を見ている時だけ。同じ組の中は時刻順） */
+    var flowSrc = mine;
+    if (st.day === null || st.day === todayIdx) {
+      var grp = function (d) { var dn = !!done[d.id]; return dn ? 2 : (d.t != null && d.t < nowMin ? 1 : 0); };
+      flowSrc = mine.map(function (d, k) { return { d: d, k: k, g: grp(d) }; }).sort(function (x, y) { return x.g - y.g || x.k - y.k; }).map(function (x) { return x.d; });
+    }
+    var flow = flowSrc.map(function (d) {
       var kids = kidsOf[d.id] || [];
       var kidsDone = kids.filter(function (k) { return !!done[k.id]; }).length;
       var isDone = kids.length ? kidsDone === kids.length : !!done[d.id];
