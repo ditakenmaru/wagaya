@@ -1533,7 +1533,7 @@
     if (!q) { this.showToast('相談したいことを入力してください', null); return; }
     if (e.uploading) { this.showToast('添付を送っています。終わるまで少し待ってください', null); return; }
     var opts = String(e.options || '').split(/\n/).map(function (x) { return x.trim(); }).filter(String).slice(0, 6);
-    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim(), files: (e.files || []).slice(0, 3).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
+    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim(), files: (e.files || []).slice(0, this.attachMax()).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
     var cleared = false;
     this.mutate(function (d) {
       var list = d.decisions || [], old = list.filter(function (x) { return x.id === item.id; })[0];
@@ -1560,6 +1560,7 @@
   /* 相談の添付（画像・PDF）。置き場は写真のスライドとは別。一覧には id・種類・名前だけ入り、中身は見る時に取って端末に保存する（ログアウトで消える） */
   var BLANK_IMG = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E';
   function b64ToBlob(b64, type) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: type }); }
+  App.prototype.attachMax = function () { return !DEMO && Number((this.state.data || {}).api || 0) < 21 ? 3 : 10; };   /* GAS 20 までは3つ、21 から10 */
   App.prototype.attachOk = function () { return DEMO || Number((this.state.data || {}).api || 0) >= 20; };   /* 添付は GAS 20 から */
   App.prototype.attachSrc = function (f) {
     var m = this.attachUrls || (this.attachUrls = {});
@@ -1598,10 +1599,10 @@
   };
   App.prototype.pickAttach = function () { var el = document.getElementById('attach-pick'); if (el) el.click(); };
   App.prototype.uploadAttach = function (e) {
-    var self = this, ed0 = this.state.editor, left = ed0 ? 3 - (ed0.files || []).length : 0;
+    var self = this, ed0 = this.state.editor, max = this.attachMax(), left = ed0 ? max - (ed0.files || []).length : 0;
     var picked = Array.prototype.slice.call((e && e.target && e.target.files) || []), files = picked.slice(0, Math.max(0, left));
     if (e && e.target) e.target.value = '';
-    if (picked.length > files.length) this.showToast('添付は3つまでです。先の' + files.length + '件だけ送ります', null);
+    if (picked.length > files.length) this.showToast('添付は' + max + 'つまでです。先の' + files.length + '件だけ送ります', null);
     if (!ed0 || !files.length) return;
     USAGE.add('act:attach_add');
     var eid = ed0.id, ng = 0, big = 0, m = this.attachUrls || (this.attachUrls = {});
@@ -1622,7 +1623,7 @@
           if (!res || !res.ok || !res.id) throw res || new Error('fail');
           m[res.id] = pdf ? URL.createObjectURL(f) : URL.createObjectURL(b64ToBlob(x.data, 'image/jpeg'));
           var nf = { id: res.id, t: pdf ? 'p' : 'i', n: pdf ? String(f.name || 'PDF').slice(0, 40) : '' };
-          setEd(function (c) { return Object.assign({}, c, { files: (c.files || []).concat([nf]).slice(0, 3) }); });
+          setEd(function (c) { return Object.assign({}, c, { files: (c.files || []).concat([nf]).slice(0, max) }); });
         });
       }).then(null, function (err) { if (err && err.code === 'too_big') big++; else ng++; }).then(function () { step(i + 1); });
     };
@@ -2215,7 +2216,7 @@
           if (self.addReplyTo('decide', x.id, text, self.state.decReplyTo && self.state.decReplyTo.id)) { USAGE.add('act:decide_comment'); var m = Object.assign({}, self.state.decThreadOpen || {}); m[x.id] = true; self.setState({ decCommentId: null, decCommentDraft: '', decReplyTo: null, decThreadOpen: m }); }   /* 書いた後は開いたまま（自分のコメントが見える） */
         },
         openAll: function () { self.openDetail('decide', x.id); },
-        files: self.attachVM(x.files), hasFiles: !!(x.files && x.files.length),
+        files: self.attachVM((x.files || []).slice(0, (x.files || []).length > 3 ? 2 : 3)), hasFiles: !!(x.files && x.files.length), moreFiles: (x.files || []).length > 3 ? '＋' + ((x.files || []).length - 2) : '', hasMoreFiles: (x.files || []).length > 3,   /* カードの幅は3マス：4つ以上なら、2つ＋「＋N」 */
         muse: function () { self.openMuse('decide', x); }, canDecide: both && !decided, decide: function () { self.decideNow(x, false); }, reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); },
         /* 話題と同じ横スライドのカード。上の質問の帯だけ相談ごとの色（TOPIC_TONES）、答える所は白で読みやすく */
         cardStyle: 'flex-shrink: 0; width: var(--w-slide); box-sizing: border-box; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 8px; overflow: hidden; border-radius: var(--r-card); ' + (decided ? 'box-shadow: none; background: var(--card2)' : 'color: #FFFFFF; box-shadow: var(--shadow-card); background: linear-gradient(150deg, ' + tone.join(', ') + ')'),
@@ -2389,7 +2390,7 @@
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
       } else if (E.kind === 'decide') {
         ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
-        ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < 3 && !E.uploading; ed.uploading = !!E.uploading;
+        ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < self.attachMax() && !E.uploading; ed.attachLabel = '参考の画像・PDF（' + self.attachMax() + 'つまで）'; ed.uploading = !!E.uploading;
         ed.files.forEach(function (ef) { ef.removeLabel = (ef.name || '') + 'を外す'; }); ed.pickFile = function () { self.pickAttach(); };
       } else if (E.kind === 'deadline') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: pill(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });

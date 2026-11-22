@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 20;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 21;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -864,9 +864,9 @@ function addPhoto(req, me) {
 }
 function videoLimit() { var n = Number(settings()['動画の上限MB']); return (n > 0 ? Math.min(n, 15) : 10) * 1048576; }
 
-/* 相談に付ける画像・PDF。画像は画面で縮めたJPEG（8MBまで）、PDFは5MBまで。1つの相談に3つまで */
+/* 相談に付ける画像・PDF。画像は画面で縮めたJPEG（8MBまで）、PDFは5MBまで。1つの相談に10まで（API 21。20までは3つ） */
 var ATTACH_TYPES = { 'image/jpeg': ['.jpg', 'i'], 'image/png': ['.png', 'i'], 'application/pdf': ['.pdf', 'p'] };
-var ATTACH_MAX = 3, ATTACH_PDF_MAX = 5 * 1048576, ATTACH_IMG_MAX = 8 * 1048576;
+var ATTACH_MAX = 10, ATTACH_PDF_MAX = 5 * 1048576, ATTACH_IMG_MAX = 8 * 1048576;
 function addAttachment(req, me) {
   var mime = String(req.mime || ''), t = ATTACH_TYPES[mime], data = String(req.data || '');
   if (!t || !data || !/^[A-Za-z0-9+\/=]+$/.test(data)) return { ok: false, code: 'bad_request' };

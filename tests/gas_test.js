@@ -305,6 +305,14 @@ ok(b2.data.plans[0].who === 'まま' && b2.data.plans[0].what === '面談' && b2
   env.trashedIds = [];
   post(env, { action: 'saveDecision', session: S, item: { id: 'qa1', q: '添付つきの相談', options: ['A', 'B'], files: [files[0]], files0: [aid, pdf.id] } });
   ok(env.trashedIds.length === 1 && env.trashedIds[0] === pdf.id, '添付: 開いた時にあった物を外すと、そのPDFだけごみ箱へ');
+  // 10まで（11個目は落とす）
+  {
+    const many = []; for (let i = 0; i < 11; i++) many.push({ id: 'many_file_id_' + i, t: 'i', n: 'm' + i });
+    post(env, { action: 'saveDecision', session: S, item: { id: 'qa3', q: '10枚の相談', options: ['A', 'B'], files: many } }); env.onEdit();
+    const q3 = (post(env, { action: 'boot', session: S, today }).data.decisions || []).find(x => x.id === 'qa3');
+    ok(q3 && q3.files.length === 10 && q3.files[9].id === 'many_file_id_9', '添付: 10まで（11個目は落とす）');
+    post(env, { action: 'deleteDecision', session: S, id: 'qa3' });
+  }
   // 編集中に相手が足した添付は、こちらの保存でごみ箱へ入れない
   {
     const other = { id: 'other_added_1', t: 'i', n: '相手が足した' };
@@ -439,7 +447,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 20 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 21 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -713,7 +721,7 @@ ok(b3.api === 20 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 20 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 21 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';

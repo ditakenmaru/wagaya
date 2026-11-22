@@ -536,7 +536,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
           <sc-if value="{{dc.hasDue}}" hint-placeholder-val="{{ true }}"><span style="flex-shrink: 0; font-size: var(--t-cap); font-weight: 700; color: var(--attn-ink)">{{dc.due}}まで</span></sc-if>
         </div>
         <sc-if value="{{dc.hasNote}}" hint-placeholder-val="{{ false }}"><p style="{{dc.noteStyle}}">{{dc.note}}</p></sc-if>
-        <sc-if value="{{dc.hasFiles}}" hint-placeholder-val="{{ false }}"><div role="group" aria-label="参考の画像・PDF" style="display: flex; gap: 8px; overflow-x: auto; padding: 2px 0"><sc-for list="{{dc.files}}" as="af" hint-placeholder-count="0"><button type="button" aria-label="{{af.label}}" onClick="{{af.open}}" style="{{af.style}}"><sc-if value="{{af.isImg}}" hint-placeholder-val="{{ true }}"><img src="{{af.src}}" alt="{{af.name}}" style="width: 100%; height: 100%; object-fit: cover; display: block"></sc-if><sc-if value="{{af.isPdf}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); font-weight: 700">PDF</span><span style="max-width: 126px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-cap); color: var(--label2)">{{af.name}}</span></sc-if></button></sc-for></div></sc-if>
+        <sc-if value="{{dc.hasFiles}}" hint-placeholder-val="{{ false }}"><div role="group" aria-label="参考の画像・PDF" style="display: flex; gap: 8px; overflow-x: auto; padding: 2px 0"><sc-for list="{{dc.files}}" as="af" hint-placeholder-count="0"><button type="button" aria-label="{{af.label}}" onClick="{{af.open}}" style="{{af.style}}"><sc-if value="{{af.isImg}}" hint-placeholder-val="{{ true }}"><img src="{{af.src}}" alt="{{af.name}}" style="width: 100%; height: 100%; object-fit: cover; display: block"></sc-if><sc-if value="{{af.isPdf}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); font-weight: 700">PDF</span><span style="max-width: 126px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-cap); color: var(--label2)">{{af.name}}</span></sc-if></button></sc-for><sc-if value="{{dc.hasMoreFiles}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="残りの添付も見る" onClick="{{dc.openAll}}" style="flex-shrink: 0; box-sizing: border-box; width: 72px; height: 72px; border: 1px solid var(--sep); border-radius: 12px; background: var(--card); color: var(--label); font-size: var(--t-body); font-weight: 700; cursor: pointer">{{dc.moreFiles}}</button></sc-if></div></sc-if>
         <sc-if value="{{dc.open}}" hint-placeholder-val="{{ true }}">
           <div role="group" aria-label="答える" style="display: flex; flex-direction: column; gap: 8px">
             <sc-for list="{{dc.opts}}" as="op" hint-placeholder-count="3">
@@ -1297,7 +1297,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       <label for="ed-qnote" class="lbl">ひとこと</label>
       <input id="ed-qnote" type="text" value="{{ed.note}}" onInput="{{ed.set.note}}" placeholder="例：来月から" class="field" style="box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 12px">
       <sc-if value="{{ed.attachOk}}" hint-placeholder-val="{{ false }}">
-        <span class="lbl">参考の画像・PDF（3つまで）</span>
+        <span class="lbl">{{ed.attachLabel}}</span>
         <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 10px 0 0"><sc-for list="{{ed.files}}" as="ef" hint-placeholder-count="0"><div style="position: relative; flex-shrink: 0"><button type="button" aria-label="{{ef.label}}" onClick="{{ef.open}}" style="{{ef.style}}"><sc-if value="{{ef.isImg}}" hint-placeholder-val="{{ true }}"><img src="{{ef.src}}" alt="{{ef.name}}" style="width: 100%; height: 100%; object-fit: cover; display: block"></sc-if><sc-if value="{{ef.isPdf}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-foot); font-weight: 700">PDF</span><span style="max-width: 126px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-cap); color: var(--label2)">{{ef.name}}</span></sc-if></button><button type="button" aria-label="{{ef.removeLabel}}" onClick="{{ef.remove}}" style="position: absolute; top: -10px; right: -10px; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--card); background: var(--label2); color: var(--card); font-size: 18px; line-height: 1; cursor: pointer; padding: 0">×</button></div></sc-for><sc-if value="{{ed.canAddFile}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="画像かPDFを選ぶ" onClick="{{ed.pickFile}}" class="btn btn-tint" style="width: 72px; height: 72px; flex-direction: column; gap: 2px; font-size: var(--t-cap)"><span aria-hidden="true" style="font-size: 24px; line-height: 1">＋</span><span>選ぶ</span></button></sc-if></div>
         <sc-if value="{{ed.uploading}}" hint-placeholder-val="{{ false }}"><span style="font-size: var(--t-cap); color: var(--label2)">送っています…</span></sc-if>
       </sc-if>
@@ -1426,7 +1426,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=85"></script>
-<script src="app.js?v=85"></script>
+<script src="config.js?v=86"></script>
+<script src="app.js?v=86"></script>
 </body>
 </html>
