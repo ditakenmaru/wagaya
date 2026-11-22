@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 22;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 23;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -1249,7 +1249,7 @@ function saveDecision(x, me) {
   var q = String(x.q || '').slice(0, 200).trim();
   if (!q || !x.id) return { ok: false, code: 'bad_request' };
   var opts = (x.options || []).map(function (o) { return String(o).slice(0, 60).trim(); }).filter(String);
-  var obj = { id: String(x.id), '問い': q, '選択肢': opts.join('\n'), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 300) };
+  var obj = { id: String(x.id), '問い': q, '選択肢': opts.join('\n'), '期限': normDate(x.due), 'メモ': String(x.note || '').slice(0, 2000) };
   var files = x.files === undefined ? null : cleanAttach(x.files);   /* 古い画面は files を送らない＝触らない */
   var r = findById('相談', x.id, ['問い']);
   if (files && r) {

@@ -1561,7 +1561,7 @@
       this.setState({ editor: Object.assign({}, e, { hidden: true, saveAfter: true }), upMsg: '添付を送っています…（終わると相談を保存します）' }); return;
     }
     var opts = String(e.options || '').split(/\n/).map(function (x) { return x.trim(); }).filter(String).slice(0, 6);
-    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim(), files: (e.files || []).slice(0, this.attachMax()).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
+    var item = { id: e.id, q: q, options: opts, due: e.due || '', note: (e.note || '').trim().slice(0, this.decNoteMax()), files: (e.files || []).slice(0, this.attachMax()).map(function (f) { return { id: f.id, t: f.t, n: f.n || '' }; }), files0: (e.files0 || []).slice() };
     var cleared = false;
     this.mutate(function (d) {
       var list = d.decisions || [], old = list.filter(function (x) { return x.id === item.id; })[0];
@@ -1593,6 +1593,7 @@
   var BLANK_IMG = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E';
   function b64ToBlob(b64, type) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: type }); }
   App.prototype.attachMax = function () { return !DEMO && Number((this.state.data || {}).api || 0) < 21 ? 3 : 10; };   /* GAS 20 までは3つ、21 から10 */
+  App.prototype.decNoteMax = function () { return DEMO || Number((this.state.data || {}).api || 0) >= 23 ? 2000 : 300; };   /* 相談の説明の長さは GAS 23 から 2000字 */
   App.prototype.attachOk = function () { return DEMO || Number((this.state.data || {}).api || 0) >= 20; };   /* 添付は GAS 20 から */
   App.prototype.attachSrc = function (f) {
     var m = this.attachUrls || (this.attachUrls = {});
@@ -2225,7 +2226,7 @@
         : !other ? otherName + 'の答え待ち'
         : (mine === '話したい' || other === '話したい') ? (other === '話したい' ? otherName + 'が話したいそうです' : '話したい、と伝えています')
         : both ? '答えがそろいました' : '答えが分かれています。話して決めましょう';
-      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(3, 'font-size: var(--t-body); font-weight: 700; line-height: 1.45'), noteStyle: clamp(2, 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6'), q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
+      return { isNew: !!marks['decide:' + x.id], more: Object.assign(moreOf('decide', x.id), { label: '詳細を見る' }), qStyle: clamp(2, 'font-size: var(--t-body); font-weight: 700; line-height: 1.45'), noteStyle: (function () { var lg = String(x.note || '').length > 70 || String(x.note || '').split('\n').length > 3, o = !!(st.decNoteOpen || {})[x.id]; return lg && !o ? clamp(3, 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6; white-space: pre-wrap') : 'margin: 0; font-size: var(--t-foot); color: var(--label); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere'; })(), noteOpenAria: (st.decNoteOpen || {})[x.id] ? 'true' : 'false', noteLong: String(x.note || '').length > 70 || String(x.note || '').split('\n').length > 3, noteLabel: (st.decNoteOpen || {})[x.id] ? '閉じる ⌃' : '説明を全部読む ⌄', noteToggle: function () { var m = Object.assign({}, self.state.decNoteOpen || {}); if (m[x.id]) delete m[x.id]; else m[x.id] = true; self.setState({ decNoteOpen: m }); }, q: x.q, note: x.note, hasNote: !!x.note, due: dueLabel(x.due), hasDue: !!x.due && !decided, decided: decided, open: !decided, decidedText: x.decided, opts: opts, waiting: waiting,
         comments: (function () {
           var all = (D.replies || []).filter(function (r) { return r.target === 'decide:' + x.id; }).sort(function (a, b) { return a.at - b.at; });
           var tops = all.filter(function (r) { return !r.parent || !all.some(function (p) { return p.id === r.parent; }); });
@@ -2432,6 +2433,8 @@
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
       } else if (E.kind === 'decide') {
         ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
+        ed.noteMax = self.decNoteMax(); ed.noteLabel = '説明（長くてもOK・' + ed.noteMax + '字まで）';
+        (function () { var q0 = String(E.q || ''), m = q0.match(/[\n　。]| {1,}/); ed.canSplit = q0.length > 24 && !!m && m.index > 0 && m.index < q0.length - 1 && !String(E.note || '').trim(); ed.splitQ = function () { var q1 = String(self.state.editor.q || ''), m1 = q1.match(/[\n　。]| {1,}/); if (!m1) return; var cut = m1[0] === '。' ? m1.index + 1 : m1.index; self.setState({ editor: Object.assign({}, self.state.editor, { q: q1.slice(0, cut).trim(), note: q1.slice(cut + (m1[0] === '。' ? 0 : m1[0].length)).trim() }) }); }; })();
         ed.resetHint = !E.isNew && ((self.state.data || {}).decisions || []).some(function (x) { return x.id === E.id && (x.a1 || x.a2 || x.state === '決まった'); }); ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < self.attachMax() && !E.uploading; ed.attachLabel = '参考の画像・PDF（' + self.attachMax() + 'つまで）'; ed.uploading = !!E.uploading;
         ed.files.forEach(function (ef) { ef.removeLabel = (ef.name || '') + 'を外す'; }); ed.pickFile = function () { self.pickAttach(); };
       } else if (E.kind === 'deadline') {
