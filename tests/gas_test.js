@@ -447,7 +447,7 @@ env.ss.getSheetByName('ニュース').data.push(['nx', '', 'Web', 'x', '', '危�
 env.onEdit();
 b3 = post(env, { action: 'boot', session: S, today }).data;
 ok(b3.news.find(n => n.title === '危ないリンク').url === '', 'ニュース：https 以外のリンクは空に');
-ok(b3.api === 21 && b3.v, 'boot に api の版と、変わったかを見る版');
+ok(b3.api === 22 && b3.v, 'boot に api の版と、変わったかを見る版');
 // 日本語の長いデータでもキャッシュの1件100KBを超えない
 {
   const big = 'あ'.repeat(200000);
@@ -721,7 +721,7 @@ ok(b3.api === 21 && b3.v, 'boot に api の版と、変わったかを見る版'
   const log = (email, nonce) => { e.token = { iss: 'accounts.google.com', aud: 'cid', email, email_verified: 'true', exp: Date.now() / 1000 + 600, nonce }; return post(e, { action: 'login', idToken: 'x', nonce }).session; };
   const T = log('p1@example.com', 'a1'), M = log('p2@example.com', 'a2');
   const bt = post(e, { action: 'boot', session: T, today }).data;
-  ok(bt.api === 21 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
+  ok(bt.api === 22 && /^[\w-]{87}$/.test(bt.push.key) && bt.push.subs === 0, '通知: bootに公開の鍵（65バイト）');
   ok(!JSON.stringify(bt).includes(e.props.vapidPrivate), '通知: 秘密の鍵はbootに出さない');
   ok(post(e, { action: 'pushSub', session: M, sub: { endpoint: 'https://evil.example.com/x/12345678' } }).code === 'bad_request', '通知: 知らない届け先は断る');
   const epM = 'https://web.push.apple.com/QAbc-123_xyz456', epT = 'https://web.push.apple.com/QTto-999_abc000';
@@ -740,6 +740,13 @@ ok(b3.api === 21 && b3.v, 'boot に api の版と、変わったかを見る版'
   ok(pk.badge === 1, '通知: アイコンの数字＝開いてから来た通知の数');
   ok(pk.items.length === 1 && pk.items[0].title === 'ととから申し送り' && pk.items[0].body === '牛乳を買ってきて' && pk.items[0].go === 'notes', '通知: 端末が中身を聞くと返す');
   ok(post(e, { action: 'pushPeek', session: M }).items.length === 0 && post(e, { action: 'pushPeek', session: T }).items.length === 0, '通知: 2回目は空・自分（とと）には無い');
+  // 申し送りを直す：自分の普通の申し送りだけ・通知は出さない
+  e.pushReqs = [];
+  ok(post(e, { action: 'updateNote', session: T, id: 'pn1', text: '牛乳と卵を買ってきて' }).ok, '申し送りを直す: 自分の物は直せる');
+  ok(e.pushReqs.length === 0, '申し送りを直す: 通知は出さない');
+  ok(post(e, { action: 'updateNote', session: M, id: 'pn1', text: 'のっとる' }).code === 'not_yours', '申し送りを直す: 相手の物は直せない');
+  ok(post(e, { action: 'updateNote', session: T, id: 'pn1', text: '   ' }).code === 'bad_request' && post(e, { action: 'updateNote', session: T, id: 'nai', text: 'x' }).code === 'not_found', '申し送りを直す: 空・無いidは断る');
+  ok(JSON.stringify(post(e, { action: 'boot', session: M, today: '2026-11-22' }).data.notes).includes('牛乳と卵'), '申し送りを直す: 相手にも直した文が見える');
   // 2台で受けても、どちらにも中身が出る（端末ごとに印）
   post(e, { action: 'addNote', session: T, note: { id: 'pn1b', to: 'まま', text: 'iPadにも' } });
   { const pa = post(e, { action: 'pushPeek', session: M, endpoint: 'https://web.push.apple.com/devA' }), pb = post(e, { action: 'pushPeek', session: M, endpoint: 'https://web.push.apple.com/devB' });

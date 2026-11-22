@@ -18,7 +18,7 @@ var TZ = 'Asia/Tokyo';
 var DOWS = ['日', '月', '火', '水', '木', '金', '土'];
 var SESSION_DAYS = 180;
 var SNAP_SECONDS = 600;   // まとめたデータを覚えておく時間（予定・写真の更新の目安）
-var API_VERSION = 21;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
+var API_VERSION = 22;     // 画面（app.js の API_EXPECTED）と合わせる。ずれたら画面に「Google側の更新がまだ」と出る
 var BACKUP_KEEP = 8;      // バックアップを何週分残すか
 
 /* 各シートの見出し（setupで足りない列を足すのに使う。並べ替えは自由） */
@@ -128,6 +128,7 @@ function doPost(e) {
       case 'setShop': return out(withLock(function () { return setCheck(req.week, '買い物', req.itemId, !!req.checked, me); }));
       case 'addNote': return out(withLock(function () { return addNote(req.note, me); }));
       case 'ackNote': return out(withLock(function () { return ackNote(req.id, !!req.read, me); }));
+      case 'updateNote': return out(withLock(function () { return updateNote(req.id, req.text, me); }));
       case 'deleteNote': return out(withLock(function () { return deleteOwn('申し送り', req.id, 'from', me); }));
       case 'addDiary': return out(withLock(function () { return addDiary(req.entry, me); }));
       case 'deleteDiary': return out(withLock(function () { return deleteOwn('日記', req.id, '誰', me); }));
@@ -1019,6 +1020,22 @@ function addNote(n, me) {
   if (o['依頼']) notify(o.to, me.who + 'から：担当を代わってほしい', (o.task ? '「' + o.task + '」' : '') + '\n' + body, 'notes');
   else notify(o.to, me.who + 'から申し送り', body, 'notes');
   return { ok: true };
+}
+
+/* 自分が書いた普通の申し送りの文を直す（担当替えの頼みは対象外）。相手への通知は出さない */
+function updateNote(id, text, me) {
+  var body = String(text || '').slice(0, 1000).trim();
+  if (!id || !body) return { ok: false, code: 'bad_request' };
+  var rows = rowsOf('申し送り');
+  for (var i = rows.length - 1; i >= 0; i--) {
+    var r = rows[i];
+    if (String(r.id) !== String(id)) continue;
+    if (whoOf(r.from) !== me.who) return { ok: false, code: 'not_yours' };
+    if (r['依頼']) return { ok: false, code: 'bad_request' };
+    setCells('申し送り', r._row, { text: body });
+    return { ok: true };
+  }
+  return { ok: false, code: 'not_found' };
 }
 
 /* 今日だけ担当を変える。自分が引き受ける（who＝自分）か、元に戻す（who 空）だけ。相手に回す時は申し送りで頼む */

@@ -291,7 +291,7 @@
       loading: !cached, data: cached, photos: [],
       slideIdx: 0, slideAt: Date.now(), paused: false,
       noteOpen: false, noteMode: 'diary', noteTarget: '', noteTaskId: null, noteDraft: '', listening: false,
-      notesOpen: false, draft: '', draftTo: null,
+      notesOpen: false, draft: '', draftTo: null, noteEditId: null,
       mounted: {}, seen: {}, goal: 'all', goalAnim: 0, newsOpen: {},
       needLogin: !DEMO && !LS.get('session'), loginError: '', loggingIn: false,
       accountOpen: false, syncing: false, lastSync: cached ? cached._at : 0, offline: false,
@@ -1459,8 +1459,16 @@
   App.prototype.delLabelOf2 = function (key) { return this.state.delArm === key ? 'もう一度で消す' : '消す'; };
   /* 「消す」はボタンの形（薄い赤）。1回押すと濃い赤に変わる */
   App.prototype.delBtnStyle = function (key, onColor) { return 'min-height: 44px; padding: 0 18px; border: none; border-radius: var(--r-btn); font-size: var(--t-sub); font-weight: 700; cursor: pointer; ' + (this.state.delArm === key ? 'background: var(--danger); color: #FFFFFF' : (onColor ? 'background: rgba(255,255,255,.24); color: #FFFFFF' : 'background: var(--danger-soft); color: var(--danger)')); };   /* onColor＝色つきのカードの上（半透明の白） */
+  App.prototype.noteEditOk = function () { return DEMO || Number((this.state.data || {}).api || 0) >= 22; };   /* 申し送りを直すのは GAS 22 から */
+  App.prototype.updateNoteById = function (id, text) {
+    var revert = this.snapshot();
+    this.mutate(function (d) { (d.notes || []).forEach(function (x) { if (x.id === id) x.text = text; }); });
+    this.send('updateNote', { id: id, text: text }, revert);
+    this.showToast('申し送りを直しました', null);
+  };
   App.prototype.deleteNoteById = function (id) {
     var revert = this.snapshot();
+    if (this.state.noteEditId === id) this.setState({ noteEditId: null, draft: '' });
     this.mutate(function (d) { d.notes = (d.notes || []).filter(function (x) { return x.id !== id; }); d.replies = (d.replies || []).filter(function (x) { return x.target !== 'notes:' + id; }); });
     this.send('deleteNote', { id: id }, revert);
     this.showToast('申し送りを消しました', null);
@@ -2256,7 +2264,7 @@
         var no = decDone.length - i;
         return { no: String(no), noLabel: '決まったこと ' + no + '番', del: function () { self.tapDelete('da:' + x.id, function () { self.deleteDecisionById(x.id); }); }, delLabel: self.delLabelOf2('da:' + x.id), delStyle: self.delBtnStyle('da:' + x.id), q: x.q, decidedText: String(x.decided || '').replace(/^決まった[：:]\s*/, ''), qStyle: clamp(3, 'flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 700; line-height: 1.45; color: var(--label)'),
           more: moreOf('decide', x.id),
-          reopen: function () { self.decideNow(x, true); } };
+          reopen: function () { self.decideNow(x, true); }, edit: function () { self.openDecision(x); } };
       })
     };
     decisions = decisions.filter(function (x) { return !x.decided; });
@@ -2412,7 +2420,7 @@
         ed.save = function () { self.saveShopEdit(); }; ed.del = function () { self.deleteShop(); };
       } else if (E.kind === 'decide') {
         ed.save = function () { self.saveDecision(); }; ed.del = function () { self.deleteDecision(); };
-        ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < self.attachMax() && !E.uploading; ed.attachLabel = '参考の画像・PDF（' + self.attachMax() + 'つまで）'; ed.uploading = !!E.uploading;
+        ed.resetHint = !E.isNew && ((self.state.data || {}).decisions || []).some(function (x) { return x.id === E.id && (x.a1 || x.a2 || x.state === '決まった'); }); ed.attachOk = self.attachOk(); ed.files = self.attachVM(E.files); ed.canAddFile = (E.files || []).length < self.attachMax() && !E.uploading; ed.attachLabel = '参考の画像・PDF（' + self.attachMax() + 'つまで）'; ed.uploading = !!E.uploading;
         ed.files.forEach(function (ef) { ef.removeLabel = (ef.name || '') + 'を外す'; }); ed.pickFile = function () { self.pickAttach(); };
       } else if (E.kind === 'deadline') {
         ed.whoChips = names.concat(['家族']).map(function (n) { var on = E.who === n; return { label: n, pressed: on ? 'true' : 'false', style: pill(on, self.person(n).ink), pick: function () { self.editSet('who', n); } }; });
@@ -3032,7 +3040,7 @@
       notesNavLabel: unreadAll.length ? '申し送り（未確認' + unreadAll.length + '件）' : '申し送り',
       notesNavBg: st.notesOpen ? 'rgba(255,255,255,0.16)' : 'transparent',
       openNotes: function () { self.setState({ notesOpen: true }); },
-      closeNotes: function () { self.setState({ notesOpen: false, noteReplyId: null }); self.seeNotes(); },
+      closeNotes: function () { self.setState({ notesOpen: false, noteReplyId: null, noteEditId: null, draft: '' }); self.seeNotes(); },
       notesSummary: unreadAll.length ? '未確認 ' + unreadAll.length + '件' : 'すべて確認済み',
       notes: notesSorted.map(function (n) {
         var mineTo = n.to === meWho;
@@ -3047,6 +3055,7 @@
         var canceled = okAsk && !live;
         var dayIs = n.askDate && n.askDate !== D.today ? 'この日は' : '今日は';
         return {
+          canEdit: canDelNote && self.noteEditOk(), edit: function () { self.setState({ noteEditId: n.id, draft: n.text }); setTimeout(function () { var t = document.getElementById('note-input'); if (t) { t.focus(); } }, 50); },
           canDelete: canDelNote, del: function () { self.tapDelete('dn:' + n.id, function () { self.deleteNoteById(n.id); }); }, delLabel: self.delLabelOf2('dn:' + n.id), delStyle: self.delBtnStyle('dn:' + n.id),
           from: n.from, to: n.to, when: whenLabel(n.createdAt), text: n.text, task: n.task,
           unread: !n.read && mineTo && !(n.ask === 'swap' && !n.answer), read: n.read, hasTask: !!n.task,
@@ -3093,9 +3102,12 @@
       setNoteReplyDraft: function (e) { self.setState({ noteReplyDraft: e.target.value }); },
       draft: st.draft,
       setDraft: function (e) { self.setState({ draft: e.target.value }); },
+      noteEditing: !!st.noteEditId, sendLabel: st.noteEditId ? '直して保存' : '送る', notEditing: !st.noteEditId,
+      cancelNoteEdit: function () { self.setState({ noteEditId: null, draft: '' }); },
       sendNote: function () {
         var text = (self.state.draft || '').trim();
         if (!text) { self.showToast('申し送りの内容を入力してください', null); return; }
+        if (self.state.noteEditId) { var eid = self.state.noteEditId; self.setState({ draft: '', noteEditId: null }); self.updateNoteById(eid, text); return; }
         self.setState({ draft: '' });
         self.addNote(self.state.draftTo || self.otherWho(), text, '', '');
       },
@@ -3354,6 +3366,7 @@
         if (a === 'setDoneMany') (p.ids || []).forEach(function (id) { if (p.done) db.done[id] = true; else delete db.done[id]; });
         if (a === 'setShop') { if (p.checked) db.checked[p.itemId] = true; else delete db.checked[p.itemId]; }
         if (a === 'addNote') db.notes.unshift(p.note);
+        if (a === 'updateNote') db.notes.forEach(function (x) { if (x.id === p.id) x.text = p.text; });
         if (a === 'deleteNote') db.notes = db.notes.filter(function (x) { return x.id !== p.id; });
         if (a === 'ackNote') db.notes.forEach(function (x) { if (x.id === p.id) x.read = p.read; });
         if (a === 'addDiary') db.diary.push(p.entry);

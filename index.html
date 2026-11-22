@@ -588,7 +588,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
             <button type="button" onClick="{{dc.more.go}}" style="{{dc.more.style}}">{{dc.more.label}}</button>
             <button type="button" data-muse="1" onClick="{{dc.muse}}" class="btn-link" style="min-height: 44px; padding: 0; border: none; background: transparent; color: var(--accent); font-size: var(--t-sub); font-weight: 600; cursor: pointer">Museに相談</button>
           </div>
-          <div><button type="button" onClick="{{dc.del}}" style="{{dc.delStyle}}">{{dc.delLabel}}</button></div>
+          <div style="display: flex; gap: 8px"><button type="button" onClick="{{dc.edit}}" class="btn btn-gray" style="min-height: 44px; padding: 0 18px; font-size: var(--t-sub)">編集</button><button type="button" onClick="{{dc.del}}" style="{{dc.delStyle}}">{{dc.delLabel}}</button></div>
         </div>
       </article>
     </sc-for>
@@ -614,6 +614,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
                 <button type="button" onClick="{{da.more.go}}" style="{{da.more.style}}">{{da.more.label}}</button>
                 <button type="button" onClick="{{da.reopen}}" class="btn btn-gray" style="min-height: 44px; padding: 0 12px; font-size: var(--t-foot)">相談に戻す</button>
+                <button type="button" onClick="{{da.edit}}" class="btn btn-gray" style="min-height: 44px; padding: 0 12px; font-size: var(--t-foot)">編集</button>
                 <button type="button" onClick="{{da.del}}" style="{{da.delStyle}}">{{da.delLabel}}</button>
               </div>
             </article>
@@ -1075,6 +1076,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
             <button type="button" onClick="{{n.ack}}" class="btn btn-fill" style="min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">確認しました</button>
           </sc-if>
           <button type="button" aria-expanded="{{n.replyExpanded}}" onClick="{{n.toggleReply}}" class="btn btn-gray" style="min-height: 44px; padding: 0 16px; font-size: var(--t-sub)">{{n.replyLabel}}</button>
+          <sc-if value="{{n.canEdit}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{n.edit}}" class="btn btn-gray" style="min-height: 44px; padding: 0 18px; font-size: var(--t-sub)">直す</button></sc-if>
           <sc-if value="{{n.canDelete}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{n.del}}" style="{{n.delStyle}}">{{n.delLabel}}</button></sc-if>
           <sc-if value="{{n.read}}" hint-placeholder-val="{{ false }}">
             <span style="margin-left: auto; font-size: var(--t-cap); font-weight: 700; color: var(--done)">確認済み</span>
@@ -1087,15 +1089,16 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
       </div>
     </sc-for>
     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--sep)">
-      <div role="group" aria-label="だれに送るか" style="display: flex; gap: 8px; align-items: center">
+      <sc-if value="{{notEditing}}" hint-placeholder-val="{{ true }}"><div role="group" aria-label="だれに送るか" style="display: flex; gap: 8px; align-items: center">
         <span class="lbl">宛先</span>
         <sc-for list="{{toChoices}}" as="tc" hint-placeholder-count="2">
           <button type="button" aria-pressed="{{tc.pressed}}" onClick="{{tc.pick}}" style="{{tc.style}}">{{tc.label}}</button>
         </sc-for>
-      </div>
+      </div></sc-if>
       <label for="note-input" class="lbl">申し送りを書く</label>
       <textarea id="note-input" rows="3" value="{{draft}}" onChange="{{setDraft}}" placeholder="例：明日は保育園の持ち物に着替えを2組" class="field" style="box-sizing: border-box; width: 100%; padding: 12px; resize: none"></textarea>
-      <button type="button" onClick="{{sendNote}}" class="btn btn-fill" style="min-height: 48px; font-size: var(--t-sub)">送る</button>
+      <button type="button" onClick="{{sendNote}}" class="btn btn-fill" style="min-height: 48px; font-size: var(--t-sub)">{{sendLabel}}</button>
+      <sc-if value="{{noteEditing}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{cancelNoteEdit}}" class="btn btn-gray" style="min-height: 44px; font-size: var(--t-sub)">直すのをやめる</button></sc-if>
       <button type="button" onClick="{{polishMuseNotes}}" class="btn-link" style="align-self: center; min-height: 44px; padding: 0 8px; font-size: var(--t-sub)">Museに整えてもらう</button>
     </div>
   </section>
@@ -1201,6 +1204,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
     <button type="button" aria-label="閉じる" onClick="{{ed.close}}" class="btn-close">×</button>
     <div aria-hidden="true" style="align-self: center; width: 40px; height: 5px; border-radius: 3px; background: var(--line)"></div>
     <h2 id="ed-title" style="margin: 0; font-size: var(--t-title); font-weight: 700">{{ed.heading}}</h2>
+    <sc-if value="{{ed.resetHint}}" hint-placeholder-val="{{ false }}"><p style="margin: -4px 0 0; font-size: var(--t-foot); color: var(--label2)">相談の文や選択肢を変えると、2人の答えはリセットされ、決まっていた場合は相談中に戻ります（メモ・期限・添付だけなら残ります）</p></sc-if>
     <sc-if value="{{ed.whoSheet}}" hint-placeholder-val="{{ false }}">
       <p style="margin: -4px 0 0; font-size: var(--t-sub); font-weight: 600">「{{ed.task}}」</p>
       <span style="font-size: var(--t-foot); color: var(--label2)">{{ed.whoNow}}</span>
@@ -1429,7 +1433,7 @@ svg[viewBox="0 0 24 24"][fill="none"]{stroke-width:1.8;stroke-linecap:round;stro
   </section>
 </div>
 </template>
-<script src="config.js?v=88"></script>
-<script src="app.js?v=88"></script>
+<script src="config.js?v=89"></script>
+<script src="app.js?v=89"></script>
 </body>
 </html>
